@@ -14,8 +14,9 @@ mit ihr verkettet. Ein Teil der Zahlen ist vorgegeben, der Rest liegt im
 **Vorrat** und wird per Drag & Drop eingesetzt. Der Vorrat enthält EXAKT die
 fehlenden Zahlen.
 
-**Unverhandelbare Regeln:** nur ganze, nicht-negative Zahlen (auch in
-Zwischenschritten, keine Division mit Rest); jedes Rätsel hat GENAU EINE Lösung
+**Unverhandelbare Regeln:** nur ganze Zahlen, jede Division geht auf; jedes
+Ergebnis ist positiv — ein Zwischenstand der Plus/Minus-Kette darf dagegen
+negativ werden (`4 − 42 + 67 = 29`). Jedes Rätsel hat GENAU EINE Lösung
 und ist rein deduktiv — ohne Raten — erreichbar. Ein **Fehler** entsteht NUR,
 wenn ein Zug eine Rechnung vollständig macht, die dann nicht aufgeht (das ist
 geraten); eine Zahl an der falschen Stelle, bei der alle vollen Rechnungen weiter

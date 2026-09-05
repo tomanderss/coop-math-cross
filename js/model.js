@@ -15,9 +15,11 @@
 // Zahl-Felder sitzen auf geraden Anzeige-Koordinaten, Operator- und
 // Gleichheitszeichen auf den ungeraden Zwischenfeldern.
 //
-// REGELN (Nutzervorgabe): nur ganze Zahlen, nie negativ, nie Kommazahlen —
-// weder im Ergebnis noch in einem Zwischenschritt. Punkt vor Strich gilt (nur
-// bei 3 Operanden überhaupt relevant).
+// REGELN (Nutzervorgabe): nur ganze Zahlen, nie Kommazahlen — jede Division
+// muss aufgehen. Das ERGEBNIS ist immer positiv; ein Zwischenschritt der
+// Plus/Minus-Kette darf dagegen negativ werden, solange er nicht selbst das
+// Ergebnis ist (Beispiel des Nutzers: `4 − 42 + 67 = 29`). Punkt vor Strich
+// gilt (nur bei 3 Operanden überhaupt relevant).
 
 export const OPS = ['+', '-', '*', '/'];
 
@@ -40,8 +42,9 @@ export function eqIds(eq, cols) {
 
 /**
  * Wertet `vals[0] ops[0] vals[1] ops[1] …` mit Punkt-vor-Strich aus.
- * Liefert `null`, sobald eine Regel verletzt wird (Division mit Rest, Division
- * durch 0, negatives Zwischen- oder Endergebnis).
+ * Liefert `null`, sobald eine Regel verletzt wird: Division mit Rest, Division
+ * durch 0, oder ein negatives ENDergebnis. Negative Zwischenstände der
+ * Plus/Minus-Kette sind erlaubt.
  */
 export function evalExpr(vals, ops) {
   const v = vals.slice(), o = ops.slice();
@@ -57,11 +60,11 @@ export function evalExpr(vals, ops) {
   }
   for (let i = 0; i < o.length;) {
     const a = v[i], b = v[i + 1];
+    // Zwischenstände dürfen negativ werden — nur das Endergebnis nicht.
     const r = o[i] === '+' ? a + b : a - b;
-    if (r < 0) return null;
     v.splice(i, 2, r); o.splice(i, 1);
   }
-  return v[0];
+  return v[0] < 0 ? null : v[0];
 }
 
 /** Prüft eine einzelne Gleichung gegen eine Wertetabelle (`values[id]`). */
