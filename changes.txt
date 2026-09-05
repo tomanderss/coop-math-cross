@@ -1,0 +1,1 @@
+Adminrechte in Coop Math Cross werden jetzt ausschließlich im eigenen Datenbaum geprüft — vorher zogen sie versehentlich die Rolle aus der Schwester-App.
