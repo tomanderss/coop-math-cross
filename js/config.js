@@ -273,16 +273,13 @@ export const DEFAULT_SETTINGS = {
   // 'dark'/'light' = manuelle Wahl. Alte gespeicherte darkMode-Booleans migriert
   // storage.loadSettings() auf die entsprechende explizite Wahl.
   themeMode: 'auto',
-  confirmTool: 'pen',        // Standard-Werkzeug: 'pen' (einkreisen) | 'eraser'
-  desktopToolKey: 'Tab',     // Desktop-Taste zum Umschalten Einkreisen/Radiergummi im Spiel
+  desktopToolKey: 'Tab',     // Desktop-Taste zum Sortieren des Vorrats im Spiel
                              // (frei belegbar; '' = aus). keydown wird preventDefault()et,
                              // damit z.B. Tab NICHT den Browser-Fokus verschiebt.
-  eraseStyle: 'hide',        // gelöschte Zahl: 'hide' (verschwindet) | 'strike' (durchgestrichen)
   coopName: '',              // eigener Anzeigename im Coop-Modus
   coopMyColor: '#3b82f6',    // eigene Spielerfarbe -- gilt für die eigenen Markierungen in JEDEM
                               // Modus (auch solo), nicht nur Coop (Default: Blau). Name des Storage-
                               // Keys bewusst beibehalten, um bestehende Nutzerfarben nicht zu verlieren.
-  coopRemovedOutline: true,  // farbige Umrandung an gelöschten Zellen, die zeigt, wer sie gelöscht hat (rein optisch)
   language: null,           // UI-Sprache; null = noch nicht erkannt/gewählt -> Auto-Detect via navigator.language
   colorBlindMode: false,    // farbenblind-freundlicher Modus, global: ersetzt Grün/Rot
                             // (richtig/falsch, Hinweis/Fehler, Leben, Toasts, ...) durch

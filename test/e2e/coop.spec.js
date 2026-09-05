@@ -148,16 +148,10 @@ test.describe('coop', () => {
   test('joining a room with a running round (replayed INIT+START) lands directly in the game, playable', async ({ page }) => {
     await gotoApp(page);
     await page.evaluate(() => {
-      const puzzle = {
-        rows: 4, cols: 4,
-        rowTargets: [1, 1, 1, 1], colTargets: [1, 1, 1, 1],
-        values: Array.from({ length: 4 }, () => Array(4).fill(1)),
-        solution: Array.from({ length: 4 }, () => Array(4).fill(true)),
-        regions: [], difficulty: 'leicht',
-      };
+      const puzzle = window.__testPuzzle;
       // Replay-Burst wie beim Beitritt in eine offene Runde: INIT, dann START
       // (Startzeit liegt in der Vergangenheit — die Runde läuft schon eine Weile).
-      window.__cns.handleCoopMsg({ type: 'init', puzzle, marks: null, markedBy: null, startTime: Date.now() - 5000 });
+      window.__cns.handleCoopMsg({ type: 'init', puzzle, placed: null, markedBy: null, startTime: Date.now() - 5000 });
       window.__cns.handleCoopMsg({ type: 'start', startTime: Date.now() - 5000 });
     });
     await page.waitForSelector('.screen.game');
@@ -251,14 +245,8 @@ test.describe('coop', () => {
   test('an INIT with running:true starts the round immediately, even without a START event', async ({ page }) => {
     await gotoApp(page);
     await page.evaluate(() => {
-      const puzzle = {
-        rows: 4, cols: 4,
-        rowTargets: [1, 1, 1, 1], colTargets: [1, 1, 1, 1],
-        values: Array.from({ length: 4 }, () => Array(4).fill(1)),
-        solution: Array.from({ length: 4 }, () => Array(4).fill(true)),
-        regions: [], difficulty: 'leicht',
-      };
-      window.__cns.handleCoopMsg({ type: 'init', puzzle, marks: null, markedBy: null, startTime: Date.now() - 5000, running: true });
+      const puzzle = window.__testPuzzle;
+      window.__cns.handleCoopMsg({ type: 'init', puzzle, placed: null, markedBy: null, startTime: Date.now() - 5000, running: true });
       // KEIN START-Event — running:true muss allein reichen.
     });
     await page.waitForSelector('.screen.game');
@@ -289,13 +277,7 @@ test.describe('coop', () => {
   test('joining a running round with an RTDB-sparse markedBy still renders the board', async ({ page }) => {
     await gotoApp(page);
     await page.evaluate(() => {
-      const puzzle = {
-        rows: 4, cols: 4,
-        rowTargets: [1, 1, 1, 1], colTargets: [1, 1, 1, 1],
-        values: Array.from({ length: 4 }, () => Array(4).fill(1)),
-        solution: Array.from({ length: 4 }, () => Array(4).fill(true)),
-        regions: [], difficulty: 'leicht',
-      };
+      const puzzle = window.__testPuzzle;
       const marks = Array.from({ length: 4 }, () => Array(4).fill('none'));
       marks[1][2] = 'kept';
       marks[3][0] = 'removed';
@@ -336,15 +318,9 @@ test.describe('coop', () => {
   test('a partner MOVE received while stuck in the ready-lobby auto-starts the round', async ({ page }) => {
     await gotoApp(page);
     await page.evaluate(() => {
-      const puzzle = {
-        rows: 4, cols: 4,
-        rowTargets: [1, 1, 1, 1], colTargets: [1, 1, 1, 1],
-        values: Array.from({ length: 4 }, () => Array(4).fill(1)),
-        solution: Array.from({ length: 4 }, () => Array(4).fill(true)),
-        regions: [], difficulty: 'leicht',
-      };
+      const puzzle = window.__testPuzzle;
       // INIT OHNE running → Gast bleibt (fälschlich) in awaitingStart.
-      window.__cns.handleCoopMsg({ type: 'init', puzzle, marks: null, markedBy: null, startTime: Date.now() - 3000 });
+      window.__cns.handleCoopMsg({ type: 'init', puzzle, placed: null, markedBy: null, startTime: Date.now() - 3000 });
     });
     await page.waitForSelector('.screen.game');
     expect(await page.evaluate(() => window.__cns.state.coop.awaitingStart)).toBe(true); // steckt in der Lobby
@@ -361,17 +337,11 @@ test.describe('coop', () => {
   test('a converted solo game\'s INIT carries the mid-game state (lives/hints/mistakes) to the joiner', async ({ page }) => {
     await gotoApp(page);
     await page.evaluate(() => {
-      const puzzle = {
-        rows: 4, cols: 4,
-        rowTargets: [1, 1, 1, 1], colTargets: [1, 1, 1, 1],
-        values: Array.from({ length: 4 }, () => Array(4).fill(1)),
-        solution: Array.from({ length: 4 }, () => Array(4).fill(true)),
-        regions: [], difficulty: 'leicht',
-      };
+      const puzzle = window.__testPuzzle;
       // Exakt die Events, die completeSoloConversion() in den Raum legt: INIT
       // mit Zwischenstand (halb gespielte Runde) + START mit vergangener Startzeit.
       window.__cns.handleCoopMsg({
-        type: 'init', puzzle, marks: null, markedBy: null, startTime: Date.now() - 60000,
+        type: 'init', puzzle, placed: null, markedBy: null, startTime: Date.now() - 60000,
         lives: 1, maxLives: 3, hintsLeft: 0, hintsUsed: 3, mistakes: 2,
       });
       window.__cns.handleCoopMsg({ type: 'start', startTime: Date.now() - 60000 });
@@ -406,7 +376,7 @@ test.describe('coop', () => {
         solution: Array.from({ length: 4 }, () => Array(4).fill(true)),
         regions: [], difficulty: 'leicht',
       };
-      window.__cns.handleCoopMsg({ type: 'init', gameId: 'game-XYZ', puzzle, marks: null, markedBy: null, startTime: Date.now() - 5000, running: true });
+      window.__cns.handleCoopMsg({ type: 'init', gameId: 'game-XYZ', puzzle, placed: null, markedBy: null, startTime: Date.now() - 5000, running: true });
     });
     await page.waitForSelector('.screen.game');
     // Einen eigenen Zug machen …
@@ -416,13 +386,8 @@ test.describe('coop', () => {
     expect(gid).toBe('game-XYZ');   // Host-gameId übernommen
     // … dann kommt das Wiederhol-INIT (frische leere marks) für DIESELBE gameId:
     await page.evaluate(() => {
-      const puzzle = {
-        rows: 4, cols: 4, rowTargets: [1, 1, 1, 1], colTargets: [1, 1, 1, 1],
-        values: Array.from({ length: 4 }, () => Array(4).fill(1)),
-        solution: Array.from({ length: 4 }, () => Array(4).fill(true)),
-        regions: [], difficulty: 'leicht',
-      };
-      window.__cns.handleCoopMsg({ type: 'init', gameId: 'game-XYZ', puzzle, marks: null, markedBy: null, startTime: Date.now(), running: true });
+      const puzzle = window.__testPuzzle;
+      window.__cns.handleCoopMsg({ type: 'init', gameId: 'game-XYZ', puzzle, placed: null, markedBy: null, startTime: Date.now(), running: true });
     });
     // Mein Zug ist NICHT verloren gegangen (Brett nicht neu geladen).
     expect(await page.evaluate(() => window.__cns.state.marks[2][2])).not.toBe('none');
@@ -581,12 +546,7 @@ test.describe('coop', () => {
   // (wer hat was gesetzt), nicht Kosmetik.
   test('im Coop: eigener Skin bleibt, Mitspieler tragen ihre zugewiesene Farbe', async ({ page }) => {
     await gotoApp(page);
-    const PUZZLE = {
-      rows: 4, cols: 4, rowTargets: [1, 1, 1, 1], colTargets: [1, 1, 1, 1],
-      values: Array.from({ length: 4 }, () => Array(4).fill(1)),
-      solution: Array.from({ length: 4 }, () => Array(4).fill(true)),
-      regions: [], difficulty: 'leicht',
-    };
+    const PUZZLE = window.__testPuzzle;
     await page.evaluate((p) => {
       const s = window.__cns.state;
       s.settings.skinStyle = 'rainbow'; s.settings.skinApplyTo = 'both'; s.settings.skinOn = true;

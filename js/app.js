@@ -6107,8 +6107,6 @@ function adminRowDesc(row) {
 // Auswahlfelder: bekannte Wertelisten je Pfad → Dropdown statt Freitext.
 const ADMIN_ENUM_VALUES = {
   'settings/themeMode': ['auto', 'light', 'dark'],
-  'settings/confirmTool': ['pen', 'eraser'],
-  'settings/eraseStyle': ['hide', 'strike'],
   'settings/skinStyle': ['solid', 'gradient', 'rainbow'],
   'settings/skinDirection': ['cw', 'ccw'],
   'settings/skinApplyTo': ['kept', 'removed', 'both'],
@@ -8465,17 +8463,6 @@ const App = {
           </button>
           <div v-if="state.settingsTab==='spiel'" class="admin-acc-body">
           <button class="btn btn-ghost set-howto-btn" @click="state.modal='howto'"><span class="btn-ic"><span class="ei" v-html="ic('book')"></span></span> {{ t('home.howto') }}</button>
-          <div class="set-row col">
-            <span class="set-row-label">{{ t('settings.eraseStyle') }}</span>
-            <div class="seg">
-              <button :class="{active:state.settings.eraseStyle==='hide'}" @click="setSetting('eraseStyle','hide')">{{ t('settings.hide') }}</button>
-              <button :class="{active:state.settings.eraseStyle==='strike'}" @click="setSetting('eraseStyle','strike')">{{ t('settings.strike') }}</button>
-            </div>
-          </div>
-          <div class="set-row" @click="toggleSetting('coopRemovedOutline')">
-            <span>{{ t('settings.coopRemovedOutline') }}</span><span class="switch" :class="{on:state.settings.coopRemovedOutline}"><i></i></span>
-          </div>
-          <small class="set-hint">{{ t('settings.coopRemovedOutlineHint') }}</small>
           </div>
         </div>
 
@@ -9781,7 +9768,23 @@ app.mount('#app');
 // (Coop.setTeamProgress/setRaceProgress sind selbst nicht spionierbar, da
 // `import * as Coop` ein eingefrorenes Modul-Namespace-Objekt liefert).
 if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') window.__cns = { state, isSolved, handleCoopMsg, handleCoopConnection, coopSend, upsertPlayer, removePlayer, onSoloInviteRoomOpen, onSoloInviteJoin, cellStyle, cellClasses, Music, launchWinFx, useHint,
-  placeAt, clearAt, sortTray, pickTile, dropOn,
+  placeAt, clearAt, sortTray, pickTile, dropOn, setSetting,
+  // Test-Helfer: erstes offenes Feld (mit seinem richtigen Wert) bzw. genau
+  // einen korrekten Stein legen — spart jedem E2E-Test dieselbe Suchschleife.
+  firstBlank: () => {
+    const p = state.puzzle;
+    if (!p) return null;
+    for (let r = 0; r < p.rows; r++) for (let c = 0; c < p.cols; c++) {
+      const sl = p.slots[r][c];
+      if (sl && !sl.given && state.placed[r][c] == null) return { r, c, v: sl.v };
+    }
+    return null;
+  },
+  placeOne: () => {
+    const b = window.__cns.firstBlank();
+    if (b) placeAt(b.r, b.c, b.v);
+    return b;
+  },
   boardRenders: () => boardRenderCount, getProgressThrottle: () => ({ team: teamProgressThrottle, race: raceProgressThrottle }) };
 
 nextTick(() => {

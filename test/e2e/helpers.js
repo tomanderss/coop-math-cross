@@ -40,19 +40,37 @@ export async function startNewGame(page, difficulty = 'sehrleicht') {
   await page.waitForFunction(() => window.__cns && window.__cns.state.puzzle && !window.__cns.state.generating);
 }
 
-// Programmatically solves the active puzzle via the window.__cns debug hook,
-// mirroring exactly what a real tap does (tool selection -> onCellTap).
+// Löst das laufende Rätsel über den window.__cns-Debug-Hook — exakt derselbe
+// Weg wie ein echter Drag&Drop (placeAt ist der Kern von dropOn).
 export async function solveActivePuzzle(page) {
   await page.evaluate(() => {
-    const { state, onCellTap } = window.__cns;
+    const { state, placeAt } = window.__cns;
     const p = state.puzzle;
     for (let r = 0; r < p.rows; r++) {
       for (let c = 0; c < p.cols; c++) {
-        if (state.marks[r][c] !== 'none') continue;
-        state.tool = p.solution[r][c] ? 'pen' : 'eraser';
-        onCellTap(r, c);
+        const sl = p.slots[r][c];
+        if (!sl || sl.given || state.placed[r][c] != null) continue;
+        placeAt(r, c, sl.v);
       }
     }
+  });
+}
+
+// Legt EINEN Stein korrekt (erster freier Platz) — für Tests, die nur einen
+// beliebigen Zug brauchen. Liefert { r, c, v } oder null.
+export async function playOneMove(page) {
+  return await page.evaluate(() => {
+    const { state, placeAt } = window.__cns;
+    const p = state.puzzle;
+    for (let r = 0; r < p.rows; r++) {
+      for (let c = 0; c < p.cols; c++) {
+        const sl = p.slots[r][c];
+        if (!sl || sl.given || state.placed[r][c] != null) continue;
+        placeAt(r, c, sl.v);
+        return { r, c, v: sl.v };
+      }
+    }
+    return null;
   });
 }
 
@@ -66,20 +84,46 @@ export async function dismissStreakModal(page) {
   try { await page.locator('.streak-modal.extended .btn-primary').click({ timeout: 3000 }); } catch {}
 }
 
-// Commits `count` deliberate wrong taps (errorReveal defaults to 'instant',
-// where a wrong tap never sets the mark -- it only registers a mistake/loses
-// a life -- so the same cell can be tapped repeatedly without side effects).
+// Begeht `count` absichtliche Fehler. Ein Fehler entsteht NUR, wenn ein Zug
+// eine Rechnung vollständig UND falsch macht: dafür wird eine Gleichung bis auf
+// EIN Feld korrekt gefüllt und dann eine falsche Zahl daraufgelegt. Der Stein
+// wird dabei nie gesetzt (abgelehnt), also lässt sich derselbe Zug beliebig oft
+// wiederholen.
 export async function commitMistakes(page, count) {
-  await page.evaluate((n) => {
-    const { state, onCellTap } = window.__cns;
+  const ok = await page.evaluate((n) => {
+    const { state, placeAt } = window.__cns;
     const p = state.puzzle;
-    let wrongR = -1, wrongC = -1;
-    outer: for (let r = 0; r < p.rows; r++) {
-      for (let c = 0; c < p.cols; c++) {
-        if (state.marks[r][c] === 'none') { wrongR = r; wrongC = c; break outer; }
-      }
+    const cellsOf = (eq) => {
+      const out = [];
+      for (let i = 0; i <= eq.n; i++) out.push(eq.dir === 'h' ? [eq.r, eq.c + i] : [eq.r + i, eq.c]);
+      return out;
+    };
+    for (const eq of p.equations) {
+      const blanks = cellsOf(eq).filter(([r, c]) => !p.slots[r][c].given && state.placed[r][c] == null);
+      if (!blanks.length) continue;
+      const [tr, tc] = blanks[blanks.length - 1];
+      for (const [r, c] of blanks.slice(0, -1)) placeAt(r, c, p.slots[r][c].v);
+      const right = p.slots[tr][tc].v;
+      const wrong = state.tray.filter(t => !t.used && t.v !== right).map(t => t.v)[0];
+      if (wrong == null) continue;
+      const before = state.lives;
+      for (let i = 0; i < n; i++) placeAt(tr, tc, wrong);
+      return state.lives < before;
     }
-    state.tool = p.solution[wrongR][wrongC] ? 'eraser' : 'pen'; // deliberately wrong tool
-    for (let i = 0; i < n; i++) onCellTap(wrongR, wrongC);
+    return false;
   }, count);
+  if (!ok) throw new Error('commitMistakes: kein Fehler-Zug gefunden');
+}
+
+// Erzeugt ein ECHTES Rätsel im Browser-Kontext (gleicher Generator wie die App)
+// und liefert es als schlichtes JSON — so brauchen die Coop-Tests keine
+// handgeschriebenen Brett-Attrappen, die bei jeder Modelländerung veralten.
+export async function makePuzzle(page, difficulty = 'sehrleicht', seed = 1) {
+  return await page.evaluate(async ({ difficulty, seed }) => {
+    const [{ generatePuzzle }, { genOptionsFor }] = await Promise.all([
+      import('/js/generator.js'),
+      import('/js/config.js'),
+    ]);
+    return JSON.parse(JSON.stringify(generatePuzzle({ ...genOptionsFor(difficulty), seed })));
+  }, { difficulty, seed });
 }

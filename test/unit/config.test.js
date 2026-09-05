@@ -143,12 +143,14 @@ describe('config.DEFAULT_SETTINGS / DEFAULT_GAME_OPTIONS', () => {
     // Theme folgt standardmäßig dem System (drei Modi statt darkMode-Boolean).
     assert.equal(DEFAULT_SETTINGS.themeMode, 'auto');
     assert.equal(DEFAULT_SETTINGS.darkMode, undefined);
-    assert.equal(DEFAULT_SETTINGS.confirmTool, 'pen');
     assert.equal(DEFAULT_SETTINGS.language, null);
-    // Entfernte Optionen: Fehler immer sofort, Leben immer an, Timer immer sichtbar.
+    // Entfernte Optionen: Fehler immer sofort, Leben immer an, Timer immer sichtbar;
+    // ein Werkzeug-Umschalter existiert nicht (es gibt nur „Stein legen").
     assert.equal(DEFAULT_SETTINGS.errorReveal, undefined);
     assert.equal(DEFAULT_SETTINGS.livesEnabled, undefined);
     assert.equal(DEFAULT_SETTINGS.showTimer, undefined);
+    assert.equal(DEFAULT_SETTINGS.confirmTool, undefined);
+    assert.equal(DEFAULT_SETTINGS.eraseStyle, undefined);
   });
 
   test('default difficulty is a valid difficulty id', () => {

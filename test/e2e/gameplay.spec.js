@@ -1,25 +1,23 @@
 import { test, expect } from '@playwright/test';
-import { gotoApp, startNewGame, solveActivePuzzle, commitMistakes, dismissStreakModal } from './helpers.js';
+import { gotoApp, startNewGame, solveActivePuzzle, playOneMove, commitMistakes, dismissStreakModal } from './helpers.js';
 
 test.describe('gameplay', () => {
   // Regression: the player's chosen color (settings.coopMyColor) used to only
   // tint marks during an active coop session (cellStyle()/cellClasses() were
   // gated on state.coop.active). It must now also tint your own marks in solo,
   // since the setting was generalized from "coop color" to "my color".
-  test('the chosen player color tints a kept mark even outside coop', async ({ page }) => {
+  test('the chosen player color tints a placed tile even outside coop', async ({ page }) => {
     await gotoApp(page);
     await page.evaluate(() => { window.__cns.state.settings.coopMyColor = '#ff00aa'; });
     await startNewGame(page, 'sehrleicht');
+    const move = await playOneMove(page);
+    expect(move).not.toBeNull();
 
-    const result = await page.evaluate(() => {
-      const { state, onCellTap, cellStyle, cellClasses } = window.__cns;
-      const p = state.puzzle;
-      let r, c;
-      outer: for (r = 0; r < p.rows; r++) for (c = 0; c < p.cols; c++) if (p.solution[r][c]) break outer;
-      state.tool = 'pen';
-      onCellTap(r, c);
-      return { markedColor: cellStyle(r, c)['--markcol'], coopMark: !!cellClasses(r, c)['coop-mark'] };
-    });
+    const result = await page.evaluate(({ r, c }) => {
+      const { cellStyle, cellClasses } = window.__cns;
+      const cell = { r, c, t: 'num', given: false };
+      return { markedColor: cellStyle(cell)['--markcol'], coopMark: !!cellClasses(cell)['coop-mark'] };
+    }, move);
 
     expect(result.coopMark).toBe(true);
     expect(result.markedColor).toBe('#ff00aa');
@@ -112,19 +110,28 @@ test.describe('gameplay', () => {
     expect(await page.evaluate(() => window.__cns.state.zoom)).toBe(1);
   });
 
-  // Der Undo-Knopf ist entfernt (Nutzerwunsch) — in der Werkzeugleiste bleibt
-  // nur der Hinweis-Knopf als .round-btn; der Werkzeug-Umschalter sitzt trotzdem
-  // EXAKT mittig (unsichtbarer Ausgleichs-Spacer in Hinweis-Knopf-Breite).
-  test('the toolbar has no undo button anymore and the tool toggle stays centered', async ({ page }) => {
+  // Werkzeugleiste: links „Vorrat sortieren", rechts „Hinweis" — kein Undo,
+  // kein Werkzeug-Umschalter (es gibt nur eine Aktion: Steine legen).
+  test('the toolbar offers sorting and hints', async ({ page }) => {
     await gotoApp(page);
     await startNewGame(page, 'sehrleicht');
-    await expect(page.locator('.toolbar .round-btn')).toHaveCount(1);
-    await expect(page.locator('.toolbar .round-btn')).toHaveAttribute('title', 'Hinweis');
-    const bar = await page.locator('.toolbar').boundingBox();
-    const toggle = await page.locator('.toolbar .tool-toggle').boundingBox();
-    const barCenter = bar.x + bar.width / 2;
-    const toggleCenter = toggle.x + toggle.width / 2;
-    expect(Math.abs(toggleCenter - barCenter)).toBeLessThanOrEqual(2);
+    await expect(page.locator('.toolbar .round-btn')).toHaveCount(2);
+    await expect(page.locator('.toolbar .round-btn').first()).toHaveAttribute('title', 'Vorrat sortieren');
+    await expect(page.locator('.toolbar .round-btn').last()).toHaveAttribute('title', 'Hinweis');
+    await expect(page.locator('.toolbar .tool-toggle')).toHaveCount(0);
+  });
+
+  // Der Sortier-Knopf sortiert den Vorrat aufsteigend UND rückt auf (benutzte
+  // Steine verschwinden, es bleiben keine Lücken).
+  test('the sort button sorts the tray ascending and closes the gaps', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page, 'mittel');
+    await playOneMove(page);
+    await page.locator('.toolbar .round-btn').first().click();
+    const tray = await page.evaluate(() => window.__cns.state.tray.map(t => ({ v: t.v, used: t.used })));
+    expect(tray.some(t => t.used)).toBe(false);
+    expect(tray.map(t => t.v)).toEqual([...tray.map(t => t.v)].sort((a, b) => a - b));
+    await expect(page.locator('.tray .tile')).toHaveCount(tray.length);
   });
 
   test('resuming from pause runs a 1.5s bar countdown before the game continues', async ({ page }) => {
@@ -149,11 +156,11 @@ test.describe('gameplay', () => {
   });
 });
 
-// „Big Numbers"-Modus (Zellwerte 10–19): der Umschalter erscheint nur für
-// kleine Felder (6×6–9×9), erzeugt ein Brett mit zweistelligen Werten, und die
-// komplette Spiel-Schleife (generieren → lösen → gewinnen) funktioniert.
+// „Große Zahlen": derselbe Bauplan mit deutlich größerem Zahlenraum. Der
+// Umschalter gilt für ALLE Stufen; die komplette Spiel-Schleife (generieren →
+// lösen → gewinnen) muss damit genauso laufen.
 test.describe('big numbers mode', () => {
-  test('toggle generates a 10–19 board and it can be solved to a win', async ({ page }) => {
+  test('toggle generates a big-number board and it can be solved to a win', async ({ page }) => {
     await gotoApp(page);
     await page.locator('.home-actions .btn-primary').click();
     await page.waitForSelector('.screen.setup');
@@ -169,16 +176,15 @@ test.describe('big numbers mode', () => {
     await page.waitForSelector('.screen.game');
     await page.waitForFunction(() => window.__cns && window.__cns.state.puzzle && !window.__cns.state.generating);
 
-    // Alle Zellwerte im Bereich 10–19, Puzzle als big markiert, Brett trägt die Klasse.
+    // Der Zahlenraum ist deutlich größer als im Normalspiel, Puzzle ist markiert.
     const info = await page.evaluate(() => {
       const p = window.__cns.state.puzzle;
-      let min = 99, max = 0;
-      for (const row of p.values) for (const v of row) { min = Math.min(min, v); max = Math.max(max, v); }
-      return { big: p.bigNumbers, min, max };
+      let max = 0;
+      for (const row of p.slots) for (const sl of row) if (sl) max = Math.max(max, sl.v);
+      return { big: p.bigNumbers, max };
     });
-    expect(info).toEqual({ big: true, min: expect.any(Number), max: expect.any(Number) });
-    expect(info.min).toBeGreaterThanOrEqual(10);
-    expect(info.max).toBeLessThanOrEqual(19);
+    expect(info.big).toBe(true);
+    expect(info.max).toBeGreaterThan(20);
     await expect(page.locator('.board.big-num')).toBeVisible();
 
     await solveActivePuzzle(page);
@@ -189,7 +195,7 @@ test.describe('big numbers mode', () => {
     await gotoApp(page);
     await page.locator('.home-actions .btn-primary').click();
     await page.waitForSelector('.screen.setup');
-    await page.evaluate(() => { window.__cns.state.sel.difficulty = 'rip'; }); // 14×14
+    await page.evaluate(() => { window.__cns.state.sel.difficulty = 'rip'; }); // größtes Brett
     await expect(page.locator('.mode-toggle', { hasText: 'Große Zahlen' })).toBeVisible();
   });
 });

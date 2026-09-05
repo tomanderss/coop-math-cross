@@ -3,20 +3,21 @@ import assert from 'node:assert/strict';
 
 const { pruneSaves, mergeSaves, snapshotProgress, SAVES_MAX } = await import('../../js/storage.js');
 
-// Ein Brett, dessen Loesung „alles behalten" ist — damit laesst sich Fortschritt
+// Ein Brett aus lauter LUECKEN mit dem Wert 1 — damit lassen sich Fortschritt
 // und „geloest" bequem konstruieren.
-const board = (rows, cols) => ({ rows, cols, solution: Array.from({ length: rows }, () => Array(cols).fill(true)) });
-const marksAll = (rows, cols, v) => Array.from({ length: rows }, () => Array(cols).fill(v));
-const entry = (id, ts, extra = {}) => ({ id, ts, puzzle: board(2, 2), marks: marksAll(2, 2, 'none'), ...extra });
+const board = (rows, cols) => ({ rows, cols, slots: Array.from({ length: rows }, () => Array.from({ length: cols }, () => ({ v: 1, given: false }))) });
+const placedAll = (rows, cols, v) => Array.from({ length: rows }, () => Array(cols).fill(v));
+const entry = (id, ts, extra = {}) => ({ id, ts, puzzle: board(2, 2), placed: placedAll(2, 2, null), ...extra });
 
 describe('storage.snapshotProgress', () => {
-  test('zaehlt nur KORREKT gesetzte Zellen', () => {
+  test('zaehlt die gefuellten Luecken', () => {
     const p = board(2, 2);
-    assert.equal(snapshotProgress({ puzzle: p, marks: marksAll(2, 2, 'none') }), 0);
-    assert.equal(snapshotProgress({ puzzle: p, marks: marksAll(2, 2, 'kept') }), 100);
-    // Falsch gesetzte Zellen zaehlen NICHT als Fortschritt.
-    assert.equal(snapshotProgress({ puzzle: p, marks: marksAll(2, 2, 'removed') }), 0);
-    assert.equal(snapshotProgress({ puzzle: p, marks: [['kept', 'none'], ['none', 'none']] }), 25);
+    assert.equal(snapshotProgress({ puzzle: p, placed: placedAll(2, 2, null) }), 0);
+    assert.equal(snapshotProgress({ puzzle: p, placed: placedAll(2, 2, 1) }), 100);
+    assert.equal(snapshotProgress({ puzzle: p, placed: [[1, null], [null, null]] }), 25);
+    // Auch ein falsch platzierter Stein zaehlt als Fortschritt — ob er richtig
+    // liegt, entscheidet sich erst am Ende.
+    assert.equal(snapshotProgress({ puzzle: p, placed: [[7, null], [null, null]] }), 25);
   });
   test('unbrauchbare Eingaben liefern 0 statt NaN', () => {
     for (const bad of [null, undefined, {}, { puzzle: null }, { puzzle: board(2, 2) }]) {
@@ -33,7 +34,7 @@ describe('storage.pruneSaves', () => {
     assert.equal(out[0].id, 'g' + (SAVES_MAX + 4), 'neuester zuerst');
   });
   test('wirft bereits geloeste und leere Staende raus', () => {
-    const solved = { id: 'solved', ts: 9, puzzle: board(2, 2), marks: marksAll(2, 2, 'kept') };
+    const solved = { id: 'solved', ts: 9, puzzle: board(2, 2), placed: placedAll(2, 2, 1) };
     const noBoard = { id: 'leer', ts: 8 };
     const ok = entry('ok', 7);
     const ids = pruneSaves([solved, noBoard, ok]).map((g) => g.id);

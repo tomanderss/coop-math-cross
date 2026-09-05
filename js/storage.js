@@ -449,7 +449,7 @@ export function avgTimesByDifficulty(stats) {
 // ─── Verlauf gelöster Rätsel (Ringpuffer, neueste zuerst) ─────────────────────
 // Speichert je Partie den Seed statt des vollen Puzzles — generatePuzzle({
 // difficulty, seed, dim }) reproduziert das exakte Rätsel für "erneut spielen".
-// marks ist der Endstand (für "Endboard ansehen"), keine Zugfolge (kein
+// placed ist der Endstand (für "Endboard ansehen"), keine Zugfolge (kein
 // zugweises Playback in v1, siehe ROADMAP/Plan).
 export function loadHistory() { return load(KEYS.HISTORY, []); }
 export function recordHistory(entry) {
@@ -735,15 +735,20 @@ export async function exportToFile(type = 'manual') {
 // mit gelöstem Brett wieder übernommen wird. Rein, unit-getestet.
 export function snapshotSolved(g) {
   const p = g && g.puzzle;
-  if (!p || !Array.isArray(p.solution) || !Array.isArray(g.marks)) return false;
-  for (let r = 0; r < p.rows; r++) {
-    const sol = p.solution[r], m = g.marks[r];
-    if (!sol || !m) return false;
+  if (!p || !Array.isArray(p.slots) || !Array.isArray(g.placed)) return false;
+  let blanks = 0;
+  for (let r = 0; r < (p.rows || 0); r++) {
+    const row = p.slots[r], pl = g.placed[r];
+    if (!row) return false;
     for (let c = 0; c < p.cols; c++) {
-      if (m[c] !== (sol[c] ? 'kept' : 'removed')) return false;
+      const sl = row[c];
+      if (!sl || sl.given) continue;
+      blanks++;
+      const v = pl && pl[c];
+      if (v == null || v === '' || v !== sl.v) return false;
     }
   }
-  return true;
+  return blanks > 0;
 }
 // ─── Bibliothek gespeicherter Partien ────────────────────────────────────────
 // Bisher gab es GENAU EINEN Solo-Slot: ein neues Spiel überschrieb den alten
@@ -799,18 +804,20 @@ export function removeSave(id) {
 // im laufenden Spiel dieselbe Zahl zeigt. Rein, damit sie testbar bleibt.
 export function snapshotProgress(g) {
   const p = g && g.puzzle;
-  if (!p || !Array.isArray(p.solution) || !Array.isArray(g.marks)) return 0;
-  const total = (Number(p.rows) || 0) * (Number(p.cols) || 0);
-  if (!total) return 0;
-  let ok = 0;
-  for (let r = 0; r < p.rows; r++) {
-    const sol = p.solution[r], m = g.marks[r];
-    if (!sol || !m) continue;
+  if (!p || !Array.isArray(p.slots) || !Array.isArray(g.placed)) return 0;
+  let total = 0, filled = 0;
+  for (let r = 0; r < (p.rows || 0); r++) {
+    const row = p.slots[r], pl = g.placed[r];
+    if (!row) continue;
     for (let c = 0; c < p.cols; c++) {
-      if (m[c] && m[c] !== 'none' && m[c] === (sol[c] ? 'kept' : 'removed')) ok++;
+      const sl = row[c];
+      if (!sl || sl.given) continue;
+      total++;
+      const v = pl && pl[c];
+      if (v != null && v !== '') filled++;
     }
   }
-  return Math.round((ok / total) * 100);
+  return total ? Math.round((filled / total) * 100) : 0;
 }
 
 // Zwei Bibliotheken zusammenführen (Geräte-Merge): Union nach id, bei gleicher id

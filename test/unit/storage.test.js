@@ -714,7 +714,7 @@ describe('storage.collectExportData', () => {
 });
 
 describe('storage.pickActiveGame (Import darf laufendes Spiel nie still löschen)', () => {
-  const game = (ts) => ({ puzzle: { rows: 5 }, marks: [], elapsed: 1, ts });
+  const game = (ts) => ({ puzzle: { rows: 5 }, placed: [], elapsed: 1, ts });
 
   test('Import ohne Aktivspiel (null) → lokales laufendes Spiel bleibt', () => {
     const local = game(100);
@@ -742,8 +742,8 @@ describe('storage.pickActiveGame (Import darf laufendes Spiel nie still löschen
   // Spiel tauchte als fortsetzbar auf, lud ein interaktionsloses 100%-Brett).
   const solvedGame = (ts) => ({
     ts, elapsed: 1,
-    puzzle: { rows: 2, cols: 2, solution: [[true, false], [false, true]] },
-    marks: [['kept', 'removed'], ['removed', 'kept']],
+    puzzle: { rows: 2, cols: 2, slots: [[{ v: 3, given: false }, { v: 4, given: true }], [{ v: 5, given: true }, { v: 6, given: false }]] },
+    placed: [[3, null], [null, 6]],
   });
   test('gelöster Import wird verworfen, lokales laufendes Spiel bleibt', () => {
     const local = game(100);
@@ -759,25 +759,25 @@ describe('storage.pickActiveGame (Import darf laufendes Spiel nie still löschen
 });
 
 describe('storage.snapshotSolved', () => {
-  const p = { rows: 2, cols: 2, solution: [[true, false], [false, true]] };
+  const p = { rows: 2, cols: 2, slots: [[{ v: 3, given: false }, { v: 4, given: true }], [{ v: 5, given: true }, { v: 6, given: false }]] };
   test('vollständig korrekt gelöstes Brett → true', () => {
-    assert.equal(snapshotSolved({ puzzle: p, marks: [['kept', 'removed'], ['removed', 'kept']] }), true);
+    assert.equal(snapshotSolved({ puzzle: p, placed: [[3, null], [null, 6]] }), true);
   });
   test('ein falscher/offener Zug → false', () => {
-    assert.equal(snapshotSolved({ puzzle: p, marks: [['kept', 'removed'], ['removed', 'none']] }), false);
-    assert.equal(snapshotSolved({ puzzle: p, marks: [['removed', 'removed'], ['removed', 'kept']] }), false);
+    assert.equal(snapshotSolved({ puzzle: p, placed: [[3, null], [null, null]] }), false);
+    assert.equal(snapshotSolved({ puzzle: p, placed: [[9, null], [null, 6]] }), false);
   });
   test('fehlende Daten → false (kein Absturz)', () => {
     assert.equal(snapshotSolved(null), false);
     assert.equal(snapshotSolved({}), false);
     assert.equal(snapshotSolved({ puzzle: p }), false);
-    assert.equal(snapshotSolved({ puzzle: { rows: 2, cols: 2 }, marks: [] }), false);
+    assert.equal(snapshotSolved({ puzzle: { rows: 2, cols: 2 }, placed: [] }), false);
   });
 });
 
 describe('storage.importFromFile bewahrt Aktivspiel-Slots', () => {
   beforeEach(() => { globalThis.localStorage.clear(); });
-  const game = (ts) => ({ puzzle: { rows: 5 }, marks: [], elapsed: 1, ts });
+  const game = (ts) => ({ puzzle: { rows: 5 }, placed: [], elapsed: 1, ts });
 
   test('Cloud-Snapshot mit activeGame:null löscht das lokale Spiel NICHT (Update-Szenario)', () => {
     saveActiveGame(game(500));
@@ -875,7 +875,7 @@ describe('storage.walletLog (geräteübergreifende Herkunft des Guthabens)', () 
 });
 
 describe('storage.pickEndlessSlot (Endlos-Slot synct geräteübergreifend)', () => {
-  const board = (ts) => ({ ts, puzzle: { rows: 1, cols: 1, solution: [[true]] }, marks: [['none']], endless: { level: 3 } });
+  const board = (ts) => ({ ts, puzzle: { rows: 1, cols: 1, slots: [[{ v: 2, given: false }]] }, placed: [[null]], endless: { level: 3 } });
   const pending = (ts) => ({ pending: true, ts, endless: { level: 4 } });
 
   test('ein {pending:true}-Marker (zwischen zwei Leveln) ist ein GÜLTIGER Stand', () => {
@@ -890,7 +890,7 @@ describe('storage.pickEndlessSlot (Endlos-Slot synct geräteübergreifend)', () 
   });
 
   test('ein bereits gelöstes Brett zählt wie „nicht vorhanden"', () => {
-    const solved = { ts: 999, puzzle: { rows: 1, cols: 1, solution: [[true]] }, marks: [['kept']] };
+    const solved = { ts: 999, puzzle: { rows: 1, cols: 1, slots: [[{ v: 2, given: false }]] }, placed: [[2]] };
     assert.deepEqual(pickEndlessSlot(solved, pending(5)), pending(5));
   });
 

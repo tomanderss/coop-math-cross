@@ -1,25 +1,18 @@
 import { test, expect } from '@playwright/test';
-import { gotoApp } from './helpers.js';
+import { gotoApp, makePuzzle } from './helpers.js';
 
 // Coop-Robustheit: (1) kein Blackscreen mehr, wenn der Spiel-Screen ohne Brett
 // erreicht wird / ein kaputtes INIT eintrifft, (2) Coop-Offline-Rettung: das
 // Brett wird als eigenständiges Solo-Spiel weitergespielt/gespeichert,
 // (3) Tipp-Indikator (drei Punkte) am Chat-Button + im Chat.
-const PUZZLE = (difficulty) => ({
-  rows: 4, cols: 4,
-  rowTargets: [1, 1, 1, 1], colTargets: [1, 1, 1, 1],
-  values: Array.from({ length: 4 }, () => Array(4).fill(1)),
-  solution: Array.from({ length: 4 }, () => Array(4).fill(true)),
-  regions: [], difficulty,
-});
-
 async function asGuestInGame(page) {
+  const puzzle = await makePuzzle(page, 'sehrleicht');
   await page.evaluate((p) => {
     const s = window.__cns.state;
     s.coop.active = true; s.coop.role = 'guest'; s.coop.myId = 'me';
     s.coop.players = [{ id: 'host', name: 'Hosti', color: '#e5679a' }, { id: 'me', name: 'Ich', color: '#67a3e5' }];
-    window.__cns.handleCoopMsg({ type: 'init', gameId: 'g1', running: true, puzzle: p, marks: null, markedBy: null, startTime: Date.now() - 5000, lives: 3, maxLives: 3 });
-  }, PUZZLE('sehrleicht'));
+    window.__cns.handleCoopMsg({ type: 'init', gameId: 'g1', running: true, puzzle: p, placed: null, markedBy: null, startTime: Date.now() - 5000, lives: 3, maxLives: 3 });
+  }, puzzle);
   await page.waitForSelector('.screen.game .board');
 }
 
@@ -56,7 +49,7 @@ test.describe('coop robustness', () => {
       const s = window.__cns.state;
       s.coop.active = true; s.coop.role = 'host'; s.coop.myId = 'me'; s.coop.awaitingStart = false;
       s.coop.players = [{ id: 'me', name: 'Ich' }, { id: 'g1', name: 'Gast' }];
-      window.__cns.handleCoopMsg({ type: 'init', gameId: 'g1', running: true, puzzle: p, marks: null, markedBy: null, startTime: Date.now() - 1000, lives: 3, maxLives: 3 });
+      window.__cns.handleCoopMsg({ type: 'init', gameId: 'g1', running: true, puzzle: p, placed: null, markedBy: null, startTime: Date.now() - 1000, lives: 3, maxLives: 3 });
       // Als Host betrachten (der INIT-Handler setzt guest-typische Flags zurück).
       s.coop.role = 'host';
       window.__cns.handleCoopMsg({ type: 'resync', author: 'g1' });
