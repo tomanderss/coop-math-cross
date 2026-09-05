@@ -41,8 +41,32 @@ test.describe('Rechenkreuz: Steine legen', () => {
   test('zwei Steine tauschen den Platz', async ({ page }) => {
     await gotoApp(page);
     await startNewGame(page, 'mittel');
-    const a = await playOneMove(page);
-    const b = await playOneMove(page);
+    // ZWEI Felder wählen, deren Rechnungen auch nach dem Tausch noch offen
+    // bleiben — sonst wäre der Tausch ein echter Fehler (vollständige, falsche
+    // Rechnung) und würde zu Recht abgelehnt.
+    const pair = await page.evaluate(() => {
+      const { state, placeAt } = window.__cns;
+      const p = state.puzzle;
+      const cellsOf = (eq) => { const out = []; for (let i = 0; i <= eq.n; i++) out.push(eq.dir === 'h' ? [eq.r, eq.c + i] : [eq.r + i, eq.c]); return out; };
+      const eqsAt = (r, c) => p.equations.filter((e) => cellsOf(e).some(([rr, cc]) => rr === r && cc === c));
+      const openBlanks = (eq) => cellsOf(eq).filter(([r, c]) => !p.slots[r][c].given && state.placed[r][c] == null).length;
+      const safe = [];
+      for (let r = 0; r < p.rows; r++) for (let c = 0; c < p.cols; c++) {
+        const sl = p.slots[r][c];
+        if (!sl || sl.given) continue;
+        if (eqsAt(r, c).every((e) => openBlanks(e) >= 2)) safe.push({ r, c, v: sl.v });
+      }
+      for (const x of safe) for (const y of safe) {
+        if (x === y || x.v === y.v) continue;
+        const shared = eqsAt(x.r, x.c).some((e) => eqsAt(y.r, y.c).includes(e));
+        if (shared) continue;
+        placeAt(x.r, x.c, x.v); placeAt(y.r, y.c, y.v);
+        return { a: x, b: y };
+      }
+      return null;
+    });
+    expect(pair, 'kein tauschbares Feldpaar gefunden').not.toBeNull();
+    const { a, b } = pair;
     const cellA = page.locator(`.board .cell[data-r="${a.r}"][data-c="${a.c}"]`);
     const cellB = page.locator(`.board .cell[data-r="${b.r}"][data-c="${b.c}"]`);
     await dragTo(page, cellA, cellB);
