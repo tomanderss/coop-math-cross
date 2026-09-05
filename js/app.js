@@ -7,7 +7,7 @@ import { validPuzzleShape as puzzleShapeOk } from './model.js';
 import {
   buildDisplay, buildTray, sortTray as sortTrayList, takeFromTray, returnToTray, trayLeft,
   emptyPlaced, currentValues, equationsAt, placementBreaksEquation, solvedEquationSet,
-  isBoardSolved, progressOf, solutionAt, OP_SYMBOL,
+  isBoardSolved, progressOf, solutionAt, normalizePuzzle, OP_SYMBOL,
 } from './board.js';
 import { todayDateStr } from './streak.js';
 import * as Coop from './coop.js';
@@ -123,6 +123,7 @@ const state = reactive({
   flash: {},                 // "r-c" -> true (rote Fehler-Animation)
   justResolved: {},          // "eq-3" -> true (Fertig-Puls einer gelösten Rechnung)
   cellPx: 48,
+  opRatio: 0.55,             // gemessene Breite der Operator-Spuren (s. computeCellSize)
   boardW: 0,                 // gemessene Breite der Spielfläche (Basis der Vorrats-Steingröße)
   zoom: 1,
   markedBy: [],               // 2D-Array parallel zu placed: Coop-Spieler-Id, LOCAL_PLAYER_ID (solo/Wettkampf) oder null
@@ -997,9 +998,14 @@ const skinVars = computed(() => skinActive.value ? buildSkinVars(state.settings)
 const skinBoardClasses = computed(() => buildSkinClasses(state.settings, skinActive.value));
 // Das Anzeige-Raster wechselt Zahl- und Operator-Spalten ab. Operator-Felder
 // sind schmaler (OP_RATIO) — sonst passen breite Bretter (bis 7 Zahl-Spalten =
-// 13 Anzeige-Spalten) auf einem Telefon nicht mehr nebeneinander.
-const OP_RATIO = 0.5;    // Operator-Spuren sind halb so breit wie Zahl-Felder
-const EMPTY_TRACK = 4;   // px — Breite einer KOMPLETT leeren Spur (nur Luft)
+// 13 Anzeige-Spalten) auf einem Telefon nicht mehr nebeneinander. Seit das
+// Brett OHNE Fugen zusammenhängt (ein echtes Raster wie beim Sudoku statt loser
+// Kästchen), sind je Achse bis zu 16 Fugen à 2 px frei geworden — die stecken
+// jetzt in einem großzügigeren OP_RATIO, die Operator-Felder sind also echte
+// Rasterzellen und keine schmalen Striche mehr.
+const OP_RATIO = 0.66;      // größte Operator-Spur (Anteil am Zahl-Feld)
+const OP_RATIO_MIN = 0.36;  // schmalste — nur, wenn das die Zahl-Felder größer macht
+const EMPTY_TRACK = 3;   // px — Breite einer KOMPLETT leeren Spur (nur Luft)
 
 // Ein ausgefranstes Kreuzwort hat Spuren, in denen gar nichts liegt — bei einem
 // Operator-Streifen zwischen zwei Zeilen ohne einzige senkrechte Rechnung etwa.
@@ -1035,11 +1041,8 @@ const gridStyle = computed(() => {
     gridTemplateColumns: gridTracks(t.cols),
     gridTemplateRows: gridTracks(t.rows),
     '--cell': state.cellPx + 'px',
-    '--opcell': Math.round(state.cellPx * OP_RATIO) + 'px',
+    '--opcell': Math.round(state.cellPx * (state.opRatio || OP_RATIO)) + 'px',
     '--emptycell': EMPTY_TRACK + 'px',
-    // Auf engen Brettern schrumpft auch der Rasterabstand — 2 px je Fuge summieren
-    // sich bei 17 Spuren zu 34 px, die dann den Zellen fehlen.
-    '--bgap': (state.cellPx < 34 ? 1 : 2) + 'px',
     '--fs': Math.max(9, Math.round(state.cellPx * 0.46)) + 'px',
   };
 });
@@ -1048,16 +1051,21 @@ const gridStyle = computed(() => {
 // Ein R.I.P.-Brett hat über 30 Steine — bei fester Größe fraß der Vorrat das
 // halbe Display. Die Steine schrumpfen deshalb, bis alle in wenige Zeilen
 // passen (gemeldet: „die Zahlen unten deutlich kompakter").
-const TRAY_GAP = 5;
+const TRAY_GAP = 3;
+const TRAY_MAX_ROWS = 3;   // mehr Zeilen frisst die Fläche, die dem Brett gehört
 const trayTilePx = computed(() => {
+  // Ein benutzter Stein hinterlaesst seine LUECKE — der Platzbedarf richtet
+  // sich also nach ALLEN Slots, nicht nur den noch offenen.
   const n = Math.max(1, state.tray.length);
-  const avail = Math.max(200, (state.boardW || window.innerWidth) - 24);
-  // Je mehr Steine, desto kleiner — sonst wächst der Vorrat dem Brett davon.
-  const cap = n > 30 ? 30 : n > 20 ? 34 : n > 10 ? 40 : 46;
-  // Breite ausreizen: so viele Steine je Zeile wie hineinpassen.
-  const perRow = Math.max(1, Math.floor((avail + TRAY_GAP) / (cap + TRAY_GAP)));
-  const px = Math.floor((avail - (perRow - 1) * TRAY_GAP) / perRow);
-  return Math.max(24, Math.min(cap, px));
+  const avail = Math.max(200, (state.boardW || window.innerWidth) - 16);
+  // Größten Stein wählen, mit dem der Vorrat noch in TRAY_MAX_ROWS Zeilen passt.
+  // Der Vorrat ist NICHT das Spiel — er darf dem Brett keine Höhe wegnehmen
+  // (gemeldet: „die Zahlen unten nehmen viel zu viel Platz ein").
+  for (let px = 40; px > 22; px--) {
+    const perRow = Math.max(1, Math.floor((avail + TRAY_GAP) / (px + TRAY_GAP)));
+    if (Math.ceil(n / perRow) <= TRAY_MAX_ROWS) return px;
+  }
+  return 22;
 });
 const trayStyle = computed(() => ({
   '--tile': trayTilePx.value + 'px',
@@ -1814,6 +1822,9 @@ function applyTrainingStep() {
 }
 
 function loadPuzzleIntoState(puzzle, saved) {
+  // Rätsel aus Cloud/Coop wieder dicht machen (s. normalizePuzzle) — buildDisplay
+  // greift direkt mit slots[r][c] zu und stirbt sonst an einer fehlenden Zeile.
+  puzzle = normalizePuzzle(puzzle);
   // Genereller Reset-Punkt für alle Spielstart-Pfade (Solo, Coop, Race, Team,
   // Fortsetzen, Daily/Boss) -- ohne den blieb der Trainingsmodus-Banner nach
   // einem Abbruch per Zurück-Button (quitToHome() setzt isTrainingGame nicht
@@ -1910,11 +1921,11 @@ function computeCellSize() {
   const wrap = document.querySelector('.board-wrap');
   let availW, availH;
   if (wrap && wrap.clientWidth && wrap.clientHeight) {
-    availW = wrap.clientWidth - 12; // 2*6px Board-Wrap-Padding
-    availH = wrap.clientHeight - 12;
+    availW = wrap.clientWidth - 6; // 2*3px Board-Wrap-Padding
+    availH = wrap.clientHeight - 6;
     state.boardW = wrap.clientWidth;
   } else {
-    availW = Math.min(window.innerWidth - 44, 496); // 2*(14px App-Padding + 6px Board-Wrap-Padding) + Sicherheitspuffer
+    availW = Math.min(window.innerWidth - 26, 496); // 2*(8px App-Padding + 3px Board-Wrap-Padding) + Sicherheitspuffer
     availH = window.innerHeight - 200; // grobe Schätzung für Kopf-/Werkzeugleiste vor dem ersten Render
   }
   // Aktiver Brett-Rahmen legt außen einen 10px-Innenabstand um die Spielfläche
@@ -1928,18 +1939,6 @@ function computeCellSize() {
   // das Brett bei ausgefransten Layouts unnötig klein.
   const t = boardTracks.value;
   const tw = trackCounts(t.cols), th = trackCounts(t.rows);
-  const unitsW = tw.cells + tw.ops * OP_RATIO || 1;
-  const unitsH = th.cells + th.ops * OP_RATIO || 1;
-  // Die Rasterfugen (gap) MÜSSEN mitgerechnet werden: bei 17 Spuren sind das
-  // 16 Fugen je Achse — ohne sie ragte die letzte Zeile unter den Vorrat.
-  // Der Fugen-Wert hängt selbst an der Zellgröße (s. gridStyle), daher zwei
-  // Durchgänge: erst mit 2 px rechnen, bei engem Brett mit 1 px nachrechnen.
-  const fit = (gap) => Math.floor(Math.min(
-    (availW - tw.empty * EMPTY_TRACK - (t.cols.length - 1) * gap) / unitsW,
-    (availH - th.empty * EMPTY_TRACK - (t.rows.length - 1) * gap) / unitsH,
-  ));
-  let ideal = fit(2);
-  if (ideal < 34) ideal = fit(1);
   // Deckel für die Auto-Einpassung: begrenzt die Zellgröße, damit kleine Bretter
   // auf großen Displays nicht riesig wirken. Skaliert mit der kürzeren Bildschirm-
   // kante (= bindende Achse, da das Brett in BEIDE Richtungen passen muss), damit
@@ -1958,8 +1957,31 @@ function computeCellSize() {
   // kleine Zellen als eine abgeschnittene Zeile/Spalte. Der frühere 26px-Boden
   // ließ das größte Brett (14×14 = 15 Einheiten) auf schmalen Handys eine Spalte
   // aus dem Bild ragen. Nur ein winziger Boden gegen 0 in Extremfällen.
-  const base = Math.max(10, Math.min(cap, ideal));
+  // Das Raster hat KEINE Fugen mehr (gap: 0) — die Zellen stoßen aneinander und
+  // teilen sich ihre 1-px-Linie (reiner box-shadow, kein Layout). In die Rechnung
+  // gehen daher nur die Zell-/Operator-Einheiten und die geschrumpften Leerspuren.
+  //
+  // Die BREITE der Operator-Spuren ist nicht fest, sondern wird MITGESUCHT: fast
+  // jedes Brett ist nur auf EINER Achse eingeklemmt (meist der Breite) und hat
+  // auf der anderen Luft. Schmalere Operator-Spuren machen dann die Zahl-Felder
+  // größer, ohne dass etwas verloren geht — und wo die Höhe bindet, bleiben die
+  // Operator-Felder groß. Von der größten Rate abwärts suchen und nur bei einem
+  // ECHT größeren Zahl-Feld wechseln: so gewinnt immer die größte Operator-Spur,
+  // die das größtmögliche Zahl-Feld noch zulässt.
+  const fit = (ratio) => Math.floor(Math.min(
+    (availW - tw.empty * EMPTY_TRACK) / (tw.cells + tw.ops * ratio || 1),
+    (availH - th.empty * EMPTY_TRACK) / (th.cells + th.ops * ratio || 1),
+  ));
+  let bestCell = 0, bestRatio = OP_RATIO;
+  for (let r = OP_RATIO; r >= OP_RATIO_MIN - 1e-9; r -= 0.02) {
+    const cw = Math.min(cap, fit(r));
+    if (cw > bestCell) { bestCell = cw; bestRatio = r; }
+  }
+  // KEIN hoher Mindestwert: Beim Öffnen MUSS das ganze Brett passen — lieber
+  // kleine Zellen als eine abgeschnittene Zeile/Spalte.
+  const base = Math.max(10, bestCell);
   state.cellPx = Math.round(base * state.zoom);
+  state.opRatio = Math.round(bestRatio * 100) / 100;
 }
 // Beobachtet die tatsächliche Größe von .board-wrap und passt die Zellgröße neu
 // an, sobald sie sich ändert (Layout-Settle nach dem Öffnen, Adressleiste ein-/
@@ -2662,7 +2684,10 @@ const COOP_LIVE_ACTIVITY = new Set([Coop.MSG.MOVE, Coop.MSG.UNDO, Coop.MSG.CHECK
 // Minimale Struktur-Prüfung eines per INIT empfangenen Puzzles: alles, was das
 // Brett-Template/loadPuzzleIntoState zwingend braucht. Verhindert, dass ein
 // kaputtes INIT die App halb lädt (Spiel-Screen ohne Brett = Blackscreen).
-function validPuzzleShape(p) { return puzzleShapeOk(p); }
+// Ein über die RTDB gereistes Rätsel ist LÖCHRIG (keine null-Werte in der DB) —
+// erst dicht machen, dann prüfen, sonst verwirft der Coop-INIT-Guard jedes
+// gültige Rätsel und der Beitretende hängt ohne Brett fest.
+function validPuzzleShape(p) { return puzzleShapeOk(normalizePuzzle(p)); }
 // ── Resync-Watchdog (Gast-Selbstheilung) ──────────────────────────────────────
 // Hängt ein Beitretender verbunden im Raum, hat aber nach ein paar Sekunden kein
 // Brett (INIT verloren/verworfen/fehlgeschlagen), fordert er den Rundenstand
@@ -4440,7 +4465,24 @@ function rememberSave(snap, kind, id) {
   if (!snap || !key) return;
   state.saves = upsertSave({ ...snap, id: key, kind, ts: snap.ts || Date.now() });
 }
-function openSaves() { state.saves = loadSaves(); state.savesOpen = true; }
+function openSaves() {
+  state.saves = loadSaves();
+  state.savesOpen = true;
+  // Beim Öffnen frisch aus der Cloud ergänzen: die auf einem anderen Gerät
+  // begonnene Partie soll SOFORT in der Liste stehen, nicht erst nach einem
+  // Neustart (der volle Reconcile läuft nur beim App-Start).
+  pullCloudSaves();
+}
+// Bibliothek aus der Cloud ergänzen (ein kleiner Read, Union-Merge, kein Reload).
+// Fasst NUR die Bibliothek an — Aktivspiel-Slots und Einstellungen bleiben dem
+// Start-Reconcile bzw. der Cloud-Session vorbehalten.
+async function pullCloudSaves() {
+  if (state.account.status !== 'in' || !isOnline()) return;
+  try {
+    const merged = await Account.pullSaves();
+    if (merged) { state.saves = merged; refreshResume(); }
+  } catch (_) {}
+}
 function closeSaves() { state.savesOpen = false; }
 
 // Anzeige-Helfer fuer die Liste. Bewusst hier und nicht im Template, damit das
@@ -9927,7 +9969,7 @@ document.addEventListener('visibilitychange', () => {
     // Hintergrund, ohne diesen Push liefe das eigene lastActive kurz nach der
     // Rückkehr ab und Freunde sähen einen fälschlich-offline-Flacker.
     state.friends.now = Date.now();
-    if (state.account.status === 'in') { pushPresence(); reconcileSession().then(() => doSyncNow()); }
+    if (state.account.status === 'in') { pushPresence(); pullCloudSaves(); reconcileSession().then(() => doSyncNow()); }
   }
 });
 

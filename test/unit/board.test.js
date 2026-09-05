@@ -113,3 +113,40 @@ test('Trainingsschritt nutzt nur die einfachste Stufe', () => {
   assert.equal(st.key, 'training.step.direct');
   assert.ok(st.params.eq.includes('='));
 });
+
+// ── normalizePuzzle: RTDB frisst null-Werte ──────────────────────────────────
+// Ein Rätsel, das über die Cloud gereist ist (Bibliothek, Aktivspiel-Slot,
+// Cloud-Session, Coop-INIT), hat kein dichtes `slots`-Raster mehr: tote Zellen
+// (die Löcher des Kreuzworts) sind null und werden von der RTDB gar nicht erst
+// gespeichert — Zeilen kommen als Objekt zurück, komplett tote Zeilen fehlen.
+const DENSE = {
+  rows: 2, cols: 3,
+  slots: [[null, { v: 4, given: true }, null], [null, null, null]],
+  equations: [{ dir: 'h', r: 0, c: 0, n: 2, ops: ['+'] }],
+};
+
+test('normalizePuzzle macht ein löchriges RTDB-Raster wieder dicht', () => {
+  const holey = {
+    rows: 2, cols: 3,
+    slots: { 0: { 1: { v: 4, given: true } } },   // Zeile 1 fehlt komplett
+    equations: { 0: { dir: 'h', r: 0, c: 0, n: 2, ops: ['+'] } },
+  };
+  const p = B.normalizePuzzle(holey);
+  assert.equal(p.slots.length, 2);
+  assert.ok(p.slots.every((row) => Array.isArray(row) && row.length === 3));
+  assert.deepEqual(p.slots[0], [null, { v: 4, given: true }, null]);
+  assert.deepEqual(p.slots[1], [null, null, null]);
+  assert.ok(Array.isArray(p.equations));
+  assert.equal(p.equations[0].dir, 'h');
+});
+
+test('normalizePuzzle lässt ein dichtes Rätsel unverändert (idempotent)', () => {
+  assert.equal(B.normalizePuzzle(DENSE), DENSE);
+  assert.equal(B.normalizePuzzle(B.normalizePuzzle(DENSE)), DENSE);
+});
+
+test('geheiltes Rätsel ist wieder darstellbar (das war der Blackscreen)', () => {
+  const holey = { ...DENSE, slots: { 0: { 1: { v: 4, given: true } } } };
+  assert.throws(() => B.buildDisplay(holey));
+  assert.doesNotThrow(() => B.buildDisplay(B.normalizePuzzle(holey)));
+});

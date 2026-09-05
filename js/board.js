@@ -6,6 +6,39 @@ import { eqCells, eqIds, slotId, evalExpr, equationHolds, solutionValues, blankI
 export const OP_SYMBOL = { '+': '+', '-': '−', '*': '×', '/': '÷' };
 
 /**
+ * Ein Rätsel, das durch die Firebase-RTDB gereist ist, wieder DICHT machen.
+ *
+ * Die RTDB speichert KEINE null-Werte: `slots` ist ein 2D-Raster mit null für
+ * jede tote Zelle (die Löcher und Ausläufer des Kreuzworts) und kommt deshalb
+ * als Objekt mit numerischen Schlüsseln zurück — eine Zeile OHNE einzige Zelle
+ * fehlt sogar komplett. `buildDisplay` greift mit `puzzle.slots[r][c]` zu und
+ * warf dann einen TypeError; Vue bricht den Brett-Teilbaum ab (der bekannte
+ * Blackscreen). Betroffen ist alles, was ein Rätsel über die Cloud trägt: die
+ * Bibliothek gespeicherter Partien, die Aktivspiel-Slots, die Cloud-Session und
+ * das Coop-INIT.
+ *
+ * Rein und idempotent — ein lokal erzeugtes Rätsel geht unverändert durch.
+ */
+export function normalizePuzzle(p) {
+  if (!p || !p.rows || !p.cols) return p;
+  const src = p.slots;
+  if (!src) return p;
+  const dense = Array.isArray(src) && src.length === p.rows
+    && src.every((row) => Array.isArray(row) && row.length === p.cols);
+  const eqs = p.equations;
+  const eqDense = Array.isArray(eqs);
+  if (dense && eqDense) return p;
+  const slots = [];
+  for (let r = 0; r < p.rows; r++) {
+    const row = src[r] || {};
+    const out = new Array(p.cols).fill(null);
+    for (let c = 0; c < p.cols; c++) out[c] = row[c] != null ? row[c] : null;
+    slots.push(out);
+  }
+  return { ...p, slots, equations: eqDense ? eqs : Object.values(eqs || {}) };
+}
+
+/**
  * Baut das ANZEIGE-Raster: (2*rows-1) × (2*cols-1). Zahl-Felder sitzen auf
  * geraden Koordinaten, Operator-/Gleichheitszeichen dazwischen.
  * @returns {{rows, cols, cells}} cells[dr][dc] = null | {t:'num',r,c,given} | {t:'op',sym}
