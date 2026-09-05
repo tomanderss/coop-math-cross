@@ -123,6 +123,7 @@ const state = reactive({
   flash: {},                 // "r-c" -> true (rote Fehler-Animation)
   justResolved: {},          // "eq-3" -> true (Fertig-Puls einer gelösten Rechnung)
   cellPx: 48,
+  trayTile: 42,              // Steingroesse des Vorrats, s. fitTrayTile
   opRatio: 0.55,             // gemessene Breite der Operator-Spuren (s. computeCellSize)
   boardW: 0,                 // gemessene Breite der Spielfläche (Basis der Vorrats-Steingröße)
   zoom: 1,
@@ -1052,22 +1053,35 @@ const gridStyle = computed(() => {
 // halbe Display. Die Steine schrumpfen deshalb, bis alle in wenige Zeilen
 // passen (gemeldet: „die Zahlen unten deutlich kompakter").
 const TRAY_GAP = 3;
-// FESTE Steingroesse. Der Vorrat ist eine einzige, waagerecht scrollbare Reihe
-// (s. .tray in styles.css) — passen die Steine nicht nebeneinander, wird
-// geschoben, sie schrumpfen NICHT. Eine an die Anzahl gekoppelte Groesse liess
-// die Leiste beim Leerspielen immer weiter wachsen und das Brett springen
-// (gemeldet); ausserdem wandert ein Stein dann unter dem Finger seine Groesse.
-const TRAY_TILE = 42;
-const trayTilePx = computed(() => TRAY_TILE);
-// Passt die ganze Reihe ohne Scrollen? Dann wird sie zentriert, sonst beginnt
-// sie links (sonst liesse sich ihr Anfang nicht mehr erreichen).
-const trayFits = computed(() => {
-  const open = state.tray.reduce((n, t) => n + (t.used ? 0 : 1), 0);
-  const used = state.tray.length - open;
-  const avail = Math.max(160, (state.boardW || window.innerWidth) - 16) - 8;
-  const gaps = Math.max(0, state.tray.length - 1) * TRAY_GAP;
-  return open * TRAY_TILE + used * TRAY_GAP + gaps <= avail;
-});
+const TRAY_MIN_TILE = 24, TRAY_MAX_TILE = 42, TRAY_MAX_ROWS = 6;
+// Der Vorrat zeigt IMMER alle Steine auf einmal — kein Scrollen (das war
+// „clunky") und keine seitlich versteckten Zahlen. Dafür bricht er um, nimmt
+// aber so wenig Höhe wie möglich: für 1..TRAY_MAX_ROWS Reihen wird ausgerechnet,
+// wie groß die Steine höchstens sein dürfen, und die Aufteilung mit der
+// GERINGSTEN Gesamthöhe gewinnt.
+//
+// Die Größe hängt an der GESAMTZAHL der Steine des Rätsels, nicht an den noch
+// offenen: sie steht damit für die ganze Partie fest (ein mitten im Spiel
+// wachsender Stein wandert sonst unter dem Finger), während die Reihenzahl mit
+// jedem gelegten Stein sinkt — der Vorrat wird also nur kleiner, nie größer.
+function fitTrayTile(count, availWidth) {
+  const n = Math.max(1, count);
+  const avail = Math.max(120, availWidth - 8);          // 2*4px Innenabstand
+  let best = null;
+  for (let rows = 1; rows <= TRAY_MAX_ROWS; rows++) {
+    const perRow = Math.ceil(n / rows);
+    const size = Math.min(TRAY_MAX_TILE, Math.floor((avail - (perRow - 1) * TRAY_GAP) / perRow));
+    if (size < TRAY_MIN_TILE) continue;
+    const height = rows * size + (rows - 1) * TRAY_GAP;
+    if (!best || height < best.height) best = { size, height };
+  }
+  if (best) return best.size;
+  // Selbst in TRAY_MAX_ROWS Reihen zu eng: so klein wie nötig, aber alles bleibt
+  // sichtbar — lieber winzige Zahlen als versteckte.
+  const perRow = Math.ceil(n / TRAY_MAX_ROWS);
+  return Math.max(14, Math.floor((avail - (perRow - 1) * TRAY_GAP) / perRow));
+}
+const trayTilePx = computed(() => state.trayTile || TRAY_MAX_TILE);
 const trayStyle = computed(() => ({
   '--tile': trayTilePx.value + 'px',
   '--tgap': TRAY_GAP + 'px',
@@ -1991,6 +2005,10 @@ function computeCellSize() {
   const base = Math.max(10, bestCell);
   state.cellPx = Math.round(base * state.zoom);
   state.opRatio = Math.round(bestRatio * 100) / 100;
+  // Vorrats-Steingroesse an derselben Stelle mitfuehren (gleiche Ausloeser:
+  // Start, Rotation, Groessenaenderung). Zaehlt die GESAMTZAHL, damit sie
+  // waehrend der Partie konstant bleibt.
+  state.trayTile = fitTrayTile(state.tray.length, Math.max(200, (state.boardW || window.innerWidth) - 16));
 }
 // Beobachtet die tatsächliche Größe von .board-wrap und passt die Zellgröße neu
 // an, sobald sie sich ändert (Layout-Settle nach dem Öffnen, Adressleiste ein-/
@@ -7349,12 +7367,14 @@ const BoardGrid = {
 // LÜCKE (wie in der Vorlage) — der Sortier-Knopf räumt auf und sortiert.
 const TrayBar = {
   setup() {
-    return { state, onDragStart, onDragMove, onDragEnd, onDragCancel, pickTile, dropOnTray, trayStyle, trayFits };
+    return { state, onDragStart, onDragMove, onDragEnd, onDragCancel, pickTile, dropOnTray, trayStyle };
   },
   template: `
-          <div class="tray" :class="{ 'tray-fits': trayFits }" :style="trayStyle" @click.self="dropOnTray()">
-            <div v-for="tile in state.tray" :key="tile.id" class="tray-slot" :class="{ used: tile.used }">
-              <div v-if="!tile.used" class="tile"
+          <div class="tray" :style="trayStyle" @click.self="dropOnTray()">
+            <!-- v-if MUSS in ein template: auf demselben Element hat v-if in Vue 3
+                 Vorrang vor v-for, tile waere dort noch gar nicht definiert. -->
+            <template v-for="tile in state.tray" :key="tile.id"><div v-if="!tile.used" class="tray-slot">
+              <div class="tile"
                    :class="{ picked: state.pick && !state.pick.from && state.pick.tileId===tile.id, d3: String(tile.v).length===3, d4: String(tile.v).length>=4 }"
                    role="button" tabindex="0"
                    @keydown.enter.prevent="pickTile(tile.v, null, tile.id)"
@@ -7363,7 +7383,7 @@ const TrayBar = {
                    @pointerup="onDragEnd($event)"
                    @pointercancel="onDragCancel()"
                    @contextmenu.prevent>{{ tile.v }}</div>
-            </div>
+            </div></template>
           </div>
   `,
 };
