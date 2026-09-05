@@ -1044,34 +1044,49 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 /* Feld zentriert, wenn es passt – sonst voll scroll-/verschiebbar (margin:auto
    statt justify/align center, damit bei Überlauf der obere/linke Rand erreichbar
    bleibt). */
-.board-wrap { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; overflow: auto; padding: 6px; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; }
+.board-wrap { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; overflow: auto; padding: 3px; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; }
 .board { display: grid; gap: 0; background: var(--grid); border-radius: 12px; padding: 0; overflow: hidden; box-shadow: 0 6px 24px var(--shadow); margin: auto; flex-shrink: 0; transition: filter .3s, opacity .3s; }
 
 /* ─── RECHENKREUZ-BRETT ──────────────────────────────────────────────────────
    Das Anzeige-Raster wechselt Zahl- und Operator-Spuren ab (siehe board.js);
    leere Rasterplätze (.gapcell) bleiben unsichtbar und schrumpfen auf ein paar
    Pixel — daraus entstehen die typischen Löcher und Ausläufer des Kreuzworts.
+
+   Das Brett ist ein ECHTES, zusammenhängendes Raster (wie Sudoku / Coop Number
+   Sums), KEINE losen Kästchen: gap: 0, und jede belegte Zelle trägt ihre
+   1-px-Rasterlinie als AUSSEN liegenden box-shadow. Benachbarte Zellen legen
+   diese Linien exakt übereinander -> eine durchgehende, gleich dicke Linie
+   innen wie außen. box-shadow beeinflusst kein Layout, die Zellen stoßen also
+   wirklich aneinander. Die Zustands-Ringe (gelegt/fertig/aufgenommen) laufen
+   deshalb NICHT direkt über box-shadow, sondern über die Variable --ring, die
+   unten in die gemeinsame Deklaration eingesetzt wird — sonst würde jeder
+   Zustand die Rasterlinie überschreiben.
    Alles ist auf DICHTE getrimmt: die größten Bretter (9×7 = 17×13 Spuren) müssen
    auf ein Telefon passen, ohne dass Zahlen aus der Zelle laufen. */
-.board { background: transparent; box-shadow: none; overflow: visible; gap: var(--bgap, 2px); }
+.board { background: transparent; box-shadow: none; overflow: visible; gap: 0; }
 .gapcell { background: transparent; }
 
-/* Operator- und Gleichheitszeichen: KEINE eigene Kachel — nur das Zeichen.
-   Das spart die halbe Fläche und lässt die Zahlen deutlich hervortreten. */
+.cell, .opcell {
+  --ring: 0 0 0 0 transparent;
+  box-shadow: 0 0 0 1px var(--grid), var(--ring);
+}
+
+/* Operator- und Gleichheitszeichen sind vollwertige Rasterzellen mit eigenem
+   Grund — genau wie in der Vorlage, wo ×, + und = auf eigenen Kacheln sitzen. */
 .opcell {
   display: flex; align-items: center; justify-content: center;
-  background: transparent; color: var(--text2);
-  font-weight: 900; font-size: calc(var(--fs) * .95); line-height: 1;
-  user-select: none; transition: color .2s;
+  background: color-mix(in srgb, var(--ink) 15%, var(--cell-bg)); color: var(--text);
+  font-weight: 900; font-size: calc(var(--fs) * .9); line-height: 1;
+  user-select: none; transition: color .2s, background .12s;
 }
-.opcell.done { color: var(--good); }
+.opcell.done { color: var(--good); background: color-mix(in srgb, var(--good) 22%, var(--cell-bg)); }
 .opcell.pulse { animation: opPulse .8s ease-out; }
 @keyframes opPulse { 0%,100% { transform: scale(1); } 40% { transform: scale(1.35); color: var(--good); } }
 
 .cell {
   position: relative; display: flex; align-items: center; justify-content: center;
   background: var(--cell-bg); color: var(--ink); font-weight: 800; font-size: var(--fs);
-  border-radius: 5px; user-select: none; overflow: hidden;
+  user-select: none; overflow: hidden;
   transition: background .12s, box-shadow .12s;
   /* Layout-/Style-Containment: bei einem Zug patcht Vue alle Zellen; so muss der
      Browser Layout/Style nur pro Zelle isoliert neu rechnen. */
@@ -1083,42 +1098,47 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .cell.d3 .cnum { font-size: .78em; letter-spacing: -.03em; }
 .cell.d4 .cnum { font-size: .62em; letter-spacing: -.04em; }
 
-/* VORGABE: kräftig, satter Grund — die feste Größe des Rätsels. */
-.cell.given {
-  background: var(--hdr-bg); color: var(--text);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 22%, transparent);
-}
-/* LÜCKE: deutlich zurückgenommen und eingelassen — „hier fehlt etwas". */
-.cell.empty {
-  background: color-mix(in srgb, var(--cell-bg) 55%, transparent);
-  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--text3) 45%, transparent);
-}
+/* VORGABE: satte Kachel — die feste Größe des Rätsels. Bewusst deutlich vom
+   leeren Feld abgesetzt (aus der Textfarbe gemischt, damit der Abstand in JEDEM
+   der Themes gleich groß ist — ein fester Grauton würde in hellen Themes
+   verschwinden). */
+.cell.given { background: color-mix(in srgb, var(--ink) 15%, var(--cell-bg)); color: var(--text); }
+/* LÜCKE: der leere Ausschnitt im Kachelverbund — „hier fehlt etwas". */
+.cell.empty { background: var(--cell-bg); }
 .cell.empty .cnum { opacity: 0; }
 /* GELEGTER STEIN: in der Spielerfarbe (Solo: eigene Markierungsfarbe). */
 .cell.filled {
-  background: color-mix(in srgb, var(--markcol, var(--accent)) 18%, var(--cell-bg));
+  background: color-mix(in srgb, var(--markcol, var(--accent)) 20%, var(--cell-bg));
   color: var(--markcol, var(--accent));
-  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--markcol, var(--accent)) 65%, transparent);
 }
 .cell.filled .cnum { color: var(--markcol, var(--accent)); }
-/* Eine fertig gerechnete Gleichung bekommt einen grünen Rahmen — die FÜLLUNG
-   bleibt, wie sie ist: sie sagt, ob das Feld vorgegeben ist oder von wem der
-   Stein stammt (im Mehrspieler-Modus die Spielerfarbe). */
-.cell.done { box-shadow: inset 0 0 0 2px var(--good); }
-.cell.picked { box-shadow: inset 0 0 0 3px var(--accent); z-index: 3; }
-.cell.droppable.empty { box-shadow: inset 0 0 0 2px var(--accent); }
+/* Eine fertig gerechnete Gleichung tönt grün — die Schriftfarbe bleibt, wie sie
+   ist: sie sagt, ob das Feld vorgegeben ist oder von wem der Stein stammt (im
+   Mehrspieler-Modus die Spielerfarbe). */
+.cell.done { background: color-mix(in srgb, var(--good) 16%, var(--cell-bg)); --ring: inset 0 0 0 1px color-mix(in srgb, var(--good) 55%, transparent); }
+.cell.filled.done { background: color-mix(in srgb, var(--good) 14%, color-mix(in srgb, var(--markcol, var(--accent)) 18%, var(--cell-bg))); }
+.cell.picked { --ring: inset 0 0 0 3px var(--accent); z-index: 3; }
+.cell.droppable.empty { --ring: inset 0 0 0 2px var(--accent); }
 /* Feld unter dem gezogenen Stein: klar sichtbares Ziel, bevor man loslässt. */
-.cell.drop-hot { box-shadow: inset 0 0 0 3px var(--accent); z-index: 3; }
+.cell.drop-hot { --ring: inset 0 0 0 3px var(--accent); z-index: 3; }
 .cell.flash { background: var(--bad-soft) !important; animation: shake .3s; }
 @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
 .cell.hinted { background: var(--good-soft) !important; animation: hintGlow 1.2s ease; }
-@keyframes hintGlow { 0%,100% { box-shadow: inset 0 0 0 0 var(--good); } 50% { box-shadow: inset 0 0 0 3px var(--good); } }
-.cell.training-highlight { box-shadow: inset 0 0 0 3px var(--accent2); animation: trainingPulse 1.4s ease infinite; }
-@keyframes trainingPulse { 0%,100% { box-shadow: inset 0 0 0 3px var(--accent2); } 50% { box-shadow: inset 0 0 0 5px var(--accent2); } }
+/* Die Rasterlinie steckt in JEDEM Keyframe mit — eine box-shadow-Animation
+   ersetzt die komplette Deklaration und würde die Linie sonst wegblenden. */
+@keyframes hintGlow {
+  0%,100% { box-shadow: 0 0 0 1px var(--grid); }
+  50% { box-shadow: 0 0 0 1px var(--grid), inset 0 0 0 3px var(--good); }
+}
+.cell.training-highlight { animation: trainingPulse 1.4s ease infinite; z-index: 3; }
+@keyframes trainingPulse {
+  0%,100% { box-shadow: 0 0 0 1px var(--grid), inset 0 0 0 3px var(--accent2); }
+  50% { box-shadow: 0 0 0 1px var(--grid), inset 0 0 0 5px var(--accent2); }
+}
 @keyframes resolvePulse {
-  0% { box-shadow: inset 0 0 0 0 var(--good); }
-  30% { box-shadow: inset 0 0 0 3px var(--good); }
-  100% { box-shadow: inset 0 0 0 0 var(--good); }
+  0% { box-shadow: 0 0 0 1px var(--grid); }
+  30% { box-shadow: 0 0 0 1px var(--grid), inset 0 0 0 3px var(--good); }
+  100% { box-shadow: 0 0 0 1px var(--grid); }
 }
 
 /* ─── VORRAT ─────────────────────────────────────────────────────────────────
@@ -1128,16 +1148,16 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
    dürfen nicht das halbe Display belegen. */
 .tray {
   flex: 0 0 auto; display: flex; flex-wrap: wrap; justify-content: center; align-content: flex-start;
-  gap: var(--tgap, 5px); padding: 8px; margin: 2px 0 0;
-  background: var(--card); border-radius: 12px; box-shadow: 0 2px 10px var(--shadow);
-  max-height: 30vh; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
+  gap: var(--tgap, 3px); padding: 4px; margin: 2px 0 0;
+  background: var(--card); border-radius: 10px; box-shadow: 0 2px 10px var(--shadow);
+  max-height: 24vh; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
 }
 .tray-slot { width: var(--tile, 42px); height: var(--tile, 42px); flex: 0 0 auto; }
 .tile {
   width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
-  background: color-mix(in srgb, var(--good) 16%, var(--card));
-  color: var(--good); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--good) 70%, transparent);
-  border-radius: 7px; font-weight: 800; font-size: var(--tfs, 19px); line-height: 1;
+  background: color-mix(in srgb, var(--good) 18%, var(--card));
+  color: var(--good); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--good) 70%, transparent);
+  border-radius: 5px; font-weight: 800; font-size: var(--tfs, 19px); line-height: 1;
   cursor: grab; user-select: none; touch-action: none;
   transition: transform .12s, box-shadow .12s;
 }
@@ -1304,6 +1324,19 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
    auto-Margins zentrieren den Umschalter auch, wenn der Hinweis-Knopf fehlt
    (Race/Team blenden Spacer UND Hinweis gemeinsam aus). */
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 8px 0; margin-bottom: 26px; flex: 0 0 auto; }
+/* Im Spiel klebte unter der Werkzeugleiste ein toter Streifen von ~38 px
+   (26 px Abstand + der untere App-Innenabstand) — gemeldet als „verdammt fetter
+   Platz". Der Platz gehört dem Brett: Werkzeugleiste enger anlegen und den
+   unteren App-Rand auf das Nötige (Safe-Area + 4 px) kürzen. */
+.screen.game .toolbar { padding: 6px 4px 0; margin-bottom: 0; }
+/* Seitenrand im Spiel knapper: jeder Pixel Breite geht direkt in die Zellgröße,
+   weil breite Bretter IMMER an der Breite hängen (die Höhe hat meist Luft). */
+.app.app-game { padding-left: calc(env(safe-area-inset-left) + 8px); padding-right: calc(env(safe-area-inset-right) + 8px); }
+/* Auch die Knöpfe selbst: 60px sind im Menü richtig, im Spiel fressen sie eine
+   Brettzeile. 46px bleiben bequem treffbar und geben ~30px zurück. */
+.screen.game .toolbar .round-btn { width: 46px; height: 46px; }
+.screen.game .toolbar .round-btn svg { width: 21px; height: 21px; }
+.app.app-game { padding-bottom: calc(env(safe-area-inset-bottom) + 4px); }
 .toolbar-spacer { width: 60px; flex: 0 0 auto; }
 .toolbar .tool-toggle { margin-inline: auto; }
 .round-btn {
@@ -1563,8 +1596,11 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 /* Gruppen-Highlight: jede Zelle der betroffenen Zeile/Spalte/des Käfigs bekommt
    einen dezent pulsierenden Akzentring — sanfter als .training-highlight, da
    hier die GANZE Gruppe (viele Zellen) markiert wird und nicht die Lösung. */
-.cell.hint-group { box-shadow: inset 0 0 0 2px var(--accent); animation: hintGroupPulse 1.6s ease infinite; z-index: 1; }
-@keyframes hintGroupPulse { 0%,100% { box-shadow: inset 0 0 0 2px var(--accent); } 50% { box-shadow: inset 0 0 0 4px var(--accent); } }
+.cell.hint-group { --ring: inset 0 0 0 2px var(--accent); animation: hintGroupPulse 1.6s ease infinite; z-index: 1; }
+@keyframes hintGroupPulse {
+  0%,100% { box-shadow: 0 0 0 1px var(--grid), inset 0 0 0 2px var(--accent); }
+  50% { box-shadow: 0 0 0 1px var(--grid), inset 0 0 0 4px var(--accent); }
+}
 /* ── Tipp-Tutor: Fokus-Zellen leuchten (hint-group), der Rest dimmt ──
    Nur opacity (kein filter — iOS-Compositor-Regel); Schrittwechsel sind selten,
    der Übergang darf also sanft sein. */
@@ -2470,7 +2506,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 /* Editor-Vorschau + Feier-Modal-Vorschau: kleines Mini-Brett mit Demo-Zellen. */
 .skin-preview-wrap { display: flex; justify-content: center; padding: 6px 0; }
 .skin-preview { display: grid; grid-template-columns: repeat(2, 52px); gap: 12px; background: transparent; box-shadow: none; padding: 6px; }
-.skin-preview .cell, .skin-unlock-preview .cell { position: relative; width: 52px; height: 52px; border-radius: 10px; background: var(--bg3); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.3rem; }
+.skin-preview .cell, .skin-unlock-preview .cell { box-shadow: none; position: relative; width: 52px; height: 52px; border-radius: 10px; background: var(--bg3); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.3rem; }
 .skin-unlock-modal { text-align: center; }
 .skin-unlock-preview { display: inline-grid; grid-template-columns: 64px; background: transparent; box-shadow: none; padding: 4px; margin: 4px auto 8px; }
 .skin-unlock-preview .cell { width: 64px; height: 64px; }
@@ -2837,7 +2873,7 @@ select.admin-row-input { flex-basis: 56%; max-width: 230px; font-size: .82rem; }
 }
 .board.shop-demo:has(.coop-mark) { grid-template-columns: repeat(2, 52px); }
 .shop-demo .cell {
-  position: relative; width: 46px; height: 46px; border-radius: 10px; background: var(--bg3);
+  box-shadow: none; position: relative; width: 46px; height: 46px; border-radius: 10px; background: var(--bg3);
   display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.2rem;
 }
 .shop-demo .cell.filled, .shop-demo .cell.given { width: 52px; height: 52px; }

@@ -23,7 +23,7 @@ import {
   dataRev, setDataRev, syncedRev, setSyncedRev, hasLocalData, loadLastSync, saveLastSync,
   deviceId, saveConflictBackup, pickActiveGame, pickEndlessSlot, mergeSaves, HISTORY_MAX,
   loadWalletLog, mergeWalletLogs, unexplainedWalletDelta,
-  mergePlaySamples,
+  mergePlaySamples, loadSaves, saveSaves,
 } from './storage.js';
 
 // ─── Reine Validierung (unit-testbar, ohne Firebase) ──────────────────────────
@@ -1033,6 +1033,31 @@ async function sessionCtx() {
   if (!u || u.isAnonymous) return null;
   return { fb, uid: u.uid };
 }
+// ── Bibliothek gespeicherter Partien: Abgleich WÄHREND der Sitzung ───────────
+// Der volle Reconcile (Merge + safeReload) läuft nur beim App-Start. Ein Gerät,
+// das offen liegen bleibt, sah die auf dem Handy begonnene Partie deshalb erst
+// nach einem Neustart (gemeldet: „PC zeigt nicht meinen Handy-Stand"). Das hier
+// ist der kleine Gegenpart: EIN Read auf data/saves, Union-Merge in die lokale
+// Bibliothek (mergeSaves — jüngerer Stand je gameId gewinnt), kein Reload, kein
+// Upload. Gibt die neue Liste zurück bzw. null, wenn nichts zu tun war.
+export async function pullSaves() {
+  if (!isSignedIn()) return null;
+  try {
+    const fb = await ensureFirebase();
+    const u = currentUser(fb);
+    if (!u || u.isAnonymous) return null;
+    const cloud = (await fb.get(userRef(fb, u.uid, 'data/saves'))).val();
+    const list = Array.isArray(cloud) ? cloud : (cloud ? Object.values(cloud) : []);
+    if (!list.length) return null;
+    const before = loadSaves();
+    const merged = mergeSaves(before, list);
+    if (merged.length === before.length && merged.every((g, i) => before[i] && before[i].id === g.id && before[i].ts === g.ts)) return null;
+    saveSaves(merged);
+    log('account', 'Bibliothek aus der Cloud ergänzt', { vorher: before.length, nachher: merged.length });
+    return merged;
+  } catch (e) { log('account', 'pullSaves fehlgeschlagen', e); return null; }
+}
+
 // Cloud-Session lesen (roh). null wenn nicht angemeldet/keine.
 export async function readSession() {
   try {

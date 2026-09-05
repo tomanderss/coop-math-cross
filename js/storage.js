@@ -4,6 +4,7 @@
 import { DEFAULT_SETTINGS } from './config.js';
 import { log, clearLog } from './debuglog.js';
 import { todayDateStr, sanitizeLastCompleted } from './streak.js';
+import { normalizePuzzle } from './board.js';
 
 const KEYS = {
   SETTINGS: 'cmc_settings',
@@ -119,7 +120,19 @@ export function saveSettings(s) { save(KEYS.SETTINGS, { ...s, updatedAt: Date.no
 // Solo und Coop liegen in getrennten Slots, damit ein laufendes Coop-Spiel nie
 // den Solo-Spielstand überschreibt (und umgekehrt) -- siehe persistGame() in
 // app.js, das je nach state.coop.active in den passenden Slot schreibt.
-export function loadActiveGame() { return load(KEYS.ACTIVE_GAME, null); }
+
+// Ein aus der CLOUD stammender Spielstand hat ein löchriges Rätsel-Raster: die
+// RTDB speichert keine null-Werte, `puzzle.slots` kommt also als Objekt mit
+// numerischen Schlüsseln zurück und eine komplett tote Zeile fehlt ganz. Jeder
+// Lesepfad heilt den Stand deshalb hier (rein, idempotent) — sonst warf schon
+// buildDisplay() beim Fortsetzen eines auf einem anderen Gerät begonnenen
+// Spiels (gemeldet: „PC zeigt nicht meinen Handy-Stand").
+function healSnapshot(g) {
+  if (!g || !g.puzzle) return g;
+  const p = normalizePuzzle(g.puzzle);
+  return p === g.puzzle ? g : { ...g, puzzle: p };
+}
+export function loadActiveGame() { return healSnapshot(load(KEYS.ACTIVE_GAME, null)); }
 export function saveActiveGame(g) { if (g) save(KEYS.ACTIVE_GAME, g); else remove(KEYS.ACTIVE_GAME); }
 // Backup des durch echte Cross-Device-Divergenz verdrängten Solo-Stands. Rein
 // lokal, NICHT synct (kein Nutzdaten-Key) — dient nur dem „nie still gelöscht"-Prinzip.
@@ -167,11 +180,11 @@ export function mergeCompletedGames(cloudList) {
   save(KEYS.COMPLETED_GAMES, a);
   return a;
 }
-export function loadActiveGameCoop() { return load(KEYS.ACTIVE_GAME_COOP, null); }
+export function loadActiveGameCoop() { return healSnapshot(load(KEYS.ACTIVE_GAME_COOP, null)); }
 export function saveActiveGameCoop(g) { if (g) save(KEYS.ACTIVE_GAME_COOP, g); else remove(KEYS.ACTIVE_GAME_COOP); }
 // Fortsetzbarer Solo-Endlos-Lauf (eigener Slot, damit ein Endlos-Lauf und ein
 // klassisches Solo-Spiel parallel fortsetzbar bleiben). Gerätelokal, nie synct.
-export function loadActiveGameEndless() { return load(KEYS.ACTIVE_GAME_ENDLESS, null); }
+export function loadActiveGameEndless() { return healSnapshot(load(KEYS.ACTIVE_GAME_ENDLESS, null)); }
 export function saveActiveGameEndless(g) { if (g) save(KEYS.ACTIVE_GAME_ENDLESS, g); else remove(KEYS.ACTIVE_GAME_ENDLESS); }
 
 // ─── Kurzlebige Coop-Sitzungsdaten (Auto-Reconnect nach Hintergrund) ─────────
@@ -734,7 +747,7 @@ export async function exportToFile(type = 'manual') {
 // scheiterte (z.B. der frühere Infinity-Bug) und ein alter „playing"-Cloud-Stand
 // mit gelöstem Brett wieder übernommen wird. Rein, unit-getestet.
 export function snapshotSolved(g) {
-  const p = g && g.puzzle;
+  const p = g && g.puzzle && normalizePuzzle(g.puzzle);
   if (!p || !Array.isArray(p.slots) || !Array.isArray(g.placed)) return false;
   let blanks = 0;
   for (let r = 0; r < (p.rows || 0); r++) {
@@ -763,7 +776,7 @@ export const SAVES_MAX = 12;
 
 export function loadSaves() {
   const a = load(KEYS.SAVES, []);
-  return Array.isArray(a) ? a.filter((g) => g && g.id) : [];
+  return Array.isArray(a) ? a.filter((g) => g && g.id).map(healSnapshot) : [];
 }
 export function saveSaves(list) { save(KEYS.SAVES, pruneSaves(list)); }
 
@@ -803,7 +816,7 @@ export function removeSave(id) {
 // Dieselbe Formel wie progressPct() im Spiel, damit die Anzeige in der Liste und
 // im laufenden Spiel dieselbe Zahl zeigt. Rein, damit sie testbar bleibt.
 export function snapshotProgress(g) {
-  const p = g && g.puzzle;
+  const p = g && g.puzzle && normalizePuzzle(g.puzzle);
   if (!p || !Array.isArray(p.slots) || !Array.isArray(g.placed)) return 0;
   let total = 0, filled = 0;
   for (let r = 0; r < (p.rows || 0); r++) {
