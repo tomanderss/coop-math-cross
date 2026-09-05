@@ -20,6 +20,9 @@
 import { eqIds, evalExpr, countMap, blankIds, givenValues, equationHolds } from './model.js';
 
 export const TIER = { DIRECT: 1, COMBO: 2, CROSS: 2.5, POOL: 3 };
+// Firebase-sichere Schlüssel für die Tier-Statistik (s. tierCounts unten): die
+// RTDB verbietet '.' in Schlüsseln, '2.5' wäre also ein harter Schreibfehler.
+export const TIER_KEY = { 1: 't1', 2: 't2', 2.5: 't25', 3: 't3' };
 
 // Sicherheitsnetz: Wird eine Gleichung mit sehr vielen möglichen Belegungen
 // aufgezählt, brechen wir ab und LEITEN DARAUS NICHTS AB (eine abgeschnittene
@@ -120,11 +123,18 @@ export function logicalSolve(puzzle, opts = {}) {
   const maxTier = opts.maxTier ?? 3;
   const st = createSolveState(puzzle, opts.from || null);
   const steps = [];
-  const tierCounts = { 1: 0, 2: 0, 2.5: 0, 3: 0 };
+  // Schlüssel BEWUSST ohne Punkt ('t25' statt '2.5'): tierCounts hängt am Rätsel,
+  // das Rätsel reist über die Firebase-RTDB (Cloud-Snapshot, Cloud-Session,
+  // Coop-INIT) — und die RTDB verbietet '.' in Schlüsseln und weist den GESAMTEN
+  // Schreibvorgang zurück. Genau daran scheiterte jeder Upload, sobald ein
+  // Rätsel im Snapshot lag: syncedRev blieb null, jeder Start galt als
+  // Erstkontakt (Spielstand-Dialog in Endlosschleife), und das Coop-INIT wurde
+  // nie geschrieben (der Beitretende sah die Bereit-Lobby nie).
+  const tierCounts = { t1: 0, t2: 0, t25: 0, t3: 0 };
   let maxUsed = 0;
 
   const record = (tier, cells, values, eq) => {
-    tierCounts[tier]++;
+    tierCounts[TIER_KEY[tier]]++;
     if (tier > maxUsed) maxUsed = tier;
     steps.push({ tier, cells, values, eq: eq ? { dir: eq.dir, r: eq.r, c: eq.c, n: eq.n, ops: eq.ops.slice() } : null });
   };

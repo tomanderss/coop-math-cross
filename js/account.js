@@ -283,20 +283,73 @@ function sanitizeForFirebase(v) {
   if (Array.isArray(v)) return v.map(sanitizeForFirebase);
   if (v && typeof v === 'object') {
     const out = {};
-    for (const k in v) out[k] = sanitizeForFirebase(v[k]);
+    for (const k in v) {
+      const val = v[k];
+      // undefined ist fuer die RTDB ein harter Fehler (nicht etwa "weglassen") —
+      // genau wie ein nicht-endlicher Zahlenwert. Beides wird hier entschaerft.
+      if (val === undefined) continue;
+      out[safeKey(k)] = sanitizeForFirebase(val);
+    }
     return out;
   }
   return v;
 }
+// Die RTDB verbietet in Schluesseln: . # $ / [ ] und Steuerzeichen — ein
+// einziger solcher Schluessel laesst den GESAMTEN Schreibvorgang scheitern
+// (kein Teil-Write). Gestolpert ist die App ueber puzzle.tierCounts mit dem
+// Schluessel "2.5": jeder Upload mit einem Raetsel im Snapshot warf, syncedRev
+// blieb null (Spielstand-Dialog in Endlosschleife) und das Coop-INIT wurde nie
+// geschrieben (der Beitretende sah die Bereit-Lobby nie). Die Quelle ist
+// repariert (solver.js TIER_KEY); das hier ist das Netz fuer alles Kuenftige.
+function safeKey(k) {
+  const s = String(k);
+  // eslint-disable-next-line no-control-regex
+  return /[.#$/[\]\u0000-\u001f\u007f]/.test(s) ? s.replace(/[.#$/[\]\u0000-\u001f\u007f]/g, '_') : s;
+}
 function usernameIndexRef(fb, name) { return fb.ref(fb.db, `usernames/${usernameKey(name)}`); }
 
 // Aktueller Auth-Status für die UI (ohne Firebase zu laden, wenn nie verbunden).
+// ── Profil-/Namens-Nachtrag fuer mitgebrachte Konten ─────────────────────────
+// Rechenkreuz und Number Sums teilen sich BEWUSST ein Firebase-Projekt und damit
+// die Anmeldung (dieselbe E-Mail, dasselbe Passwort, dieselbe uid) — die Daten
+// liegen nur in getrennten Teilbaeumen (DB_ROOT 'mc'). Wer sich in der einen App
+// registriert hat und sich in der anderen anmeldet, kommt also ohne Profil an:
+// signUp() lief nur EINMAL, im anderen Teilbaum. Folge: unter mc/usernames steht
+// nichts, und genau darueber sucht sendFriendRequest — der Nutzer war fuer
+// Freunde schlicht unauffindbar, obwohl die Konto-Karte (dank u.displayName)
+// einen Namen anzeigte.
+//
+// Deshalb hier der Nachtrag: fehlt das Profil bzw. der Name, wird der Name aus
+// der geteilten Anmeldung (displayName) uebernommen und der Index belegt —
+// aber nur, wenn er in DIESEM Teilbaum noch frei ist (sonst gehoert er jemand
+// anderem und der Nutzer waehlt selbst einen ueber „Benutzername aendern").
+async function ensureAccountProfile(fb, u, prof) {
+  const name = normalizeUsername(prof.username || u.displayName || '');
+  if (prof.username || !isValidUsername(name)) return prof;
+  try {
+    const owner = (await fb.get(usernameIndexRef(fb, name))).val();
+    if (owner && owner !== u.uid) {
+      log('account', 'Name aus der geteilten Anmeldung ist hier vergeben', { name });
+      return prof;
+    }
+    await fb.set(usernameIndexRef(fb, name), u.uid);
+    const add = { username: name, usernameKey: usernameKey(name), role: prof.role || 'user' };
+    if (!prof.createdAt) add.createdAt = fb.serverTimestamp();
+    await fb.update(userRef(fb, u.uid, 'profile'), add);
+    log('account', 'Profil aus der geteilten Anmeldung nachgetragen', { uid: u.uid, name });
+    return { ...prof, ...add };
+  } catch (e) { log('account', 'Profil-Nachtrag fehlgeschlagen', e); return prof; }
+}
+
 export async function authState() {
   try {
     const fb = await ensureFirebase();
     const u = currentUser(fb);
     if (u && !u.isAnonymous) {
-      const prof = (await fb.get(userRef(fb, u.uid, 'profile'))).val() || {};
+      let prof = (await fb.get(userRef(fb, u.uid, 'profile'))).val() || {};
+      // Konto aus der Schwester-App: Profil/Namensindex hier nachtragen, sonst
+      // ist der Nutzer fuer Freundschaftsanfragen nicht auffindbar.
+      prof = await ensureAccountProfile(fb, u, prof);
       // E-Mail-Backfill: profile.email fehlt bei Alt-Accounts (aus der Zeit vor dem
       // Email-Feld) oder per Console angelegten Nutzern. Beim Start nachtragen bzw.
       // aktualisieren, damit der Admin die E-Mail IMMER sieht. Nur der Owner darf

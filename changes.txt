@@ -1,0 +1,4 @@
+Cloud-Sicherung repariert: Spielstände, Einstellungen und Fortschritt kommen wieder in der Cloud an
+Endlosschleife beim Start („Spielstand-Differenz") behoben
+Mehrspieler: Beitretende bekommen das Brett wieder — die Bereit-Lobby hängt nicht mehr
+Wer sein Konto in der Schwester-App angelegt hat, ist jetzt auch hier per Benutzername auffindbar
