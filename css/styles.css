@@ -1171,7 +1171,12 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   background: color-mix(in srgb, var(--good) 18%, var(--card));
   color: var(--good); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--good) 70%, transparent);
   border-radius: 5px; font-weight: 800; font-size: var(--tfs, 19px); line-height: 1;
-  cursor: grab; user-select: none; touch-action: none;
+  cursor: grab; user-select: none;
+  /* pan-x, NICHT none: ein waagerechter Wisch gehoert dem Browser und scrollt die
+     einzeilige Vorrats-Leiste; eine senkrechte Bewegung startet den Zug (die
+     Schwelle dafuer steckt in onDragMove). Mit touch-action: none liess sich die
+     Leiste gar nicht scrollen — jede Beruehrung nahm sofort den Stein auf. */
+  touch-action: pan-x;
   transition: transform .12s, box-shadow .12s;
 }
 .tile.d3 { font-size: calc(var(--tfs, 19px) * .8); letter-spacing: -.03em; }

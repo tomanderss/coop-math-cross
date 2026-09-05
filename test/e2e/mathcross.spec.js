@@ -177,3 +177,35 @@ test.describe('Reichweite beim Ziehen', () => {
     expect(await page.evaluate(() => window.__cns.state.settings.dragScale)).toBe(1);
   });
 });
+
+// Der Vorrat ist eine einzige, waagerecht scrollbare Reihe. Ein Zug beginnt
+// deshalb erst nach einer echten Bewegung (DRAG_SLOP) — sonst nahm jede
+// Beruehrung sofort den Stein auf und die Leiste liess sich nie scrollen.
+test.describe('Vorrat scrollen statt ziehen', () => {
+  test('eine winzige Bewegung nimmt den Stein nur auf, sie zieht ihn nicht', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page, 'mittel');
+    const tile = page.locator('.tray .tile').first();
+    const v = await page.evaluate(() => window.__cns.state.tray.find((t) => !t.used).v);
+    const a = await tile.boundingBox();
+    await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(a.x + a.width / 2 + 3, a.y + a.height / 2, { steps: 2 });  // unter der Schwelle
+    await page.mouse.up();
+    // Unter der Schwelle = Tipp: der Stein ist AUSGEWAEHLT, nicht gezogen.
+    expect(await page.evaluate(() => window.__cns.state.pick && window.__cns.state.pick.v)).toBe(v);
+    expect(await page.evaluate(() => document.querySelectorAll('.drag-ghost[style*="display: block"]').length)).toBe(0);
+  });
+
+  test('die Steine geben waagerechte Wische an den Browser ab (touch-action)', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page, 'rip');   // viele Steine -> die Reihe laeuft ueber
+    const ta = await page.evaluate(() => getComputedStyle(document.querySelector('.tray .tile')).touchAction);
+    expect(ta).toBe('pan-x');
+    const scrollable = await page.evaluate(() => {
+      const t = document.querySelector('.tray');
+      return t.scrollWidth > t.clientWidth && getComputedStyle(t).overflowX === 'auto';
+    });
+    expect(scrollable).toBe(true);
+  });
+});

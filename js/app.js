@@ -1052,25 +1052,22 @@ const gridStyle = computed(() => {
 // halbe Display. Die Steine schrumpfen deshalb, bis alle in wenige Zeilen
 // passen (gemeldet: „die Zahlen unten deutlich kompakter").
 const TRAY_GAP = 3;
-const TRAY_MIN_TILE = 30, TRAY_MAX_TILE = 42;
-// Der Vorrat ist IMMER genau eine Reihe hoch (s. .tray in styles.css): jede
-// weitere Reihe naehme dem Brett eine Zellhoehe weg. Passen nicht alle Steine
-// nebeneinander, wird waagerecht gescrollt. Die Steingroesse schrumpft vorher
-// bis TRAY_MIN_TILE, damit moeglichst viel ohne Scrollen sichtbar bleibt.
-// Ein bereits gelegter Stein belegt nur noch die Fugenbreite (.tray-slot.used).
-function trayWidths() {
+// FESTE Steingroesse. Der Vorrat ist eine einzige, waagerecht scrollbare Reihe
+// (s. .tray in styles.css) — passen die Steine nicht nebeneinander, wird
+// geschoben, sie schrumpfen NICHT. Eine an die Anzahl gekoppelte Groesse liess
+// die Leiste beim Leerspielen immer weiter wachsen und das Brett springen
+// (gemeldet); ausserdem wandert ein Stein dann unter dem Finger seine Groesse.
+const TRAY_TILE = 42;
+const trayTilePx = computed(() => TRAY_TILE);
+// Passt die ganze Reihe ohne Scrollen? Dann wird sie zentriert, sonst beginnt
+// sie links (sonst liesse sich ihr Anfang nicht mehr erreichen).
+const trayFits = computed(() => {
   const open = state.tray.reduce((n, t) => n + (t.used ? 0 : 1), 0);
   const used = state.tray.length - open;
-  const avail = Math.max(160, (state.boardW || window.innerWidth) - 16);
-  const slots = Math.max(1, state.tray.length);
-  const gaps = (slots - 1) * TRAY_GAP;
-  const usedW = used * TRAY_GAP;
-  const room = avail - 8 - gaps - usedW;      // 8 = 2*4px Innenabstand
-  const px = Math.max(TRAY_MIN_TILE, Math.min(TRAY_MAX_TILE, Math.floor(room / Math.max(1, open))));
-  return { px, fits: open * px <= room };
-}
-const trayTilePx = computed(() => trayWidths().px);
-const trayFits = computed(() => trayWidths().fits);
+  const avail = Math.max(160, (state.boardW || window.innerWidth) - 16) - 8;
+  const gaps = Math.max(0, state.tray.length - 1) * TRAY_GAP;
+  return open * TRAY_TILE + used * TRAY_GAP + gaps <= avail;
+});
 const trayStyle = computed(() => ({
   '--tile': trayTilePx.value + 'px',
   '--tgap': TRAY_GAP + 'px',
@@ -2270,19 +2267,37 @@ function clearHighlight() {
 }
 function hideGhost() { if (dragGhost) dragGhost.style.display = 'none'; }
 
+// Der Zug beginnt ERST bei echter Bewegung (DRAG_SLOP), nicht schon beim
+// Aufsetzen des Fingers. Zwei Gruende:
+//  • Der Vorrat ist eine einzige, waagerecht scrollbare Reihe. Die Steine tragen
+//    deshalb touch-action: pan-x — ein waagerechter Wisch gehoert dem BROWSER
+//    (Scrollen), erst eine senkrechte Bewegung ist ein Zug. Vorher lag
+//    touch-action: none auf den Steinen: jeder Wisch nahm sofort den Stein auf,
+//    die Leiste liess sich gar nicht scrollen (gemeldet).
+//  • Ohne Schwelle blitzte der Ziehschatten bei jedem Scroll-Wisch kurz auf,
+//    bis der Browser die Geste uebernimmt und pointercancel schickt.
+const DRAG_SLOP = 5;   // px, bevor aus dem Tippen ein Ziehen wird
+let dragArmed = false; // Finger liegt auf einem Stein, Zug aber noch nicht gestartet
 function onDragStart(e, v, from, tileId) {
   if (boardLocked()) return;
   dragSrc = { v, from: from || null, tileId: tileId ?? null };
   dragOrigin = { x: e.clientX, y: e.clientY };
   dragMoved = false;
+  dragArmed = true;
   state.drag = { v, from: dragSrc.from };
-  ensureGhost(v);
-  moveGhost(e);
-  try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
 }
 function onDragMove(e) {
   if (!dragSrc) return;
-  dragMoved = true;
+  if (dragArmed) {
+    const dx = e.clientX - dragOrigin.x, dy = e.clientY - dragOrigin.y;
+    if (Math.abs(dx) < DRAG_SLOP && Math.abs(dy) < DRAG_SLOP) return;   // noch ein Tipp
+    dragArmed = false;
+    dragMoved = true;
+    ensureGhost(dragSrc.v);
+    // Ab hier gehoert der Zeiger uns — sonst verliert das Element die
+    // Bewegungen, sobald der Finger den Stein verlaesst.
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+  }
   moveGhost(e);
   highlightUnder(e);
   e.preventDefault();
@@ -2299,6 +2314,7 @@ function onDragEnd(e) {
   // wo er die ganze Zeit zu sehen war.
   const p = dragMoved ? dropPoint(e) : null;
   dragOrigin = null;
+  dragArmed = false;
   if (!dragMoved) { pickTile(src.v, src.from, src.tileId); return; }  // reiner Tipp = auswählen
   const el = document.elementFromPoint(p.x, p.y);
   const cell = el && el.closest && el.closest('.cell[data-r]');
@@ -2308,7 +2324,7 @@ function onDragEnd(e) {
 }
 function onDragCancel() {
   if (!dragSrc) return;
-  dragSrc = null; dragOrigin = null; state.drag = null; hideGhost(); clearHighlight(); state.pick = null;
+  dragSrc = null; dragOrigin = null; dragArmed = false; state.drag = null; hideGhost(); clearHighlight(); state.pick = null;
 }
 
 // Klick auf ein Feld: mit aufgenommenem Stein ablegen, sonst den dort liegenden aufnehmen.

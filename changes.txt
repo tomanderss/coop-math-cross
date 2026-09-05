@@ -1,0 +1,3 @@
+Vorrat lässt sich jetzt seitlich schieben — ein Zug beginnt erst bei echter Bewegung
+Steine im Vorrat behalten immer dieselbe Größe, die Leiste wächst nicht mehr beim Leerspielen
+Benutzername behält seine Groß- und Kleinschreibung
