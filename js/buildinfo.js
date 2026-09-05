@@ -1,8 +1,17 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.4';
-export const BUILD_HASH = 'e59d44b';
+export const BUILD      = '1.5';
+export const BUILD_HASH = 'e0fc039';
 
 export const CHANGELOG = [
+  {
+    "version": "1.5",
+    "date": "05.09.2026",
+    "changes": [
+      "Vorrat zeigt wieder alle Zahlen auf einen Blick — kein Scrollen mehr, dafür so wenig Höhe wie möglich",
+      "Eine gelegte Zahl hinterlässt keine Lücke mehr, der Vorrat rückt sofort auf und wird kleiner",
+      "Die Steingröße bleibt während der ganzen Partie gleich"
+    ]
+  },
   {
     "version": "1.4",
     "date": "05.09.2026",

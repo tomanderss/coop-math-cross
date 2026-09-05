@@ -1,3 +1,0 @@
-Vorrat zeigt wieder alle Zahlen auf einen Blick — kein Scrollen mehr, dafür so wenig Höhe wie möglich
-Eine gelegte Zahl hinterlässt keine Lücke mehr, der Vorrat rückt sofort auf und wird kleiner
-Die Steingröße bleibt während der ganzen Partie gleich
