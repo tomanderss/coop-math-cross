@@ -1,0 +1,675 @@
+import { test, expect } from '@playwright/test';
+import { gotoApp, startNewGame } from './helpers.js';
+
+// Coop.isAvailable() only checks for a fetch-capable browser, so the coop
+// button is never disabled in this suite. We deliberately do NOT attempt a
+// real two-client Firebase sync (that hits the live RTDB project) -- these
+// tests cover the UI/state machine up to the point a real round-trip would
+// be required (host waiting-for-guest spinner, guest connecting spinner).
+// The lone exception is the "unreachable code" test below, which does let a
+// real Firebase lookup resolve (fast: a single RTDB read for a code with no
+// active room).
+test.describe('coop', () => {
+  async function goToCoop(page) {
+    await gotoApp(page);
+    await page.locator('.btn-coop').click();
+    await page.waitForSelector('.screen.coop-screen');
+  }
+
+  test('identity gate requires a name before continuing', async ({ page }) => {
+    await goToCoop(page);
+    await expect(page.locator('.coop-body .btn-primary')).toBeDisabled();
+
+    await page.locator('.coop-body .text-input').fill('Tom');
+    await expect(page.locator('.coop-body .btn-primary')).toBeEnabled();
+
+    await page.locator('.coop-body .btn-primary').click();
+    await expect(page.locator('.coop-body .coop-tagline')).toBeVisible();
+  });
+
+  test('host flow: set a code, pick a difficulty, start hosting shows waiting state', async ({ page }) => {
+    await goToCoop(page);
+    await page.locator('.coop-body .text-input').fill('Tom');
+    await page.locator('.coop-body .btn-primary').click();
+
+    await page.locator('.coop-body .btn-primary').click(); // "Host" option
+    await expect(page.locator('.setup-codeinput')).toBeVisible();
+
+    await page.locator('.setup-codeinput').fill('123456');
+    await expect(page.locator('.diff-track')).toBeVisible(); // Slider-Auswahl (Default 'mittel')
+    await page.locator('.diff-start').click(); // "start hosting"
+
+    await expect(page.locator('.coop-code')).toHaveText('123456');
+    await expect(page.locator('.coop-waiting')).toBeVisible();
+  });
+
+  test('host flow: lobby roster gates the start button and starting navigates to the game', async ({ page }) => {
+    await goToCoop(page);
+    await page.locator('.coop-body .text-input').fill('Tom');
+    await page.locator('.coop-body .btn-primary').click();
+
+    await page.locator('.coop-body .btn-primary').click(); // "Host" option
+    await page.locator('.setup-codeinput').fill('123456');
+    await expect(page.locator('.diff-track')).toBeVisible(); // Slider-Auswahl (Default 'mittel')
+    await page.locator('.diff-start').click(); // "start hosting"
+
+    await expect(page.locator('.coop-body .btn-primary')).toBeDisabled();
+
+    // Simulate a second (and third) player joining the lobby without a real
+    // second Firebase client -- canStartCoopMatch() only cares about the
+    // roster length, so pushing directly into the reactive state is enough
+    // to exercise the start-button gating and the roster/count rendering.
+    await page.evaluate(() => {
+      window.__cns.state.coop.players.push(
+        { id: 'fake-guest-1', name: 'Mara', color: '#f00' },
+        { id: 'fake-guest-2', name: 'Alex', color: '#00f' },
+      );
+    });
+
+    expect(await page.locator('.coop-roster .player-chip').count()).toBeGreaterThanOrEqual(2);
+    await expect(page.locator('.coop-body .btn-primary')).toBeEnabled();
+
+    await page.locator('.coop-body .btn-primary').click(); // "start match"
+    await page.waitForSelector('.screen.game');
+    await expect(page.locator('.coop-lobby-overlay')).toBeVisible();
+  });
+
+  test('guest flow: shows roster and "waiting for host to start" once connected', async ({ page }) => {
+    await goToCoop(page);
+    await page.locator('.coop-body .text-input').fill('Tom');
+    await page.locator('.coop-body .btn-primary').click();
+    await page.locator('.coop-body .btn-ghost').click(); // "Join" option
+
+    // Simulate a successful join without a real Firebase round-trip: set the
+    // exact flags startJoining()'s onOpen would set, then assert the template
+    // renders the new "waiting for host" state + roster instead of the old
+    // connecting spinner / connect button.
+    await page.evaluate(() => {
+      const s = window.__cns.state.coop;
+      s.waitingForGuest = true;
+      s.myId = 'fake-me';
+      s.players.push(
+        { id: 'fake-me', name: 'Tom', color: '#000' },
+        { id: 'fake-host', name: 'Mara', color: '#f00' },
+      );
+    });
+
+    await expect(page.locator('.coop-roster .player-chip')).toHaveCount(2);
+    await expect(page.locator('.coop-body .btn-primary')).toHaveText('Warte auf Start durch Host…');
+  });
+
+  test('host flow: cancel returns to the host/join choice', async ({ page }) => {
+    await goToCoop(page);
+    await page.locator('.coop-body .text-input').fill('Tom');
+    await page.locator('.coop-body .btn-primary').click();
+    await page.locator('.coop-body .btn-primary').click(); // "Host" option
+
+    await page.locator('.screen.coop-screen .topbar .icon-btn').first().click(); // cancel via topbar back
+    await expect(page.locator('.coop-body .coop-tagline')).toBeVisible();
+    await expect(page.locator('.coop-body .btn-primary')).toBeVisible();
+    await expect(page.locator('.coop-body .btn-ghost')).toBeVisible();
+  });
+
+  test('guest flow: connect button stays disabled until a 6-digit code is entered', async ({ page }) => {
+    await goToCoop(page);
+    await page.locator('.coop-body .text-input').fill('Tom');
+    await page.locator('.coop-body .btn-primary').click();
+
+    await page.locator('.coop-body .btn-ghost').click(); // "Join" option
+    await expect(page.locator('.coop-code-label')).toBeVisible();
+    await expect(page.locator('.coop-body .btn-primary')).toBeDisabled();
+
+    await page.locator('.coop-input').fill('123');
+    await expect(page.locator('.coop-body .btn-primary')).toBeDisabled();
+
+    await page.locator('.coop-input').fill('123456');
+    await expect(page.locator('.coop-body .btn-primary')).toBeEnabled();
+  });
+
+  test('guest flow: connecting shows a connecting state and an eventual error for an unreachable code', async ({ page }) => {
+    await goToCoop(page);
+    await page.locator('.coop-body .text-input').fill('Tom');
+    await page.locator('.coop-body .btn-primary').click();
+    await page.locator('.coop-body .btn-ghost').click(); // "Join" option
+
+    await page.locator('.coop-input').fill('999999');
+    await page.locator('.coop-body .btn-primary').click();
+
+    await expect(page.locator('.coop-error')).toBeVisible({ timeout: 20000 });
+  });
+
+  // Beitritt in einen Raum mit LAUFENDER Runde: computeJoinAnchor (coop.js) lässt
+  // den Event-Listener exakt ab dem INIT der offenen Runde aufsetzen — der
+  // Beitretende empfängt also INIT + START (+ Züge) als Replay-Burst und muss
+  // DIREKT im laufenden Spiel landen und mitspielen können, ohne in einer
+  // Bereit-Lobby zu hängen ("der Host muss starten — der ist aber ingame").
+  // Simuliert ohne echtes Firebase über den window.__cns-Hook (gleiches Muster
+  // wie training.spec.js): genau die Nachrichtenfolge, die der Anker liefert.
+  test('joining a room with a running round (replayed INIT+START) lands directly in the game, playable', async ({ page }) => {
+    await gotoApp(page);
+    await page.evaluate(() => {
+      const puzzle = {
+        rows: 4, cols: 4,
+        rowTargets: [1, 1, 1, 1], colTargets: [1, 1, 1, 1],
+        values: Array.from({ length: 4 }, () => Array(4).fill(1)),
+        solution: Array.from({ length: 4 }, () => Array(4).fill(true)),
+        regions: [], difficulty: 'leicht',
+      };
+      // Replay-Burst wie beim Beitritt in eine offene Runde: INIT, dann START
+      // (Startzeit liegt in der Vergangenheit — die Runde läuft schon eine Weile).
+      window.__cns.handleCoopMsg({ type: 'init', puzzle, marks: null, markedBy: null, startTime: Date.now() - 5000 });
+      window.__cns.handleCoopMsg({ type: 'start', startTime: Date.now() - 5000 });
+    });
+    await page.waitForSelector('.screen.game');
+
+    // Kein Hängen in der Bereit-Lobby: Overlay weg, Runde läuft.
+    expect(await page.evaluate(() => window.__cns.state.coop.awaitingStart)).toBe(false);
+    await expect(page.locator('.coop-lobby-overlay')).toBeHidden();
+    expect(await page.evaluate(() => window.__cns.state.status)).toBe('playing');
+
+    // Ein Partner-Zug aus dem Replay kommt an …
+    await page.evaluate(() => { window.__cns.handleCoopMsg({ type: 'move', r: 0, c: 0, mark: 'keep', from: 'fake-partner' }); });
+    expect(await page.evaluate(() => window.__cns.state.marks[0][0])).toBe('keep');
+
+    // … und man kann sofort selbst mitspielen.
+    await page.evaluate(() => window.__cns.onCellTap(1, 1));
+    expect(await page.evaluate(() => window.__cns.state.marks[1][1])).not.toBe('none');
+  });
+
+  test('back navigation from the coop screen returns to home', async ({ page }) => {
+    await goToCoop(page);
+    await page.locator('.screen.coop-screen .topbar .icon-btn').first().click();
+    await expect(page.locator('.screen.home')).toBeVisible();
+  });
+
+  // ─── Solo → Coop Live-Umwandlung ────────────────────────────────────────────
+  // Der Host-Pfad (echter Firebase-Raum) wird hier bewusst nicht ausgelöst; die
+  // Tests decken die UI-Sichtbarkeit und die Gast-Seite (INIT mit Zwischenstand)
+  // ab — Letzteres ist exakt das, was ein Beitretender einer umgewandelten
+  // Solo-Partie empfängt.
+  test('the pause menu offers "invite a player" in a solo game, but not in training', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page);
+    await page.locator('.game-top .icon-btn').first().click(); // Pause
+    await expect(page.locator('.pause-overlay')).toBeVisible();
+    // Solo + spielend → Einladen-Knopf sichtbar (canInviteToSolo()).
+    await expect(page.locator('.pause-overlay .btn', { hasText: 'Mitspieler einladen' })).toBeVisible();
+    expect(await page.evaluate(() => window.__cns.state.soloInvite.status)).toBe('idle');
+  });
+
+  // Host-Seite der Umwandlung, OHNE echtes Firebase: onSoloInviteRoomOpen/
+  // onSoloInviteJoin sind über den localhost-Testhook erreichbar; Coop.send()
+  // ist ohne verbundenen Raum ein sicheres No-op. Geprüft wird der komplette
+  // lokale Zustandsumbau beim ersten Beitritt.
+  test('the first join converts the running solo game to coop (host side)', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page);
+    // Zwei eigene Züge, damit markedBy-Einträge zum Umschreiben existieren.
+    await page.evaluate(() => {
+      const { state, onCellTap } = window.__cns; const p = state.puzzle;
+      state.tool = p.solution[0][0] ? 'pen' : 'eraser'; onCellTap(0, 0);
+      state.tool = p.solution[0][1] ? 'pen' : 'eraser'; onCellTap(0, 1);
+    });
+    // Der Host lädt real aus dem PAUSENMENÜ ein — der Beitritt muss die Pause
+    // automatisch beenden (der Gast steigt in ein LAUFENDES Spiel ein, nicht
+    // in ein pausiertes Overlay).
+    await page.locator('.game-top .icon-btn').first().click();
+    await expect(page.locator('.pause-overlay')).toBeVisible();
+    await page.evaluate(() => {
+      window.__cns.state.settings.coopName = 'Tom';
+      window.__cns.onSoloInviteRoomOpen('fake-me', '123456');   // Raum steht
+      window.__cns.onSoloInviteJoin('fake-guest', { name: 'Mara', color: '#f00' }); // erster Beitritt
+    });
+    // Beitritt = „es geht los": Pause automatisch beendet.
+    await expect(page.locator('.pause-overlay')).toBeHidden();
+    expect(await page.evaluate(() => window.__cns.state.paused)).toBe(false);
+
+    const s = await page.evaluate(() => ({
+      status: window.__cns.state.soloInvite.status,
+      coopActive: window.__cns.state.coop.active,
+      role: window.__cns.state.coop.role,
+      myId: window.__cns.state.coop.myId,
+      saveSlot: window.__cns.state.saveSlot,
+      players: window.__cns.state.coop.players.map(p => p.name).sort(),
+      markedBy00: window.__cns.state.markedBy[0][0],
+      gameStatus: window.__cns.state.status,
+      soloSlot: JSON.parse(localStorage.getItem('cns_active_game') || 'null'),
+    }));
+    expect(s.status).toBe('converted');
+    expect(s.coopActive).toBe(true);
+    expect(s.role).toBe('host');
+    expect(s.saveSlot).toBe('coop');
+    expect(s.players).toEqual(['Mara', 'Tom']);
+    expect(s.markedBy00).toBe('fake-me');   // eigene Solo-Züge gehören jetzt der Coop-Identität
+    expect(s.gameStatus).toBe('playing');   // Spiel lief einfach weiter
+    expect(s.soloSlot).toBe(null);          // Solo-Slot geräumt (lebt im Coop-Slot weiter)
+  });
+
+  // Härtester Fall des Nutzer-Reports: der Gast bekommt NUR das INIT (START
+  // fehlt/verloren/aus welchem Grund auch immer). running:true im INIT muss
+  // die Runde trotzdem direkt starten — keine Bereit-Lobby, sofort spielbar.
+  test('an INIT with running:true starts the round immediately, even without a START event', async ({ page }) => {
+    await gotoApp(page);
+    await page.evaluate(() => {
+      const puzzle = {
+        rows: 4, cols: 4,
+        rowTargets: [1, 1, 1, 1], colTargets: [1, 1, 1, 1],
+        values: Array.from({ length: 4 }, () => Array(4).fill(1)),
+        solution: Array.from({ length: 4 }, () => Array(4).fill(true)),
+        regions: [], difficulty: 'leicht',
+      };
+      window.__cns.handleCoopMsg({ type: 'init', puzzle, marks: null, markedBy: null, startTime: Date.now() - 5000, running: true });
+      // KEIN START-Event — running:true muss allein reichen.
+    });
+    await page.waitForSelector('.screen.game');
+    expect(await page.evaluate(() => window.__cns.state.coop.awaitingStart)).toBe(false);
+    await expect(page.locator('.coop-lobby-overlay')).toBeHidden();
+    expect(await page.evaluate(() => window.__cns.state.status)).toBe('playing');
+    // Der Beitretende lädt im COOP-Kontext (Slot 'coop', nicht 'solo') — sonst
+    // überschriebe das Coop-Brett den Solo-Slot (Ordering-Fix: Coop-Flags VOR
+    // loadPuzzleIntoState).
+    expect(await page.evaluate(() => window.__cns.state.saveSlot)).toBe('coop');
+    expect(await page.evaluate(() => window.__cns.state.coop.active)).toBe(true);
+    // Ein nachzügelndes START ist ein No-op (kein Timer-Reset/Doppelstart).
+    await page.evaluate(() => window.__cns.handleCoopMsg({ type: 'start', startTime: Date.now() }));
+    // Sofort spielbar:
+    await page.evaluate(() => window.__cns.onCellTap(1, 1));
+    expect(await page.evaluate(() => window.__cns.state.marks[1][1])).not.toBe('none');
+  });
+
+  // BLACKSCREEN-REGRESSION (gemeldet, per Beitritts-Render-Protokoll belegt:
+  // cells 0 / w 0 / h 0 bei korrekt geladenem Spielstand): Firebase RTDB speichert
+  // keine null-Werte. Das markedBy-Raster einer LAUFENDEN Runde ist überwiegend
+  // null, kommt beim Beitretenden also löchrig an — leere Zeilen fehlen ganz und
+  // aus dem Array wird ein Objekt mit numerischen Schlüsseln. Ungeprüft gelesen
+  // warf markedBy[r][c] im Brett-Render einen TypeError, Vue brach den Teilbaum ab
+  // und das Brett fehlte KOMPLETT im DOM. Ein frisches Brett (gar keine
+  // Markierungen) war nie betroffen — deshalb traf es nur den Beitritt mitten ins
+  // Spiel (Solo→Coop-Umwandlung, Nachzügler, laufendes Coop-Endlos-Level).
+  test('joining a running round with an RTDB-sparse markedBy still renders the board', async ({ page }) => {
+    await gotoApp(page);
+    await page.evaluate(() => {
+      const puzzle = {
+        rows: 4, cols: 4,
+        rowTargets: [1, 1, 1, 1], colTargets: [1, 1, 1, 1],
+        values: Array.from({ length: 4 }, () => Array(4).fill(1)),
+        solution: Array.from({ length: 4 }, () => Array(4).fill(true)),
+        regions: [], difficulty: 'leicht',
+      };
+      const marks = Array.from({ length: 4 }, () => Array(4).fill('none'));
+      marks[1][2] = 'kept';
+      marks[3][0] = 'removed';
+      // GENAU die Form, die aus der RTDB zurückkommt: Objekt statt Array, und nur
+      // die beiden Zeilen, die überhaupt eine Markierung tragen.
+      const markedBy = { 1: { 2: 'partner-uid' }, 3: { 0: 'partner-uid' } };
+      window.__cns.handleCoopMsg({ type: 'init', puzzle, marks, markedBy, startTime: Date.now() - 5000, running: true });
+    });
+    await page.waitForSelector('.screen.game');
+    // Das Brett muss stehen — vorher war .board gar nicht erst im DOM.
+    await expect(page.locator('.board')).toBeVisible();
+    expect(await page.locator('.board .cell').count()).toBe(16);
+    const box = await page.locator('.board').boundingBox();
+    expect(box.width).toBeGreaterThan(0);
+    expect(box.height).toBeGreaterThan(0);
+    // Der Spielstand ist vollständig angekommen (dichtes Raster, Besitzer erhalten).
+    const s = await page.evaluate(() => ({
+      rows: window.__cns.state.markedBy.length,
+      cols: window.__cns.state.markedBy.map(r => r.length),
+      owner: window.__cns.state.markedBy[1][2],
+      empty: window.__cns.state.markedBy[0][0],
+      mark: window.__cns.state.marks[3][0],
+    }));
+    expect(s.rows).toBe(4);
+    expect(s.cols).toEqual([4, 4, 4, 4]);
+    expect(s.owner).toBe('partner-uid');
+    expect(s.empty).toBe(null);
+    expect(s.mark).toBe('removed');
+    // Und die Runde ist normal spielbar.
+    await page.evaluate(() => window.__cns.onCellTap(0, 0));
+    expect(await page.evaluate(() => window.__cns.state.marks[0][0])).not.toBe('none');
+  });
+
+  // Sicherheitsnetz: der Gast bekam ein INIT OHNE running (z.B. alte Host-Version
+  // oder verlorenes running/START) und steht in der Bereit-Lobby. Sobald der
+  // Partner eine echte Spielaktion (MOVE) macht, MUSS der Gast sofort einsteigen
+  // und den Zug anwenden — kein Lobby-Hänger.
+  test('a partner MOVE received while stuck in the ready-lobby auto-starts the round', async ({ page }) => {
+    await gotoApp(page);
+    await page.evaluate(() => {
+      const puzzle = {
+        rows: 4, cols: 4,
+        rowTargets: [1, 1, 1, 1], colTargets: [1, 1, 1, 1],
+        values: Array.from({ length: 4 }, () => Array(4).fill(1)),
+        solution: Array.from({ length: 4 }, () => Array(4).fill(true)),
+        regions: [], difficulty: 'leicht',
+      };
+      // INIT OHNE running → Gast bleibt (fälschlich) in awaitingStart.
+      window.__cns.handleCoopMsg({ type: 'init', puzzle, marks: null, markedBy: null, startTime: Date.now() - 3000 });
+    });
+    await page.waitForSelector('.screen.game');
+    expect(await page.evaluate(() => window.__cns.state.coop.awaitingStart)).toBe(true); // steckt in der Lobby
+    await expect(page.locator('.coop-lobby-overlay')).toBeVisible();
+
+    // Partner macht einen Zug → Gast steigt automatisch ein.
+    await page.evaluate(() => window.__cns.handleCoopMsg({ type: 'move', r: 0, c: 0, mark: 'keep', from: 'fake-partner' }));
+    expect(await page.evaluate(() => window.__cns.state.coop.awaitingStart)).toBe(false);
+    await expect(page.locator('.coop-lobby-overlay')).toBeHidden();
+    expect(await page.evaluate(() => window.__cns.state.status)).toBe('playing');
+    expect(await page.evaluate(() => window.__cns.state.marks[0][0])).toBe('keep'); // Zug angewandt
+  });
+
+  test('a converted solo game\'s INIT carries the mid-game state (lives/hints/mistakes) to the joiner', async ({ page }) => {
+    await gotoApp(page);
+    await page.evaluate(() => {
+      const puzzle = {
+        rows: 4, cols: 4,
+        rowTargets: [1, 1, 1, 1], colTargets: [1, 1, 1, 1],
+        values: Array.from({ length: 4 }, () => Array(4).fill(1)),
+        solution: Array.from({ length: 4 }, () => Array(4).fill(true)),
+        regions: [], difficulty: 'leicht',
+      };
+      // Exakt die Events, die completeSoloConversion() in den Raum legt: INIT
+      // mit Zwischenstand (halb gespielte Runde) + START mit vergangener Startzeit.
+      window.__cns.handleCoopMsg({
+        type: 'init', puzzle, marks: null, markedBy: null, startTime: Date.now() - 60000,
+        lives: 1, maxLives: 3, hintsLeft: 0, hintsUsed: 3, mistakes: 2,
+      });
+      window.__cns.handleCoopMsg({ type: 'start', startTime: Date.now() - 60000 });
+    });
+    await page.waitForSelector('.screen.game');
+
+    const s = await page.evaluate(() => ({
+      lives: window.__cns.state.lives, maxLives: window.__cns.state.maxLives,
+      hintsLeft: window.__cns.state.hintsLeft, hintsUsed: window.__cns.state.hintsUsed,
+      mistakes: window.__cns.state.mistakes, status: window.__cns.state.status,
+      awaitingStart: window.__cns.state.coop.awaitingStart,
+    }));
+    // hintsLeft aus dem INIT wird bewusst IGNORIERT: Hinweise sind in allen
+    // Modi unbegrenzt — auch ein übermittelter alter Rest-Pool (hier 0) wird
+    // beim Laden auf ∞ angehoben.
+    expect(s).toEqual({ lives: 1, maxLives: 3, hintsLeft: Infinity, hintsUsed: 3, mistakes: 2, status: 'playing', awaitingStart: false });
+    // Zeit läuft ab dem übermittelten Startzeitpunkt weiter (≈ 60s, nicht 0).
+    await page.waitForFunction(() => window.__cns.state.elapsed >= 59000);
+  });
+
+  // Robustheit: der Host holt Nachzügler mitten im Spiel aktiv ab, indem er den
+  // laufenden Rundenstand als INIT(gameId, running) ERNEUT schickt. Ein bereits
+  // aktiver Spieler, der exakt diese gameId spielt, muss dieses Wiederhol-INIT
+  // IGNORIEREN — sonst würde ihm mitten im Spiel das Brett zurückgesetzt.
+  test('a repeated INIT for the game I am already playing is ignored (no board reset)', async ({ page }) => {
+    await gotoApp(page);
+    await page.evaluate(() => {
+      const puzzle = {
+        rows: 4, cols: 4,
+        rowTargets: [1, 1, 1, 1], colTargets: [1, 1, 1, 1],
+        values: Array.from({ length: 4 }, () => Array(4).fill(true).map(() => 1)),
+        solution: Array.from({ length: 4 }, () => Array(4).fill(true)),
+        regions: [], difficulty: 'leicht',
+      };
+      window.__cns.handleCoopMsg({ type: 'init', gameId: 'game-XYZ', puzzle, marks: null, markedBy: null, startTime: Date.now() - 5000, running: true });
+    });
+    await page.waitForSelector('.screen.game');
+    // Einen eigenen Zug machen …
+    await page.evaluate(() => window.__cns.onCellTap(2, 2));
+    expect(await page.evaluate(() => window.__cns.state.marks[2][2])).not.toBe('none');
+    const gid = await page.evaluate(() => window.__cns.state.gameId);
+    expect(gid).toBe('game-XYZ');   // Host-gameId übernommen
+    // … dann kommt das Wiederhol-INIT (frische leere marks) für DIESELBE gameId:
+    await page.evaluate(() => {
+      const puzzle = {
+        rows: 4, cols: 4, rowTargets: [1, 1, 1, 1], colTargets: [1, 1, 1, 1],
+        values: Array.from({ length: 4 }, () => Array(4).fill(1)),
+        solution: Array.from({ length: 4 }, () => Array(4).fill(true)),
+        regions: [], difficulty: 'leicht',
+      };
+      window.__cns.handleCoopMsg({ type: 'init', gameId: 'game-XYZ', puzzle, marks: null, markedBy: null, startTime: Date.now(), running: true });
+    });
+    // Mein Zug ist NICHT verloren gegangen (Brett nicht neu geladen).
+    expect(await page.evaluate(() => window.__cns.state.marks[2][2])).not.toBe('none');
+  });
+
+  // Bildschirme verhalten sich wie ein Stack: Zurück führt Schritt für Schritt
+  // zur jeweils vorherigen Ansicht, nicht pauschal nach Home.
+  test('back from the host/join choice returns to the name gate, then home', async ({ page }) => {
+    await goToCoop(page);
+    await page.locator('.coop-body .text-input').fill('Tom');
+    await page.locator('.coop-body .btn-primary').click();
+    // Auf der Rollenwahl: Zurück öffnet wieder das Namens-Gate (vorheriger Schritt).
+    await page.locator('.screen.coop-screen .topbar .icon-btn').first().click();
+    await expect(page.locator('.coop-body .text-input')).toBeVisible();
+    // Noch einmal Zurück verlässt Coop ganz → Home.
+    await page.locator('.screen.coop-screen .topbar .icon-btn').first().click();
+    await expect(page.locator('.screen.home')).toBeVisible();
+  });
+
+  // Der gesamte Host-Pfad muss sich Schritt für Schritt zurück begehen lassen:
+  // Warten → Host-Einrichtung → Rollenwahl → Namens-Gate → Home.
+  test('back steps through the full host chain one screen at a time', async ({ page }) => {
+    await goToCoop(page);
+    await page.locator('.coop-body .text-input').fill('Tom');
+    await page.locator('.coop-body .btn-primary').click();
+    await page.locator('.coop-body .btn-primary').click(); // "Host"
+    await page.locator('.setup-codeinput').fill('123456');
+    await expect(page.locator('.diff-track')).toBeVisible(); // Slider-Auswahl (Default 'mittel')
+    await page.locator('.diff-start').click(); // "start hosting"
+    await expect(page.locator('.coop-waiting')).toBeVisible();
+
+    const back = () => page.locator('.screen.coop-screen .topbar .icon-btn').first().click();
+    // Warten → Host-Einrichtung (Code + Schwierigkeit, Verbindung abgebaut)
+    await back();
+    await expect(page.locator('.coop-waiting')).toBeHidden();
+    await expect(page.locator('.setup-codeinput')).toBeVisible();
+    // Host-Einrichtung → Rollenwahl
+    await back();
+    await expect(page.locator('.setup-codeinput')).toBeHidden();
+    await expect(page.locator('.coop-body .btn-primary')).toBeVisible();
+    // Rollenwahl → Namens-Gate
+    await back();
+    await expect(page.locator('.coop-body .text-input')).toBeVisible();
+    // Namens-Gate → Home
+    await back();
+    await expect(page.locator('.screen.home')).toBeVisible();
+  });
+
+  // Die Freunde-Einladen-Auswahl erscheint als Vollbild-Modal ÜBER dem Screen
+  // (scrollbare komplette Liste) — nicht mehr inline am Button (nur 1-2 Zeilen).
+  test('inviting friends opens a full-screen scrollable modal above the lobby', async ({ page }) => {
+    await goToCoop(page);
+    await page.locator('.coop-body .text-input').fill('Tom');
+    await page.locator('.coop-body .btn-primary').click();
+    await page.locator('.coop-body .btn-primary').click(); // "Host"
+    await page.locator('.setup-codeinput').fill('123456');
+    await page.locator('.diff-start').click();
+    await expect(page.locator('.coop-waiting')).toBeVisible();
+    // Eingeloggten Zustand + Freunde simulieren und die Auswahl öffnen.
+    await page.evaluate(() => {
+      const s = window.__cns.state;
+      s.account.status = 'in';
+      s.friends.list = Array.from({ length: 16 }, (_, i) => ({ uid: 'u' + i, username: 'Freund_' + i }));
+      s.coop.invitePickerOpen = true;
+    });
+    // Als eigenständiges Modal (modal-bg) mit vollständiger, scrollbarer Liste.
+    await expect(page.locator('.modal-bg .invite-modal')).toBeVisible();
+    expect(await page.locator('.invite-modal .invite-row').count()).toBe(16);
+    expect(await page.evaluate(() => {
+      const el = document.querySelector('.invite-list');
+      return !!el && el.scrollHeight > el.clientHeight; // Liste ist wirklich scrollbar
+    })).toBe(true);
+    // X im Kopf schließt das Modal wieder.
+    await page.locator('.invite-modal-head .icon-btn').click();
+    await expect(page.locator('.invite-modal')).toBeHidden();
+  });
+
+  // Der Beitritt zu einer LAUFENDEN, zu Coop umgewandelten Solo-Partie ist der
+  // Pfad, fuer den wiederholt ein schwarzer Bildschirm gemeldet wurde. Anders als
+  // eine frische Coop-Runde haengt hier auf einen Schlag der komplette bisherige
+  // Spielstand am Brett — Dutzende markierte Zellen in EINEM Frame. Der Test
+  // nagelt fest, dass dabei wirklich ein sichtbares Brett entsteht (Groesse > 0,
+  // alle Zellen da, keine Konsolenfehler) und dass die Skin-Rotation waehrend des
+  // Aufbaus angehalten ist.
+  test('Beitritt in eine laufende umgewandelte Solo-Partie rendert ein sichtbares Brett', async ({ page }) => {
+    const errors = [];
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+    page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+
+    await gotoApp(page);
+    await startNewGame(page);
+    // Ein paar Zuege setzen, damit der Stand wie bei einer laufenden Partie aussieht.
+    const host = await page.evaluate(() => {
+      const { state, onCellTap } = window.__cns;
+      state.tool = 'pen';
+      // NUR korrekte Zellen antippen. Vorher lief der Stift blind ueber die
+      // erste Reihe — jeder Fehlgriff kostet ein Leben, nach dreien ist die
+      // Partie verloren und weitere Taps sind wirkungslos. Bei einem Raetsel,
+      // dessen erste Reihe mit drei Loeschzellen beginnt, blieb der Stand damit
+      // OHNE eine einzige Markierung, und der Test scheiterte an seiner eigenen
+      // Vorbereitung statt an der Sache (in 8 Wiederholungen einmal reproduziert).
+      let n = 0;
+      outer: for (let r = 0; r < state.puzzle.rows; r++)
+        for (let c = 0; c < state.puzzle.cols; c++)
+          if (state.puzzle.solution[r][c]) { onCellTap(r, c); if (++n >= 6) break outer; }
+      return {
+        marked: n,
+        puzzle: JSON.parse(JSON.stringify(state.puzzle)),
+        marks: JSON.parse(JSON.stringify(state.marks)),
+        markedBy: JSON.parse(JSON.stringify(state.markedBy)),
+      };
+    });
+    expect(host.marked, 'die Testvorbereitung muss einen markierten Stand erzeugen').toBeGreaterThan(0);
+
+    // Beitretender: frischer Start, NICHT im Spiel.
+    await page.reload();
+    await page.waitForFunction(() => !!window.__cns);
+    await page.evaluate((h) => {
+      const s = window.__cns.state;
+      s.coop.active = true; s.coop.role = 'guest'; s.coop.myId = 'me';
+      s.coop.players = [{ id: 'host', name: 'H', color: '#e5679a' }, { id: 'me', name: 'Ich', color: '#67a3e5' }];
+      // hintsLeft fehlt BEWUSST: HINTS ist Infinity und wird vor dem Senden
+      // herausgefiltert, beim Empfaenger kommt der Key gar nicht an.
+      window.__cns.handleCoopMsg({
+        type: 'init', gameId: 'conv1', running: true,
+        puzzle: h.puzzle, marks: h.marks, markedBy: h.markedBy,
+        startTime: Date.now() - 5000, lives: 3, maxLives: 3, hintsUsed: 0, mistakes: 0,
+      });
+    }, host);
+
+    await page.waitForSelector('.screen.game');
+    // Waehrend des Aufbaus steht die Skin-Rotation still.
+    expect(await page.evaluate(() => window.__cns.state.joinFreeze)).toBe(true);
+    await expect(page.locator('.board.skin-freeze')).toHaveCount(1);
+
+    const box = await page.locator('.board').boundingBox();
+    expect(box, 'das Brett muss ueberhaupt eine Flaeche haben').not.toBeNull();
+    expect(box.width).toBeGreaterThan(50);
+    expect(box.height).toBeGreaterThan(50);
+    const cells = await page.evaluate(() => ({
+      total: document.querySelectorAll('.board .cell').length,
+      marked: document.querySelectorAll('.board .cell.kept, .board .cell.removed').length,
+      rows: window.__cns.state.puzzle.rows, cols: window.__cns.state.puzzle.cols,
+    }));
+    expect(cells.total).toBe(cells.rows * cells.cols);
+    expect(cells.marked, 'der uebernommene Spielstand muss sichtbar sein').toBeGreaterThan(0);
+    expect(errors, 'ein Render-Fehler wuerde die Seite leer lassen').toEqual([]);
+
+    // Nach dem Aufbau laeuft die Rotation wieder.
+    await page.waitForFunction(() => window.__cns.state.joinFreeze === false, null, { timeout: 5000 });
+  });
+
+  // Gemeldet: im Coop sahen die Markierungen ALLER Spieler gleich aus. Ursache
+  // war der Skin — der Regenbogen-Stil hat gar kein --markcol, ein Skin-Preset
+  // setzt feste Farben. Im Multiplayer ist die Markierungsfarbe aber FUNKTION
+  // (wer hat was gesetzt), nicht Kosmetik.
+  test('im Coop: eigener Skin bleibt, Mitspieler tragen ihre zugewiesene Farbe', async ({ page }) => {
+    await gotoApp(page);
+    const PUZZLE = {
+      rows: 4, cols: 4, rowTargets: [1, 1, 1, 1], colTargets: [1, 1, 1, 1],
+      values: Array.from({ length: 4 }, () => Array(4).fill(1)),
+      solution: Array.from({ length: 4 }, () => Array(4).fill(true)),
+      regions: [], difficulty: 'leicht',
+    };
+    await page.evaluate((p) => {
+      const s = window.__cns.state;
+      s.settings.skinStyle = 'rainbow'; s.settings.skinApplyTo = 'both'; s.settings.skinOn = true;
+      s.inventory = { ...(s.inventory || {}), dynamicColor: { acquiredAt: Date.now() } };
+      s.coop.active = true; s.coop.role = 'guest'; s.coop.myId = 'me';
+      s.coop.players = [{ id: 'host', name: 'H', color: '#e5679a' }, { id: 'me', name: 'I', color: '#67a3e5' }];
+      const marks = Array.from({ length: 4 }, () => Array(4).fill('none'));
+      const by = Array.from({ length: 4 }, () => Array(4).fill(null));
+      marks[0][0] = 'kept'; by[0][0] = 'host';
+      marks[0][1] = 'kept'; by[0][1] = 'me';
+      window.__cns.handleCoopMsg({ type: 'init', gameId: 'colors', running: true, puzzle: p, marks, markedBy: by, startTime: Date.now(), lives: 3, maxLives: 3 });
+    }, PUZZLE);
+    await page.waitForSelector('.screen.game');
+
+    const bg = await page.evaluate(() => {
+      const cells = [...document.querySelectorAll('.board .cell')];
+      const at = (i) => getComputedStyle(cells[i], '::after').backgroundImage;
+      return { host: at(0), me: at(1), boardCls: document.querySelector('.board').className };
+    });
+    expect(bg.boardCls).toContain('mp-colors');
+    // Die Farben der beiden Spieler muessen im Ring wirklich auftauchen …
+    expect(bg.host).toContain('229, 103, 154');
+    // … und sich damit voneinander unterscheiden.
+    expect(bg.host).not.toBe(bg.me);
+    // Die EIGENE Zelle behaelt dagegen den eigenen Skin in voller Pracht — man
+    // weiss selbst, welche Zellen von einem sind, die Unterscheidung braucht es
+    // nur fuer die Mitspieler.
+    expect(bg.me, 'eigene Markierung zeigt den eigenen Regenbogen-Skin').toContain('255, 0, 76');
+  });
+
+  test('im SOLO bleibt der Regenbogen-Skin unveraendert bunt', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page, 'sehrleicht');
+    await page.evaluate(() => {
+      const { state, onCellTap } = window.__cns;
+      state.settings.skinStyle = 'rainbow'; state.settings.skinApplyTo = 'both'; state.settings.skinOn = true;
+      state.inventory = { ...(state.inventory || {}), dynamicColor: { acquiredAt: Date.now() } };
+      state.tool = 'pen';
+      outer: for (let r = 0; r < state.puzzle.rows; r++)
+        for (let c = 0; c < state.puzzle.cols; c++)
+          if (state.puzzle.solution[r][c]) { onCellTap(r, c); break outer; }
+    });
+    await page.waitForTimeout(200);
+    const solo = await page.evaluate(() => {
+      const cell = document.querySelector('.board .cell.kept');
+      return { cls: document.querySelector('.board').className, bg: cell ? getComputedStyle(cell, '::after').backgroundImage : '' };
+    });
+    expect(solo.cls, 'ohne Multiplayer keine Farb-Umlenkung').not.toContain('mp-colors');
+  });
+
+  // Nutzerwunsch: auch beim ANNEHMEN einer Einladung soll zuerst der Namensdialog
+  // kommen. Vorher sprang der Beitritt direkt in den Raum und man landete mit dem
+  // zuletzt gespeicherten Namen darin, ohne ihn noch aendern zu koennen.
+  test('eine angenommene Einladung fuehrt ZUERST ins Namens-Gate, nicht direkt in den Raum', async ({ page }) => {
+    await gotoApp(page);
+    await page.evaluate(() => {
+      window.__cns.state.pendingLobbyInvite = { fromUid: 'u-host', code: '123456', mode: 'coop', username: 'Host' };
+    });
+    await page.locator('.modal .btn-primary').first().click();
+
+    // Coop-Screen mit Namens-Gate — und NOCH KEIN Beitritt.
+    await expect(page.locator('.screen.coop-screen')).toBeVisible();
+    const gate = await page.evaluate(() => ({
+      confirmed: window.__cns.state.coop.identityConfirmed,
+      pendingJoin: window.__cns.state.coop.pendingJoin,
+      code: window.__cns.state.coop.code,
+      role: window.__cns.state.coop.role,
+    }));
+    expect(gate.confirmed, 'das Namens-Gate muss offen sein').toBe(false);
+    expect(gate.pendingJoin, 'der Beitritt ist vorgemerkt').toBe(true);
+    expect(gate.code, 'der Raumcode aus der Einladung steht schon fest').toBe('123456');
+    expect(gate.role, 'noch kein Beitritt ausgeloest').toBe(null);
+    await expect(page.locator('.coop-body')).toBeVisible();
+
+    // Namen anpassen und bestaetigen -> jetzt erst geht es in den Raum.
+    await page.evaluate(() => { window.__cns.state.coop.nameDraft = 'Neuer Name'; });
+    await page.locator('.screen.coop-screen .btn-primary').first().click();
+    await page.waitForFunction(() => window.__cns.state.coop.identityConfirmed === true, null, { timeout: 5000 });
+    const after = await page.evaluate(() => ({
+      pendingJoin: window.__cns.state.coop.pendingJoin,
+      name: window.__cns.state.settings.coopName,
+    }));
+    expect(after.pendingJoin, 'die Vormerkung ist verbraucht').toBe(false);
+    expect(after.name, 'der neue Name ist uebernommen').toBe('Neuer Name');
+  });
+});

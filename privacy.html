@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Datenschutzerklärung / Privacy Policy — Coop Number Sums</title>
+<style>
+  :root {
+    --bg: #0b1020; --card: #1a2138; --text: #e8edf7; --text2: #9aa6c2;
+    --accent: #5b8cff; --accent-soft: rgba(91,140,255,.16);
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #eef2f9; --card: #ffffff; --text: #1a2138; --text2: #5d6987; --accent: #3b6fe0; --accent-soft: rgba(59,111,224,.12); }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    line-height: 1.55;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 24px 18px 60px; }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  h2 { font-size: 1.1rem; margin: 28px 0 8px; }
+  p, li { color: var(--text2); }
+  a { color: var(--accent); text-decoration: none; }
+  .lang-switch { display: flex; gap: 10px; margin-bottom: 20px; }
+  .lang-switch button {
+    flex: 1; padding: 10px; border-radius: 12px; border: none; cursor: pointer;
+    background: var(--card); color: var(--text); font-weight: 700; font-size: .95rem;
+  }
+  .lang-switch button.active { background: var(--accent-soft); color: var(--accent); }
+  section[data-lang] { display: none; }
+  section[data-lang].active { display: block; }
+  .updated { font-size: .85rem; color: var(--text2); margin-bottom: 24px; }
+  .back { display: inline-block; margin-top: 32px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="lang-switch">
+    <button id="btn-de" class="active" onclick="setLang('de')">Deutsch</button>
+    <button id="btn-en" onclick="setLang('en')">English</button>
+  </div>
+
+  <section data-lang="de" class="active">
+    <h1>Datenschutzerklärung</h1>
+    <p class="updated">Stand: Juni 2026</p>
+
+    <h2>Verantwortlicher</h2>
+    <p>
+      Tom Anders<br />
+      E-Mail: <a href="mailto:tom-anders@gmx.net">tom-anders@gmx.net</a>
+    </p>
+    <p>
+      Coop Number Sums ist ein kostenloses, privates Hobbyprojekt ohne
+      Gewerbebetrieb. Es werden keine Werbung, kein Tracking und keine
+      Analyse-Tools eingesetzt.
+    </p>
+
+    <h2>Lokale Daten (Einstellungen, Statistik, Fortschritt)</h2>
+    <p>
+      Einstellungen, Spielstatistiken, der aktuelle Spielfortschritt sowie
+      lokale Backups werden ausschließlich im <strong>lokalen Speicher
+      (localStorage)</strong> deines Geräts abgelegt. Diese Daten verlassen
+      dein Gerät nie und werden an niemanden übertragen — auch nicht an uns.
+      Du kannst sie jederzeit über die Einstellungen exportieren, importieren
+      oder über den Button „Alle lokalen Daten löschen" vollständig von
+      diesem Gerät entfernen.
+    </p>
+
+    <h2>Hosting (GitHub Pages)</h2>
+    <p>
+      Diese App wird über <strong>GitHub Pages</strong> ausgeliefert, einen
+      Dienst von GitHub, Inc. (Teil der Microsoft Corporation, USA). Beim
+      Aufruf der Seite verarbeitet GitHub automatisch technische
+      Server-Log-Daten (z. B. IP-Adresse, Zeitpunkt des Zugriffs,
+      abgerufene Datei, Browsertyp), wie das bei jedem Webserver
+      technisch notwendig ist. Diese Verarbeitung erfolgt auf Grundlage
+      von Art. 6 Abs. 1 lit. f DSGVO (berechtigtes Interesse am sicheren
+      und funktionsfähigen Betrieb der Webseite) und liegt allein im
+      Verantwortungsbereich von GitHub als eigenständigem Verantwortlichen
+      für diese Server-Logs. Details dazu findest du in der
+      <a href="https://docs.github.com/de/site-policy/privacy-policies/github-general-privacy-statement" target="_blank" rel="noopener">Datenschutzerklärung von GitHub</a>.
+      Bei Nutzung als native App (Android/iOS) entfällt dieser Punkt, da
+      die App-Dateien dann lokal auf dem Gerät installiert sind und nicht
+      bei jedem Start von GitHub Pages nachgeladen werden.
+    </p>
+
+    <h2>Coop-Modus (Firebase Realtime Database)</h2>
+    <p>
+      Im Coop-Modus spielen zwei Personen gemeinsam ein Rätsel in Echtzeit.
+      Dafür wird während der aktiven Sitzung die <strong>Firebase Realtime
+      Database</strong> von Google (Region Europa, europe-west1) als
+      technischer Übertragungsweg genutzt. Es werden ausschließlich folgende
+      Daten übertragen:
+    </p>
+    <ul>
+      <li>ein von dir frei gewählter Anzeigename (max. 16 Zeichen)</li>
+      <li>eine von dir gewählte Farbe</li>
+      <li>deine Rolle (Host/Mitspieler)</li>
+      <li>Spielzüge (Markierungen im Rätsel)</li>
+      <li>eine anonyme, technische Kennung (Firebase Anonymous Auth) zur
+        Zuordnung deiner Aktionen innerhalb des Raums</li>
+    </ul>
+    <p>
+      Es werden keine Klarnamen, E-Mail-Adressen, IP-Adressen oder
+      Standortdaten erhoben oder gespeichert. Die Sitzungsdaten werden
+      automatisch gelöscht, sobald beide Spieler den Raum verlassen
+      (technisch über <code>onDisconnect()</code>). Statistiken und
+      Einstellungen werden im Coop-Modus nicht in die Cloud übertragen — sie
+      bleiben wie im Solo-Modus rein lokal auf deinem Gerät.
+    </p>
+    <p>
+      Rechtsgrundlage für diese Verarbeitung ist Art. 6 Abs. 1 lit. b DSGVO
+      (Erfüllung des Vertrags bzw. der von dir angefragten Funktion).
+      Google Ireland Limited verarbeitet die Daten als Auftragsverarbeiter
+      im Auftrag des Verantwortlichen; die Datenbank selbst läuft in der
+      EU-Region europe-west1. Die zugrunde liegende Authentifizierung
+      (Firebase Anonymous Auth) läuft technisch über die globale
+      Infrastruktur von Google, wodurch eine Verarbeitung auch durch die
+      Google LLC (USA) nicht ausgeschlossen werden kann. Für diesen Fall
+      stützt sich die Übermittlung auf den Angemessenheitsbeschluss der
+      EU-Kommission zum <strong>EU-US Data Privacy Framework</strong>, dem
+      Google als zertifiziertes Unternehmen angehört.
+    </p>
+
+    <h2>Optionales Konto &amp; Cloud-Synchronisierung (Firebase)</h2>
+    <p>
+      Du kannst <strong>freiwillig</strong> ein Konto anlegen (E-Mail-Adresse,
+      selbstgewählter Benutzername, Passwort), um deine Einstellungen,
+      Statistik und Freischaltungen geräteübergreifend zu sichern. <strong>Ohne
+      Konto bleibt alles ausschließlich lokal</strong> auf deinem Gerät — ein
+      Konto ist zu keiner Zeit erforderlich, um die App zu nutzen.
+    </p>
+    <p>
+      Legst du ein Konto an, werden über <strong>Firebase Authentication</strong>
+      und die <strong>Firebase Realtime Database</strong> (Google, EU-Region
+      <em>europe-west1</em>) gespeichert: deine E-Mail-Adresse (zur Anmeldung
+      und für das Zurücksetzen des Passworts), dein Benutzername (öffentlich
+      sichtbar, z.&nbsp;B. für künftige Freundes-/Bestenlisten-Funktionen) sowie
+      deine synchronisierten Spieldaten (Einstellungen, Statistik,
+      Freischaltungen). Das Passwort wird ausschließlich von Firebase in
+      gehashter Form verwaltet; wir sehen es nie.
+    </p>
+    <p>
+      Rechtsgrundlage ist Art.&nbsp;6 Abs.&nbsp;1 lit.&nbsp;b DSGVO (Erfüllung
+      des von dir gewünschten Sync-Dienstes). Du kannst dein Konto und alle
+      zugehörigen Cloud-Daten jederzeit direkt in der App vollständig löschen
+      (Einstellungen → Konto → „Konto löschen"). Eine Verarbeitung durch Google
+      LLC (USA) kann nicht ausgeschlossen werden; sie stützt sich auf den
+      Angemessenheitsbeschluss zum <strong>EU-US Data Privacy Framework</strong>.
+    </p>
+
+    <h2>Spenden-Link (Ko-fi)</h2>
+    <p>
+      Der freiwillige Unterstützer-Button verlinkt auf eine externe Seite
+      (<a href="https://ko-fi.com/tomanders" target="_blank" rel="noopener">ko-fi.com/tomanders</a>),
+      betrieben von Ko-fi Labs Ltd. Beim Klick verlässt du die App und es
+      gelten die Datenschutzbestimmungen von Ko-fi. Wir selbst erhalten dabei
+      keine Daten über dich und geben keine Daten an Ko-fi weiter — es findet
+      keine Übergabe von Informationen aus der App statt.
+    </p>
+
+    <h2>Cookies &amp; Drittanbieter</h2>
+    <p>
+      Die App selbst verwendet keine Cookies und lädt keine Inhalte von
+      Drittanbieter-Servern, mit Ausnahme der Firebase-Infrastruktur von
+      Google während einer aktiven Coop-Sitzung und des oben genannten
+      Spenden-Links zu Ko-fi.
+    </p>
+
+    <h2>Deine Rechte</h2>
+    <p>
+      Du hast nach der DSGVO das Recht auf Auskunft, Berichtigung, Löschung
+      und Einschränkung der Verarbeitung deiner Daten sowie ein
+      Beschwerderecht bei einer Datenschutz-Aufsichtsbehörde. Da Coop-Daten
+      automatisch beim Verlassen des Raums gelöscht werden und lokale Daten
+      ausschließlich auf deinem eigenen Gerät liegen, kannst du die meisten
+      dieser Rechte direkt selbst in der App ausüben (Einstellungen →
+      „Alle lokalen Daten löschen" bzw. Daten exportieren). Für alle
+      weiteren Anfragen erreichst du uns unter der oben genannten
+      E-Mail-Adresse.
+    </p>
+
+    <p>
+      Siehe auch: <a href="./imprint.html">Impressum</a>
+    </p>
+
+    <a class="back" href="javascript:history.back()">← Zurück zur App</a>
+  </section>
+
+  <section data-lang="en">
+    <h1>Privacy Policy</h1>
+    <p class="updated">Last updated: June 2026</p>
+
+    <h2>Data Controller</h2>
+    <p>
+      Tom Anders<br />
+      Email: <a href="mailto:tom-anders@gmx.net">tom-anders@gmx.net</a>
+    </p>
+    <p>
+      Coop Number Sums is a free, private hobby project, not operated as a
+      commercial business. It contains no advertising, no tracking and no
+      analytics tools.
+    </p>
+
+    <h2>Local Data (Settings, Statistics, Progress)</h2>
+    <p>
+      Settings, game statistics, your current game progress, and local
+      backups are stored exclusively in your device's
+      <strong>local storage (localStorage)</strong>. This data never leaves
+      your device and is never transmitted to anyone — including us. You
+      can export, import, or fully remove it at any time from the settings
+      screen via the "Delete all local data" button.
+    </p>
+
+    <h2>Hosting (GitHub Pages)</h2>
+    <p>
+      This app is served via <strong>GitHub Pages</strong>, a service
+      operated by GitHub, Inc. (part of Microsoft Corporation, USA). When
+      you load the page, GitHub automatically processes technical server
+      log data (e.g. IP address, time of access, file requested, browser
+      type), as is technically necessary for any web server. This
+      processing is based on Art. 6(1)(f) GDPR (legitimate interest in the
+      secure and functional operation of the website) and falls solely
+      within GitHub's own responsibility as an independent controller for
+      these server logs. See
+      <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement" target="_blank" rel="noopener">GitHub's privacy statement</a>
+      for details. This point does not apply when using the native app
+      (Android/iOS), since the app files are then installed locally on the
+      device and not reloaded from GitHub Pages on every launch.
+    </p>
+
+    <h2>Coop Mode (Firebase Realtime Database)</h2>
+    <p>
+      In Coop mode, two people solve a puzzle together in real time. For
+      this, the <strong>Firebase Realtime Database</strong> by Google
+      (Europe region, europe-west1) is used as the technical transport
+      layer during the active session. Only the following data is
+      transmitted:
+    </p>
+    <ul>
+      <li>a display name you freely choose (max. 16 characters)</li>
+      <li>a color you choose</li>
+      <li>your role (host/teammate)</li>
+      <li>game moves (marks placed on the puzzle)</li>
+      <li>an anonymous, technical identifier (Firebase Anonymous Auth) used
+        to attribute your actions within the room</li>
+    </ul>
+    <p>
+      No real names, email addresses, IP addresses, or location data are
+      collected or stored. Session data is automatically deleted once both
+      players leave the room (technically via <code>onDisconnect()</code>).
+      Statistics and settings are not sent to the cloud in Coop mode either
+      — they remain purely local on your device, just as in solo mode.
+    </p>
+    <p>
+      The legal basis for this processing is Art. 6(1)(b) GDPR (performance
+      of the feature you requested). Google Ireland Limited processes this
+      data as a data processor on behalf of the controller; the database
+      itself runs in the EU region europe-west1. The underlying
+      authentication (Firebase Anonymous Auth) technically runs on
+      Google's global infrastructure, so processing by Google LLC (USA)
+      cannot be ruled out. In that case, the transfer relies on the
+      European Commission's adequacy decision for the
+      <strong>EU-US Data Privacy Framework</strong>, to which Google is
+      certified.
+    </p>
+
+    <h2>Optional Account &amp; Cloud Sync (Firebase)</h2>
+    <p>
+      You may <strong>optionally</strong> create an account (email address,
+      self-chosen username, password) to back up your settings, statistics and
+      unlocks across devices. <strong>Without an account, everything stays
+      purely local</strong> on your device — an account is never required to use
+      the app.
+    </p>
+    <p>
+      If you create an account, the following is stored via <strong>Firebase
+      Authentication</strong> and the <strong>Firebase Realtime Database</strong>
+      (Google, EU region <em>europe-west1</em>): your email address (for sign-in
+      and password reset), your username (publicly visible, e.g. for future
+      friends/leaderboard features) and your synced game data (settings,
+      statistics, unlocks). The password is handled solely by Firebase in hashed
+      form; we never see it.
+    </p>
+    <p>
+      The legal basis is Art. 6(1)(b) GDPR (providing the sync service you
+      requested). You can fully delete your account and all associated cloud
+      data at any time directly in the app (Settings → Account → “Delete
+      account”). Processing by Google LLC (USA) cannot be ruled out; it relies
+      on the adequacy decision for the <strong>EU-US Data Privacy Framework</strong>.
+    </p>
+
+    <h2>Donation Link (Ko-fi)</h2>
+    <p>
+      The optional support button links to an external site
+      (<a href="https://ko-fi.com/tomanders" target="_blank" rel="noopener">ko-fi.com/tomanders</a>),
+      operated by Ko-fi Labs Ltd. Clicking it takes you outside the app, where
+      Ko-fi's own privacy policy applies. We do not receive any data about
+      you from this, and no information from the app is passed to Ko-fi.
+    </p>
+
+    <h2>Cookies &amp; Third Parties</h2>
+    <p>
+      The app itself uses no cookies and loads no content from third-party
+      servers, other than Google's Firebase infrastructure during an active
+      Coop session and the Ko-fi donation link mentioned above.
+    </p>
+
+    <h2>Your Rights</h2>
+    <p>
+      Under the GDPR you have the right to access, rectify, erase, and
+      restrict the processing of your data, as well as the right to lodge a
+      complaint with a data protection supervisory authority. Since Coop
+      data is automatically deleted when you leave the room, and local data
+      stays exclusively on your own device, you can exercise most of these
+      rights directly within the app (Settings → "Delete all local data"
+      or export your data). For any further requests, you can reach us at
+      the email address above.
+    </p>
+
+    <p>
+      See also: <a href="./imprint.html">Imprint</a>
+    </p>
+
+    <a class="back" href="javascript:history.back()">← Back to the app</a>
+  </section>
+</div>
+<script>
+  function setLang(lang) {
+    document.querySelectorAll('section[data-lang]').forEach(function (el) {
+      el.classList.toggle('active', el.dataset.lang === lang);
+    });
+    document.getElementById('btn-de').classList.toggle('active', lang === 'de');
+    document.getElementById('btn-en').classList.toggle('active', lang === 'en');
+  }
+</script>
+</body>
+</html>

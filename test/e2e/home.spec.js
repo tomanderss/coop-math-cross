@@ -1,0 +1,142 @@
+import { test, expect } from '@playwright/test';
+import { gotoApp, startNewGame, dismissStreakModal, gotoSettingsSection } from './helpers.js';
+
+test.describe('home screen', () => {
+  test('shows the brand, primary actions and a version number', async ({ page }) => {
+    await gotoApp(page);
+    await expect(page.locator('.brand-title')).toBeVisible();
+    await expect(page.locator('.home-actions .btn-primary')).toBeVisible();
+    await expect(page.locator('.home-version')).toHaveText(/^v\d+\.\d+$/);
+  });
+
+  test('navigates directly to setup and back to home', async ({ page }) => {
+    await gotoApp(page);
+    await page.locator('.home-actions .btn-primary').click();
+    // „Neues Spiel" führt jetzt DIREKT in den Schwierigkeits-Setup (kein
+    // Solo-Zwischenscreen mehr; Endlos ist ein Toggle im Setup).
+    await expect(page.locator('.screen.setup')).toBeVisible();
+    await page.locator('.screen.setup .topbar .icon-btn').first().click();
+    await expect(page.locator('.screen.home')).toBeVisible();
+  });
+
+  test('navigates to stats and back to home', async ({ page }) => {
+    await gotoApp(page);
+    await page.locator('.home-grid .btn-ghost').nth(0).click();
+    await expect(page.locator('.screen.stats')).toBeVisible();
+    await page.locator('.screen.stats .topbar .icon-btn').first().click();
+    await expect(page.locator('.screen.home')).toBeVisible();
+  });
+
+  test('navigates to settings and back to home', async ({ page }) => {
+    await gotoApp(page);
+    await page.locator('.home-settings-btn').click();
+    await expect(page.locator('.screen.settings')).toBeVisible();
+    // Zurück-Knopf ist der erste Icon-Button (links); der Drawer-Hamburger rechts.
+    await page.locator('.screen.settings .topbar .icon-btn').first().click();
+    await expect(page.locator('.screen.home')).toBeVisible();
+  });
+
+  test('opens and closes the how-to modal (from settings ▸ Spiel)', async ({ page }) => {
+    await gotoApp(page);
+    await page.locator('.home-settings-btn').click();
+    await expect(page.locator('.screen.settings')).toBeVisible();
+    await gotoSettingsSection(page, 'Spiel');  // Einstellungen starten zugeklappt
+    await page.locator('.set-howto-btn').click();
+    await expect(page.locator('.modal .rules')).toBeVisible();
+    await page.locator('.modal .btn-primary').click();
+    await expect(page.locator('.modal-bg')).toHaveCount(0);
+  });
+
+  test('opens and closes the changelog modal from settings', async ({ page }) => {
+    await gotoApp(page);
+    await page.locator('.home-settings-btn').click();
+    await expect(page.locator('.screen.settings')).toBeVisible();
+    await gotoSettingsSection(page, 'Daten');
+    await page.locator('.screen.settings button:has-text("Changelog")').click();
+    await expect(page.locator('.modal-bg .changelog')).toBeVisible();
+    await page.locator('.modal-bg .btn-primary').click();
+    await expect(page.locator('.modal-bg')).toHaveCount(0);
+  });
+
+  test('coop button is either available or marked as coming soon, never silently broken', async ({ page }) => {
+    await gotoApp(page);
+    const coopBtn = page.locator('.btn-coop');
+    await expect(coopBtn).toBeVisible();
+    const disabled = await coopBtn.isDisabled();
+    const hasBadge = await page.locator('.badge-soon').isVisible().catch(() => false);
+    expect(disabled).toBe(hasBadge);
+  });
+
+  test('leaving an unfinished solo game shows a resume button that continues the same puzzle', async ({ page }) => {
+    await gotoApp(page);
+    await expect(page.locator('.resume-stack')).toHaveCount(0);
+    await startNewGame(page, 'sehrleicht');
+    const seedBefore = await page.evaluate(() => window.__cns.state.puzzle.seed);
+    await page.locator('.game-top .icon-btn').first().click(); // Pause
+    await page.locator('.pause-overlay').getByText('Zum Menü').click();
+    await expect(page.locator('.screen.home')).toBeVisible();
+    const resumeRow = page.locator('.resume-stack');
+    await expect(resumeRow).toBeVisible();
+    await expect(resumeRow.locator('.btn-resume')).toHaveCount(1);
+    await resumeRow.locator('.btn-resume').click();
+    await expect(page.locator('.screen.game')).toBeVisible();
+    const seedAfter = await page.evaluate(() => window.__cns.state.puzzle.seed);
+    expect(seedAfter).toBe(seedBefore);
+  });
+
+  test('a finished solo game leaves no resume button behind', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page, 'sehrleicht');
+    await page.evaluate(() => {
+      const { state, onCellTap } = window.__cns;
+      const p = state.puzzle;
+      for (let r = 0; r < p.rows; r++)
+        for (let c = 0; c < p.cols; c++) {
+          state.tool = p.solution[r][c] ? 'pen' : 'eraser';
+          onCellTap(r, c);
+        }
+    });
+    await page.waitForFunction(() => window.__cns.state.status === 'won');
+    await dismissStreakModal(page);
+    // Der Knopf haengt an abgeleitetem Zustand: er muss SOFORT verschwinden,
+    // nicht erst wenn zufaellig etwas anderes refreshResume() ausloest. Gemeldet
+    // wurde genau das — er blieb bis zum Neustart der App stehen.
+    expect(await page.evaluate(() => window.__cns.state.resumeAvailable)).toBe(null);
+    await page.locator('.result-card.win .btn-ghost').click();
+    await expect(page.locator('.screen.home')).toBeVisible();
+    await expect(page.locator('.resume-stack')).toHaveCount(0);
+  });
+
+  test('solo and coop resume buttons stack vertically when both saves exist', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page, 'sehrleicht');
+    await page.locator('.game-top .icon-btn').first().click(); // Pause
+    await page.locator('.pause-overlay').getByText('Zum Menü').click();
+    await expect(page.locator('.screen.home')).toBeVisible();
+    // Fake a separately-saved coop game in the dedicated coop slot (real coop
+    // saves go through Coop.rejoin()'s Firebase round-trip, which the E2E
+    // suite deliberately never exercises -- see coop.spec.js) and reload so
+    // refreshResume() (run on mount) picks it up from localStorage. The coop
+    // resume button additionally requires a still-valid coop SESSION (the
+    // rejoin token with room code/role) -- without it the button used to point
+    // at nothing, so refreshResume() now hides it; fake the session too.
+    await page.evaluate(() => {
+      const solo = JSON.parse(localStorage.getItem('cns_active_game'));
+      localStorage.setItem('cns_active_game_coop', JSON.stringify({ ...solo, ts: Date.now() }));
+      localStorage.setItem('cns_coop_session', JSON.stringify({ code: '123456', role: 'host', name: 'Tester', color: '#5b8cff', hostId: 'u1', lastEventKey: '-Otest', ts: Date.now() }));
+    });
+    await page.reload();
+    await page.waitForSelector('.screen.home');
+    const resumeRow = page.locator('.resume-stack');
+    await expect(resumeRow).toBeVisible();
+    await expect(resumeRow.locator('.btn-resume')).toHaveCount(2);
+    // Untereinander, NICHT nebeneinander (Nutzerwunsch): nebeneinander wurden
+    // beide schmal und die Unterzeile brach um. Gleiche linke Kante, klar
+    // getrennte Zeilen, und jeder Knopf nutzt die volle Breite.
+    const box1 = await resumeRow.locator('.btn-resume').nth(0).boundingBox();
+    const box2 = await resumeRow.locator('.btn-resume').nth(1).boundingBox();
+    expect(box2.y).toBeGreaterThan(box1.y + box1.height - 1);
+    expect(Math.abs(box1.x - box2.x)).toBeLessThan(2);
+    expect(Math.abs(box1.width - box2.width)).toBeLessThan(2);
+  });
+});

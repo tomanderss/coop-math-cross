@@ -1,0 +1,110 @@
+name: Tests
+
+# ── Zeit- und kostenbewusst geschnitten ──────────────────────────────────────
+# Gemessen an einem echten Lauf (7:04 gesamt) verteilte sich die Zeit so:
+#   Set-up + checkout + setup-node   3 s
+#   npm ci                           6 s
+#   Chromium installieren (kalt)    23 s
+#   npm test                      6:21   ← 90 % der Laufzeit
+#   Cache speichern + Post-Steps     8 s
+# Der Overhead ist also vernachlässigbar; die Laufzeit steckt praktisch komplett
+# in der Suite. Deshalb wird sie AUFGETEILT statt beschleunigt:
+#   • Unit-Tests laufen als eigener Job PARALLEL zu den E2E-Tests und brauchen
+#     dafür gar keinen Browser (spart dort die Chromium-Installation komplett).
+#   • Die 132 E2E-Tests laufen in DREI Shards gleichzeitig (Playwright `--shard`,
+#     verifiziert exakt 44/44/44 — die Summe ist die vollständige Suite).
+# Erwartete Wanduhrzeit dadurch ~3 min statt ~7, bei identischer Abdeckung.
+# Nebeneffekt auf die QUALITÄT: weniger Tests je Runner heißt weniger Last je
+# Runner. Genau die lastbedingten Timeouts (training.spec.js) werden damit
+# unwahrscheinlicher, nicht wahrscheinlicher — anders als bei mehr Workern im
+# selben Job, weshalb die Worker-Zahl bewusst unverändert bleibt.
+
+on:
+  # Der frühere zweite Trigger `push: branches: [master]` ist entfallen: er fuhr
+  # nach dem Squash-Merge dieselbe Suite auf demselben Baum, der als PR gerade
+  # grün war — jeder Merge kostete dadurch doppelt und dauerte doppelt so lange
+  # bis zum fertigen Merge. Wir mergen strikt seriell und immer erst nach grünem
+  # PR-Lauf, der Nachlauf brachte also keine neue Aussage.
+  pull_request:
+    # Reine Text-/Release-Änderungen brauchen keinen Testlauf. `paths-ignore`
+    # greift nur, wenn ALLE geänderten Dateien hier gelistet sind — ein PR mit
+    # Code fährt also weiterhin die volle Suite.
+    # sw.js steht BEWUSST NICHT hier, obwohl `node build.js` es bei jedem Release
+    # anfasst: ein Unit-Test prüft, dass jedes js/-Modul in der Asset-Liste des
+    # Service Workers steht, und diese Prüfung darf nie ausfallen (ein
+    # unvollständiger Precache sperrt Nutzer offline aus).
+    paths-ignore:
+      - '**.md'
+      - 'changes.txt'
+      - 'version-*.txt'
+      - '.release-counter'
+      - 'js/buildinfo.js'
+      - '.gitignore'
+      - 'LICENSE'
+
+# Ein neuer Push auf denselben PR macht den laufenden Test überflüssig — vorher
+# liefen beide bis zum Ende durch und wurden beide bezahlt. Das war der größte
+# einzelne Kostenposten, weil ein PR im Schnitt mehrere Korrektur-Pushes bekommt.
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Schnelles Signal: die Unit-Tests sind nach ~1 min durch und melden Logikfehler,
+  # ohne auf die E2E-Suite zu warten. Kein Browser nötig.
+  unit:
+    name: Unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:unit
+
+  e2e:
+    name: E2E ${{ matrix.shard }}/3
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      # Ein fehlgeschlagener Shard darf die anderen NICHT abbrechen — sonst sieht
+      # man nur den ersten Fehler und muss für den Rest erneut laufen lassen.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          # npm-Cache: spart den Neu-Download der Abhängigkeiten je Lauf.
+          cache: 'npm'
+
+      - run: npm ci
+
+      # Chromium wog bisher jeden Lauf neu ~120 MB Download. Der Cache-Schlüssel
+      # hängt an package-lock.json — ein Playwright-Versionssprung erzeugt also
+      # automatisch einen neuen Schlüssel, es kann keine veraltete Browser-Version
+      # hängen bleiben. Alle Shards teilen denselben Cache.
+      - name: Playwright-Browser aus dem Cache
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Chromium installieren (nur bei Cache-Miss)
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      # Bei Cache-Treffer liegt der Browser schon da; die System-Bibliotheken
+      # gehören zur Runner-Umgebung und müssen trotzdem gesetzt werden.
+      - name: Systemabhängigkeiten (bei Cache-Treffer)
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - run: npx playwright test --shard=${{ matrix.shard }}/3

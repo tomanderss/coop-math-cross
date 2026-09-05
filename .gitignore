@@ -1,0 +1,19 @@
+# OS / Editor
+.DS_Store
+Thumbs.db
+*.log
+
+# Node (build.js braucht kein npm install — nur die Tests in test/ haben
+# echte Dependencies, siehe package.json)
+node_modules/
+test-results/
+playwright-report/
+
+# Capacitor — generierte Web-Assets (siehe scripts/cap-copy-www.js).
+# Android-/iOS-Build-Artefakte werden bereits von android/.gitignore bzw.
+# ios/.gitignore (von `cap add android`/`cap add ios` generiert) ignoriert.
+www/
+
+# Firebase-Dienstkonto-Schlüssel für scripts/admin-set-password.js —
+# Vollzugriff aufs Projekt, NIEMALS committen.
+serviceAccountKey.json

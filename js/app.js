@@ -1,0 +1,10401 @@
+// app.js — Coop Number Sums (Vue 3, esm-browser). Solo-Spiel; Coop folgt später.
+import { createApp, reactive, computed, watch, nextTick, onMounted, markRaw, ref } from './vue.esm-browser.prod.js';
+import { BUILD, CHANGELOG } from './buildinfo.js';
+import { createBot, nextAction as botNextAction, applyAction as botApplyAction, botPct, targetMsFor, clampProfile, clampAvgMs, PRESET_LEVELS, PRESET_PROFILES, DEFAULT_AVG_MS } from './duelbot.js';
+import { analyzeGame, buildProfile, MIN_GAMES as CLONE_MIN_GAMES } from './playstyle.js';
+import { DIFFICULTIES, DIFF_BY_ID, REGION_COLORS, COOP_COLORS, COOP_COLORS_CB, DEFAULT_GAME_OPTIONS, bigNumbersAllowed, LIVES, HINTS, COOP_MAX_PLAYERS, DONATE_URL, regionChipInk, coinReward, coinMultiplier, coinBaseForIndex, coinStreakBonus, COIN_STREAK_STEP, hexToRgb } from './config.js';
+import { generatePuzzle, remapColorsForMarkVisibility } from './generator.js';
+import { todayDateStr } from './streak.js';
+import * as Coop from './coop.js';
+import { log, exportLogToFile } from './debuglog.js';
+import { ACHIEVEMENTS, evaluate as evaluateAchievements } from './achievements.js';
+import { findTrainingStep, isFullyTier1Solvable } from './training.js';
+import { buildHintTutorial } from './hinttutor.js';
+import * as Music from './music.js';
+import {
+  loadSettings, saveSettings, loadActiveGame, saveActiveGame, loadActiveGameCoop, saveActiveGameCoop, loadActiveGameEndless, saveActiveGameEndless, snapshotSolved,
+  loadSaves, upsertSave, removeSave, snapshotProgress, SAVES_MAX,
+  loadStats, recordResult, recordEndlessRun, applyEndlessBackfill,
+  loadSeenVersion, saveSeenVersion,
+  exportToFile, importFromFile, deleteAllData, loadStreak, recordStreakResult,
+  loadHistory, recordHistory,
+  loadAchievements, unlockAchievements, loadRace, recordRaceWin, recordRaceLoss, avgTimesByDifficulty,
+  loadPlaySamples, addPlaySample,
+  loadMissions, saveMissions,
+  saveCoopSession, loadCoopSession, clearCoopSession,
+  loadProfile, saveProfile, loadInventory, grantInventory, revokeInventory,
+  reconcileInventoryFromCloud, applyCloudWallet,
+  loadWallet, grantCurrency, spendCurrency, loadWalletLog, noteWalletTransaction,
+  setDataRev, setSyncedRev,
+  generateId, deviceId, isGameCompleted, markGameCompleted, loadActiveGameBackup, saveActiveGameBackup,
+  loadConflictBackup, saveConflictBackup, collectExportData,
+} from './storage.js';
+import { decideSessionSync, sessionIsDead, SESSION_SCHEMA, SESSION_STATUS } from './session.js';
+import { WIN_EFFECTS, CONFETTI_ID, effectById, effectPrice, winEffectInvKey, ownsEffect, resolveActiveEffect } from './wineffects.js';
+import { SHOP_CATS, SHOP_CATALOG, SKINPRESET_ITEMS, catItems, shopItemById, shopItemPrice, shopInvKey, ownsShopItem, resolveEquipped, applyPaletteFx } from './shopitems.js';
+import { badgeMedalMarkup, hasBadgeMedal, badgeDefsMarkup, masterMedalMarkup } from './badgeart.js';
+import { winShapeDefs, winShape, dragonMarkup, unicornMarkup, phoenixMarkup, rocketMarkup, discoMarkup } from './winshapes.js';
+import { icon as customIcon, hasIcon } from './icons.js';
+import { PRESTIGE, allPrestige, categoryProgress, prestigeBySym, isUnlocked, encodeBadge, decodeBadge, MASTER_BADGE, isMasterBadge, masterProgress, hasMasterBadge, unlockedTierCodes, newlyUnlockedTiers, headlineUnlock, duelWins } from './prestige.js';
+import * as Account from './account.js';
+import { SKIN_ID, FOUNDER_ID, qualifiesForV1Skin, skinCodeMatches, skinSpeedToDuration, skinVars as buildSkinVars, skinClasses as buildSkinClasses } from './skins.js';
+import { t, setLocale, detectLocale, i18nState, SUPPORTED_LOCALES } from './i18n/index.js';
+import { ENDLESS_CFG, endlessDiffId, endlessGrantsLife, endlessLivesAfter, endlessIsRecord, reconstructEndlessRuns } from './endless.js';
+import { currentWeekKey, weeklyMissions, missionStateFor, missionById, missionValue, isMissionComplete, isMissionClaimed, isMissionClaimable, allMissionsComplete, claimableCount, applyMissionEvent } from './missions.js';
+
+const APP_START = Date.now();
+const splashVersion = document.getElementById('splash-version');
+if (splashVersion) splashVersion.textContent = `v${BUILD}`;
+
+// Sentinel für state.markedBy außerhalb einer aktiven Coop-/Team-/Wettkampf-
+// Lobby (state.coop.myId ist dort null, da keine Firebase-Identität nötig ist).
+const LOCAL_PLAYER_ID = 'local';
+
+// Home-Logo als Data-URI eingebettet: das Home-Icon wird beim Wechsel ins
+// Hauptmenü (v-if remount) NEU gemountet; als externe Datei entstand dabei ein
+// sichtbarer Lade-/Dekodier-Roundtrip (auch aus dem Cache/SW). Inline = null
+// Netzwerk, sofortiges Rendern, immun gegen künftige SW-/Cache-Regressionen.
+const BRAND_LOGO = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMAAAADACAYAAABS3GwHAAAQAElEQVR4AexdCWBTVdb+sidt05aulK7QFgoUaFlKC5RNKSAwssgorgg4IMqIuAyiiDojOjqIjo6i4zbDiMuvoqhsCgJl35eCCJStlEJbCl1omqZt/nteSGmTlzRNkzRJX5vz3l3PPee8e+4799z73hP7BMbpHQ3qkER9eGy6Pq7rSH3n1En65PT79X2HPeoWkJr5JzN+w+PS9J17396mgHg2ve4JvcZ4tQw69Rilj4gfoPcLTqjvA2I46E8mVyE4PB5xnQegS4+RiO7UFyHtE+EfGAGlyh/CnyCB1paAVKaAOiAUEdFJUCh9OXLE3LEFB191CKI69kFi91sQ3qErfHyDWoBNqCpIwPkSEIklbHDuCLFECrsVwNcvCDHx/RGbkM6N8s4nW2hBkIDjJCBiSqAODEOzFUDMKkZE90Bs4gD4+Yc6jqI2g0mEoOAwpPQZiPRBIzjo1TsDAe2CmQREDNrGj0bfmNgE9Esfysmg/8Bb0CWpJ5RKlcsEoPLxb54C+PmHoVPXIWgXEusyIp3XUGtgFqFjfGd075kG/4B2kMsVHAQEBqNnr/6IjG4bcpVKZeiZmo64+CSofPw4GSgUKmZCx6BX74Hw9fN3ycWhOYHY1paCwzsxkyeNEetjaxWhnIkE/PwDENEhFqIbA31dXR30DKiYSCwGjYg+rENQ3JshIjIGanVgPYt1tTXQ6w1RhVLJBokkJqMbQjIkO+1okwKER3Zj2tnNaUS0FcShoe0hlck5di/mn8O2TWuwLXs9rhRf4tJkciWCQsO5sLcepFIpQkMjWAcHamtrcfTwHmzdvBb7dm+GVqvh2Ka7o6+vPxd29qFJBYiI6YHgsE7OpsPr8YtEIjZnCuD4pBGvuDAfevZP4UsXL7AR0DAEBvi348p460GuUDIXpMGK0GgqUHqthGO18no5Sq9e4cJSZiL5+PpxYWcfrCoAjfztgmOdTUObwC+RSCCTyDhea9ktv6qqigvToaamGmQOUVjGOohEIqWgV4KM3QHFEgnHm7ZKi5qaGi5MB632pkxaXQGCmc0vjPx0WRwPnL3LHQy4tVUa1NbouAiNSOxmwYWddnAXxPo6RonhzscCuF5RTicORCIRd3b2geRt1oYf8/aEdxBsfjPBOClBTqO+1DAqcl3iZp9wUovuibbhqK9vMEA4k1ozBSA/f/voZGe22SZx17IJn67WMMpL2URQqVLVy0HCbF6RyHApdMwMqGUmUn2mlwV0OmbuMVkQWwomAynjncIEZB7RmaDyegWdnA4GqTdohux+udwwSWmQLARbKAEa0SrKSjkstAgUEhYJEfsXM/dnREQUxGLDHaC07CpXxlsP1UzBtVWVHHsqlR8CAoMMYR9fboGQIjXMHGwVBaDtDcIiF10C50Bx0SU26TPcBTpExiIjMwvpA0cgJKwD12B1dTWuXinkwt56oEnvleLLHHsSNhnu1rMvWwnOQu+0wcw7ZLgrlpddQ2XlzfkAV9hJB3FDvMHhiQ2jQtjBEihnd4CC/LPM5WlALJXJ2LqAwTNEJu/lgnNsIuiaW7+BgtY55l84izLWyal1ugvK5XJIxBKKcgPE+bOn6r1iXKIDD6ao6hWAdnUKe3tMxePouB5nc0/g5PHD0FRWgFaBCSrKy9iC0G6cYXlgawOObtXd8JGJk3NoFwounke1TgtSfpr3FBcW4MCebLY2YFgPcAXd9QogmD6uEDd1bz0uFZzHnp2bkL1pNQf792xBCWf6tB33T41Oxw0EO7N/RvavP2IbWw0+lrMPGo1hfuCaqwFwCiCTq4Qtza6SuNCOW0mAUwD/doZJmFtRJhAjSMAFEuAUQB3g3RuwXCBHoQkPlQBzScvayGOMEP4ECZhJQOzjS08imaULCYIE2oQExCofwxbdNsGtk5n0YUv7w4ak4/E5D2LRgjncecTwQQgLa/4g07d3D9w1eSyem/9IPS7CTW1A+HOYBMRypWv2XTuMYjdENDprCD5Z9irWrfoEr7z4JO6cNAaURue/Pj8XK794Dys+WYpxY4ZbpZ4692OPTMXqlR/h7SXPYy4Ljx01rB4X4V698kO88fcFSO7W2Soud8p88rEZ2Lhmud3w+uL5TmNHLFf4Og15W0C84KmHQdA1KQEyGf8+folYjE4do0EdgYBPLr1TuuPDdxfjrjvGIKhdAEQiEV8xKJUKDOjfG0uZEtw75XbeMu6WqJDLQcptLygVCqexJFYKL62yW7jPPj0bY0YPs9jxTRFTRxh323Dcf/eERlnR0RF4/NFpnJKIRPwdv1EFFlGr/fAAwzOW4WNR6z8h16IEODeoxVwhw6IEyLYfkpkGibh5IlQo5Bh5ayao0xuRTxyXhY5xUcaozWdSAjKRbK4gFDSTQPOunln1tpswKisT/mwUtkcCHSLCkNanJ1eVzILeqcmQ3ngghktsxiEmugMyB/RtRg2haEMJCArQUBo2hsne7xQXzVu6sPAKFr70JuYvfB15Fwp4y8jlMkR2aM/l9UntjtAQw554LqHB4czZC5gxewEHuafPN8i5GVQq5fDzc+953KXCYpzKPWcVzp3PR01NLUz/6ur0FuVoWtaeuKAAdkgtLiYSAQFqs5q1tbX4ZdN2/LxxKzZl70L29r2gNNOCEokEal9Dpw0I9IeKTWxNy1C9HbsPIOfYCQ62bNsDna7GtJhHxD/6z1e4d/oTVmHfgaMQ85iT10pLkb19j9P4FBTADtGSCSPleXODTqdDQcHNB1qqqrSgEcxaE0dZB3/1H+/jxcVvN4KXFr+DH1ZvsFaVyyP8dbX0JDEX9cgDzX/69enBFMDcAfDb77nYseuA3Xw1VVFQgKYkxJO/cfMOvPz3dxt12BdZB375tWXYvG13fQ0ybfhsexrJi64Y3odDZs66DdlYs35zI6A0yiNk/fulYDhbYONzs5aUXMOxE6eomMfCbVlDEdE+zIx+jaYK23fuN0t3ZIKgAHZIkzomdVDTTkumD80BCCV5eXr1SOL152uqqnDKgk1PdQmm3juRW1jbtPYzvPnas4hlZhelNwRtdTU2bt6JvDz+uUbDsu4aJidAWr9evE6A82wOtWbdFqeSLiiAk8RLrs0OEfy7bAsuFWFnE7d1ekyQOoeSzQ9EInPTgO4i637OxrIPVziJA9egHT1yMGKiIswaI9Pu6LGTqNQYXpdoVsBBCYICOEiQDdFMvD0LtEDFZ/5otdXY8Ov2Fl1Yusv8fekHWPz6ew2b9cjwgPTeUKmUZrQ7e/JrbFBQAKMkHHTO6J+KqfdMgtqCa/LI0d/x9cq1LWqNNtc9NXcGtwWD7hItQtaKlUlWXbvE81Lg7MmvsVEvVgAji647036ex2ZPtbj7k0buz75c1aLR38iNQi7ntmE8OXe6McnjzpkD+iEwIMCMbo0LJr/GRgUFMEqihWcazZ55chbiYiN5MZVXXMenn31js0vv+InTWPuLwTu070AOr9JIxGIMYqvAtC2Dt1E3TqTdrAPSU3ldn66Y/BpFIyiAURItOJO9v3D+o4jmmcwRWur87/37M3z7/XqK2gRbtu5mrtZ/ca7WRx5/Ae8sW46K6+ZvTCBTq09qsk043anQkEFpCAk2XwGn1eDdew7xKrwz6BcUoIVSnTl9CubNeZDbwsyHquRqKd569z8WOz9tj+bbK//V8n8ipWfXepSkPEVFJfVxY0AkEiGyQ7gx6hFnmrdYcn0Ws/WRzUz5XcWIoAB2Spou4uIX5uH+u8dze91N0dC7QE+fycNzL76BH1dvNM1uFFcqlBwOwmmEsNAgJMbHwfhHJoNKpTBGPfpsyfVJMjuc8zu39cNVDAoKYIekqTP+a+kiDBuSAdrXw4dCq9VyyfPmTMP/PlpiBvOfmMXl0yaw6mpDWS7hxkGpVOKuP47DFAY0v3jgngkIDQ2+kdv4VMUW1hqluHnEkuuzgs2Ttm3f51LqBQWwQ9x0ARPY6CwSiSzWpg5MT4ElxMeCD4xmS85vJ3H1WhkvnsiIMDw2+wEs/fuzyBzYDxKx+eWiBbGTued467tjIimzJddnLrtj0gq7K+k2l6grWxfawm/HT2Hv/hzU3vhaZHNFUlR8xen7ZZpLk7Xyo7OGoF1ggFkR2tbhzE1vZg3eSBAU4IYgWvO04qtVOMNGv+bSQJ1m9brNLrWZm0tjw/JkOvZM7sK7P+ry5WJs3LKjYXGXhAUFcImYrTdCm+sW/nUp9h88BpoIWi9tyCWX6H8/+w4ffvqVIcEDjpZcn8TzoSPHW2VTn6AAdnQcctXlnjlv9Qmnpp6Ayr9o+EiEsXlSgtlzn8erS97nzKKqKvOJMXWU8vIKbN2xD3Of+hvoQRNjfXc/k3fLkuuTJr979x1xCAvNRSIoQHMlxsqTT37qn55GU085Wct/dckyhsn89/2Pv+DBWfMxdNQ9mDJ1Lhb99S1uMYzOdz/4OEaMm4onn3nFY8weI4e0q/OBh55C+tA7zIB4cvXk10iXoABGSbjhme4K1DHouQM6U9wNyfRokgQF8OjLJxDfUgkICtBSCQr1PVoCggJ49OUTiG+pBLxIAVoqCqF+W5SAoABt8aoLPNdLQFCAelEIgbYoAUEB2uJVF3iul4CgAPWiEAJtUQKCAnjDVRd4sFsCggLYLTqhojdIQFxbU422BJYuWl1tDdoSCHIwXG/x70fWo62B6cUvv1aIi+eOtikgnk3l0NZkQPwKJpBpLxDibUoCggK0qcvtfcy2lCNBAVoqQaG+R0tArA4MQ1sD0yuWNcUX7gwZo/zhDDCVgzPacHec4oCgCLQlUAeEml53Lu4fUgN3hNAo4JYJgQ4HjmmTw8Asf4e34wzaHYlTMIFMOoEQbVsSEBSgbV1vgVsTCXiwAphwIkQFCdghAZcqgFQmQ3xiMtIybkH6oBHcuWN8F1C6HbQLVQQJtFgCLlMAlY8v+vQbjMjoOChVKsjlCu4cHZuIXqkZkMu8483HLb4iAgKXSsBFCiBCTFwCFEoVx5xeD27fDRdhB18/f0R3TIA7/2WmTsCfJv3dDGZMWIzeSbfUkz751nlmZfjqEb76SkKg1STgEgVQqpQIbGdwP1ZXV+PA3i3YunktjhzchdraWtBfUHA4d1egsDtCYmwfDOx1uxlk9ByHuA7d60lO7TrcrAxfPcJXX0kItJoEXKIAKh81ZDIZx2R52TVUlJdz4bLSEhYu5cJkEpGZxEWEg3UJeHCuXOqD3vG3445BizFz9P8wb8JqPDFxDQdzb1+F6VkfY3zGC+gec6tLuHSJAsikMojFEo6hykrq/MwGYjEa/Wt01SwELp+UgIsIB6+TgFoVinH9n8Wj477GyD7zkNhhIILU0VDIfEFKQaBSBCAsMB5do4fhD+kLQQpxS8ojXL6zBOISBWhEPE0AGiRUVlZwMfrWhEjkenK4xm04nDy3D9sOfY9jp3egts5gtjVVraq6Eis3vo0PvvmLGfy658umqnP5fsoQ7uzJBxrx4ZdZEwAAEABJREFUHxzxAZJjs7gObysvpBBpnSfjgVveRUxYiq3VmlWu1XucUuXHEUx6odfXcWF3PGQfWMl14pPnD8BmOhlTV0ovQqHwQddO6dxc4WLxaU6RzuTb9jZkpVyNIT0eckeR2ERTetIUDO05E77KIJvKmxcSISSgI0ak/Bkh/je/mWZezr4UlyiArkaHuhujpo+vP6NUxAAQiURsDUAC+qN8vm9lUZ6nglQqx5RRz+CBsYtAXp+sjPux8KEv8MR9HyDIv71NbIlEIvROGI9UZjfbVMGNCvXqeBsyku4BmTktJSsssBNGpP7Z4eaQSxRAw+x+nU4H+lP7B8JPraYg/AOCoFYHcmHq/JrK61zYWw5SiQy+Kn80/JOwuVCPhEymGH9pmGw1rJT5oVfHMQ6/+FYbbWEm2fSp8eNBd7AWorpRXYSokGT0SZhwI+6Yk0sUoEpThdJrVziK5XI5UvsMQnrmCPRM6Q8pmyBTxtUrhSAXKYW9HUQiEbrEpaFn4mCbWQ32j0FyXJbN5Vu7YJ/EiQhlposj6ZBKFIiPSHckSrhEAQA9zp05AW2VhiNeJBZDzlZ+6UwJlJ5/4QwLGrxDLOCxv+pqDaq01+vhyMlszHy5D75c/zq0LM/ImK9SjU6RPYzRJs9yqQoxob2aLOcuBRIiMiCVyK2Qo0fhtVxsOPgv/LDrZe5MceorVioh2D+aeZAGWCvSrDwXKQBA5s3hAztQXFiAmhvmkI65QAsunse+PVu4/GZR7qaFX3h/MtfhqdMT/GP5Q5wynL14FJVVZTepZncBo2v4ZqL1UDu/KOsF3CQ3scMA5uKMtErNucIDWL7xUew+8RVyzq3nzt/vfIkpxWmr9ci0CvaPtVqmOZkuUwAiSqOpxLGcfdievQ5bNv6IHdnrcfL44XqFoDKeDIkxvfHqn1fj/Wf3cbBswR7ce9tzHEsBfiHsrqfiwvYepFZHVHuxOr4edVDqqJYwV9docPzCZlTXVDYqUlx2FicvbmVuZsN8sVHmjYiIucrpbngj2uKTSxWgxdS6OYKT5/dDq6uCUuHLgYqZOUP7TsbiOT+ySe/8RhNiXY0WRVfzmsWRQuaH2LDezarTGoX9fcIhERtW/vnav15VgrOX+b8IX1J+waoCEF4/VQgfWrvSPEgB7OLP5ZWOntqG2tqa+nZlUgUiQxMQwO4A9YkscKn4LPYcW89Ctv/q6mrMRk3ba7uuJN2paKS21OL1qqsoKW+e8htx0RpMTW21Mdris6AALRZhYwSrtixDTu7W+nWPxrmGWEnZJXy78Z/c3MCQYttRV1uFgpLjthVuxVIXio5wdj3Z9nxAZo4l8iRiKcsSMeD/1elrUVVdxp9pR6qgAHYIzVoV8gC98b9Z+OrnfyC/8BRqagyjlZ6tCmu0FTh0YjPe+fIxHD65xRoa3rwKjcGVzJvpRomHz67hPDvk3eGDncc/t0hteLvOkDF3p6UCtXU6dve4YCm72emCAjRTZDRyT3+xBx54PokDClOaKZo12z7BgnfGYvpLPblyUxd1xayX++KN/81Ebt4h0+JNxvX6OlwpP99kOU8uQBPnqOBkiERii2xotGUOlYPlliyS4JyMgel98MA9E7FowRw8NfchjL1tOLomJTinMQ/CqpCpOGq1uuvIL87hwt56oFXeYLbgZ42/orIzDjUD7VKAlJ5d8dXyf2LjmuVWYd2qTzD13okW+enfLwXvvvkSNq9fgSWvPoOHH7obo7OGYNL4kXju6dn4+L1X8OPXH3DpPipDR7CIzEszwoJiAMZbUekZHD3/Cwt55482uvXsdBtbPFNYZLCauU9zC3ZazLcnwy4FkEqlUCkVoE7ZFNDWB/D8zZw+Ba+89AR6p3SDQi7nKQGIRCKEhATh/rsn4F9LFyG5W2e0tb+kuH6oqdXC0RfeneRIpg9tdAvyi7RK1pWy88g52zzPmVWELFPMwOW/WTPuxt13juMUyJbGRSIRZw7Nf2ImOsZF2VLFK8rImAs1LXk08q8cxb5TK72CJz4mMrreg6gQ2hYi4svm0sgEPHzmJ4e7gV2uAH1798CYkUMsjvoctxYOnTrG4N4pt1vI9b7kcYNnolZfhV2/f+HwC+8u0kpPmgKy/WntwBJN5AA4kb8V+3O/t1TE7nSXK8AfxtwCMmvsoVgsFiEjLRUZ/VPtqe5RdXokDMKYzBk4cnYdM392eRTtthJLzzhkdL23yecFaP6z8/gKW9E2q5xLFYBs+J7JXTjbno/K6modLl0uQsX1SuiZ35yvTGBAADIH9OPL8pq0zrF98PAfl+C3vI3YfOTfXsNXQ0b6Jk7C0J5/Aj3r0DDdNFxaeRmbjryP4rKzplkOidulAMd+O4U33vkELy5+m4PDObatTqb06op2gQG8hOeePo/Zcxdh/J0P49Yx9+OzL1ZBW21YRGpYge4C3bp6r3t0WN87sWDacpy+tBM/7n6lIeteEx7UfSqG9JjRZOcv1xRh3b4lTr0D2qUAlRoNft28E2vWb+ZAq7W8e6/hVaMJrEJh7vGhjr5+w1bkHDtRX/zj/36Ns+fy6+MNA6HB7ZDWp1fDJI8O+/sGY1DqBDw3YwUeGLcIuZd2Yf3+Nz2aJ0vEZ/Wei4yke0CeH0tlKL1SexXZOR87tfNTO3YpAFW0B8JC+HfxVZRfx2/HcxuhJCU7dZr/tqfyUSI42PAoZaNKdkaqrosQlxDsNBgxeBwWzPgv/vbIqkbw8qM/4K2ntuDtv2zDQxNeQUJ0Ck7kZ+P7HS953aSXOvzEAS9x7wSyNuGlS1ihKcaGg+/i0JnVFHUquFQBQtjIzcdNGVOA3fvMtwcUFpZAp6sxqyKTyhAdFWGWbm+CrloMpVLqFBiach/uGPw8usSkITq8cyOICktEoDoM9Fenr+UWun7c/arXdX5a5Jqc+Qq6RA1m8z/rXa6M2fxr9y8FbaIjuTgbrFPj7NabwK+3MBFuoprbZNPtPrP7NCjlaqs01dRW40DuKm4DWbXJQyJWK3pAZkxYCmjkjwlNYdSKGFj+XSk7hx92L8ZJ5vK0XMqxOW6hACVXr/Fw5blJ9Ba0P2a+ZtPtvqq6HNlHP/ZKm59eiDUh4wUEN/kIox7niw7i2+3P43zhQZdeeLdQgMCAxq8OcakEHNxYZHA3TBr4N8RHpDV5uydbd+fxz1GhucK9NS05NqvJc0RQkoMpdg468vIM6zULPop2VhvQ6+tw8uJ2HD6zBu3bdW6Sf5JRl6ghTU6irTbaINMtFEAsdgsyGojFviB1zrH9nwWdAeu3e7A/erSPfOH0zkxbITX+D6yme/9uTXkU6Ul329RJRSIxEjsMxNi0Z2CrDGjfkEHGLZeDS3teRcV1XoqlMimioyPM8vzVfpBIJGbpdXV1IC+RWUYrJ5CnQyZRtjIVrd+8XOYDscj8urU+ZeYUuFQBrpWWmVPAUgL8/ZAY35GFGv/Cw4IhFpuPpLRucLGgqHFhISZIwA4JuFQB8vIvofbGBzEa0urn64u+qckNk7itz4kJcY3SjJHSsgqczD1jjHrfWeDIZRJwqQLkHDuJ65UaM+ZolB+VlYmFzzzCPRBz1+SxWDj/EYSH8S+cnc/LR15egRkeIUGQQHMl4FIF2LnrAAou8Zsu9GDNmJHDuEci5z4yFbExkRCJ+M2fw0d+by6fQnlBArwScKkC0MR146YdvJvceKnjSbxw4RI2btnBk9P6SbSIRYs5hddy4SwoqyxsfUaboIBodBb/hJdkTLJuggybsl2qAETR/327Bkdy7BvBaZv0N9+vdVvzh97Z8/nmefho/TSnwdajn5IY3RqIRmfKgGRMsnaEEFyuAHQX+OzLVci70Dwbnjw/a9dvwbffO/aZUEcIUcDhOAm4GpPLFYAY3MHmAvQswZ69h3m9QlSmIZRcLcWHn36Ff7z1YcNkISxIoMUSaBUFIKpzjp3AnCdfwrMvvIFN2buQX1DILW7RHYKA1gx+O34K//nsW0yd+TSWr/iOqgkgSMChEnCIAsx54kWkD73DDDJH3IUPPv7CKsHU+ecvfB2TpszG8NH31cOo26fhwVnz8d6/V6Cw0DNeCWiVUSHTLSXgEAVwS84EogQJ2CABQQFsEJJQxHsl4EYK4L1CFjhzXwkICuC+10agzAUSEBTABUIWmnBfCQgK4L7XRqDMBRIQFMAFQhaacF8JCArgDtdGoKHVJCAoQKuJXmjYHSQgKIA7XAWBhlaTgKAArSZ6oWF3kIC4tKQAbQnKS/mfSNuw8hraEvB1vm3ry9qUDOh6i8uvFaKtgenF37G2DG0R3EEOrS13wQQy7QVCvE1JQFCANnW5BWZNJSAogKlEhHibkoC4Q2x3tDUwvcIZo/zx5BtRbQqIZ1M5TOyyBO4IE5KWYPbAL50CYrFEirYEphfdGFf6itGWwMi36blOXwd3A3o7lFKmhjOgFU0gU9ELcUECrpeAoACul7nQohtJQFAAN7oYAimul4BLFUAqkyE+MRlpGbcgfdAI7twxvgso3fWsCy0KEgBcpgAqH1/06TcYkdFxUKpUkMsV3Dk6NhG9UjMglymE6yFIwOUScJECiBATlwCFUsUxSB9/rKu9+flTXz9/RHdMQJv581BGI2LUuG9eLzz8Qj8zuHN2shlXQWEqTJnTAy//91YsWzcO764Zi+c/GIqRd7rPtXaJAihVSgS2CwX9VVdX48DeLdi6eS2OHNxV/2rEoOBw7q5AZbwR6MuR6UlTMHnQK5ie9TH+/Ifv8MTENRxQmNIoLyPpHoT4838YpLXlQh26//AoDBodawZ9BndoRF6vAe2x6N/DMPbeLojrEgh1oAIBQUp06RWCe+f2YmsuA6H0kaK1/8SuIEDlo4ZMJuOaKi+7horyci5cVlrCwqVcmEwiMpO4iBcdOkdm4v5b3sPDYz7HsJ6zkNBhAMIC4+GrbAe51IcDClMa5dFH86aP/BjTRnzIfTHRE0VBHfuOP3VHSHsfXvLpgyg9+4dj0kPdePPNEnm+E2FWxs4ElyiATCoDW3HjSKyspM6v58L0uaQaXTUXpnxSAi7iBQca8ScO+CsmDHgR9OlUidgwANjCGn1gLrxdIsakzQd9b5hwwYP+bp0Uj6hO/vUU19bqcSmvAhVlhmtNGRKpGKkDI0BmFcWtgUIpRsdkfmWyVs+WPJcoQCNCaALQIKGysoKLkZKLRK4nh2vcwQcyYSYO/Cu6RGWCOrO96KkufW/4j5mvgnDai8dR9UoKNdi18QK2rjmHq8Xmn7oyttORmTxyhYSL6uv02PT9GTxxx1p89tZhaK7ruHQ6qNspEJMYQEGrQN3ituntERatsFrOnsxW73FKlR9HN+kFfTSZi3j44daUR9EhiD5oLXIAJyLOZKJv45LJ5ACEdqMoOF+O5W8cwnsv7EFl+c2ObIqwPZssG9O02lrkHivholt+PIsZw7/HPf2/5mDmiFXYteECl9fUITxWgdumh0OhcmyXdTOb8fUAAA6MSURBVCw2C1zoanSoq6vlcn186dZo6BgikQhSmYRLp/zqai0X9uRD38RJiArpwVgw8MgCDviJGM5k9EmY4ABczkVB9r9x9KeWqqtqEdXRH+/8NAb/23kHlu+YxIUnz+xO2TYD6yqI6eqD/qPb2VzHloIuUQANs/t1OsOIofYPhJ9azdHmHxAEtTqQC1Pn11Re58KefEiKGgqZVNkkC3S3q67RoLqmEnV6w+BgrZJUokBS9FBrRdwiL75bEFS+0npafNUyjLwrEe1CVKBOTBNgCv9hahJmLepXX86WgEwuQuc+BovBlvK2lHGJAlRpqlB6zfCOf7lcjtQ+g5CeOQI9U/pDyibIROjVK4UgFymFPRViw3oj0K+DVfL1+jqcK9yP5RsfwZJvRzEYjY/WTcOJ/OwmFcHfJxSJzItktQE3y5Swya5EYn43JEXonRmBASNjmkVxSKQcSf0cpwQuUQBAj3NnTkBbZZg4icRiyNnKL52Je0rPv3CGBQ3eIRbwyJ9aFQKFzMcq7flXjuLrrc8i/8qx+nLFZWfxzbbn8PuFLSzNsgxkEhX8fdqzMu7701TqUFNT14jAa1eq8M0Hx5D90zlUVd5cAPXxlaFzz+BGZZuKyFUShEYpmipmc76LFAAg8+bwgR0oLixAzQ1zSMdcoAUXz2Pfni1cvs1Uu2nBQN8ISMQyi9TV1Gpx8uI2zuzhK3S6YBe0ukq+LC6NXMW+ykAu7K6H08eugux+I301ujpsWnUG3350DMte2oPTv101ZkEkFkEmb14XZGMn5MwtWo+khYHmtd6ixpgSaCpxLGcftmevw5aNP2JH9nqcPH64XiFaiL7Vq5drilBbd3OEMyWojtn6FRqDKWiaR/HSystMOQx3SYrzATkL+NLdKY3cpUZ6yPxRB9wcsaWylnU5iVQEdZDUiL7F55ZR0+LmvQuBlk1oa+sMk31ncFZTW42rFfnOQO1QnHmnSkGLX4SURvlBo2Pw9NJB3NaI+O5BlMwBlbHmTuUKmRzIXV6js2wmmhRvMiooQJMisr3A6YLduG5lhJcw8yhIHWURIS12KWWWJ3gVVVdQcPV3i/XdJePg9ksoK6mqJ0ehkqLXgPacvU93BGMGlaGyxrgt5zq2qqwpb9prZgsuKiMoAEnBQUAuzXNFB6Fnnh4+lKQAXaKGcFsjTPOp86d0GgtLLlTCefbyPpSU55lWdbv40b2F2MImvLpqyx2V8qgMlW0OAzT6Xym4uaWiOXX5ygoKwCeVFqTtP/UdikrJo8WPhDr6HYMWIzN5Gre9geIDuz2AyZmvsBXfTvyVWCrhJNws6BG/r97LwVfvHUVRwXXU1d00WSh8IbcMn75+kOXnNJsXGv2LLripAvioVBg2JB2Pz3kQixbM4c4jhg9CWFgw2sofuTQ3HXkfNCGu59kk4KNoh0Gs0z806j8gGMyUIdCX1g9EJiUNUcJFOAm3IaX1j0/ftZ7bzmDc1kBxU6pWrziBuePX4L6Mb7D4kS0cUPgvd6/nPEOm5W2JX87TIv+UdUeBLXiMZRxyBxidNQSfLHsV61Z9gldefBJ3ThoDSqPzX5+fi5VfvIcVnyzFuDHDje1yZ1KOn775NzauWW4XfLX8n0jp2ZXD5U6HXObOXLXrb7h09QQj6+boxyLN/OlRzO4mhItwNrOyWxUnU4fAHqICg5VcteqqOpzYZ9g8ySU44NBiBVjw1MMg6JqUAJmM3z0lEYvRqWM0nnxsBgdGuqVSCVQ+StCdwx5QKRWQSvnbNLbRWudLJSdwoTinSbemNfp0NWy0KzkGwmWtnLfnxSYa1j7I9Dm0yfD8iKN4bpECPPv0bIwZPcxixzclUiGXY9xtw3H/3e6/qcuU9ubEaf//fcPfRt/ECZBLra8MW8NLE+JeHW/DA7e8i5iwFGtFvTovZWAEW0Guw/4N16DVNF5lbinjdisAmS9DMtPYymfzUCgUcoy8NRPR0REtpd0t69OkdlSfJ9mElp575bfpm0e4CCEBHTE2bQHiI/o3r6oXlA6P8gPtFzq+qxy7195cRXYUa83rvQ1aHZWVCX+1ZZ91g6JmwQ4RYUjr09Ms3RsS6FmAsEDL3hwjj7RgRm5TAgob0y2dA3zC0b/LXS26o1jC7cz0luL+48PdUXhei+yVllfQW9KGXQpA9n6nuGjedgsLr2DhS29i/sLXkXehgLeMXC5DZIf2KCurwOkzeTiVe84qXK/k3x9Tcq0Mx347xdtGayT2ThiPyJBk1rTlkV+jLcWWnI/w5nd/4HaCLvl2NBemNMpjlS3+IoO7e8QzARYZaGbGxBndkNSrPX5eXohC5v1pZnWbitulAHExkQgIUJs1QM/4/rJpO37euBWbsnche/tetiRuvhgikUig9vXFtp37MGP2Atw7/QmLsHzFd6irNbf7ampqsXvPIVRqHOcSM2OomQmd2qexEVplsRat5P609zVsO/ZfNjm+qdR0F6C0H3a/jApNscX69ExAfES6xXxvypg8qztGTEzED8su4cR+x3p+GsrJLgUgE0YqMfe+6HQ6FBQU1uOvqtI2WgSpz2hGYPCgfvDz8zWrUXylBJu37jZLb60EudQHQWr+u6KBJj3IlXkyf6shynPk8i9us7iSTFX8fcIQwT1uSTHvg6SUEMx/O5Pr/Bs+L3Zq5yfp2aUAGzfvwMt/fxcvLn67Ebz82jJs3nazU4aGBDE3pYTaaQQ6XQ2KWAdulMgTyeifitSUbhCJRI1y9Xo9Duf8jpxj5GdvlNVqEeqUpASWCCCX5uWrJy1l16cXlZ5FTW11fdw0oJSrEeQXZZrskLhcpoCPQu0U8PPxR0LXUPTKiEDKgMZAk9zJM7vjxY+GY+H7QxGXEIw1nxRyXh+HMGYFidhKnsWsM2cvYN2GbKxZv7kRkOlDcwCqSF6eXj2SzDov5WmqqnDq9HkKWoXMAf0QGBBgVqai4jq2bd9nlu7OCXrUQatr+lZOZaisJV5EIhGTqV2XzRLK+vSggFC0D45xOPRMScQz7wzCC58MwdNvDsRTSxvDIy+lYfy0rkhIDkJpkQ4/vH8JhzaX1tPlzIBzJMkonjguCx0iwlnI/FdwqQg7dx0wz2iQQgrUt3cyxGJRg1RD8CKrT/MLQ8wzjhKxDEHqqCaJ9VMFQywyv2s2WdFNC3RM9sFdT0cirrsPU1zrRBZd0OKbf17Eb7vLrRd0YK5TFGDi7VkYyxa8aKXXlFatthobft3e5OR1+OAMhIeHmFaHO05+icg6fQ076Rnw/0gBIoPJQ8Sfb0yNDu0Fmuwa46ZneqqM7hKm6e4YTxvVDnc+GYmmHmFkFi3OHq3EF6/l40zOTeeAK3hyuAKQ3T71nklQ80xciaEjR3/H1yvXUtAqEB6FXG5Wxt0mv0YC84oO43qV9YUael1KVu+5xipmZ3p1YlxYH7P0hgma6nKcKzzYMMktw7feE4qs+8PgGyC1Sl8dc/D9vqcctMrbIV6JlKEBTUL3DDUc9X4ghypA75TueGz2VIu7P2l+8NmXq5oc/Ufekon4jtFmgtOzocLdJr8NiaQH3vUWngWgclKJnPnxx2N61kfo13kyaNVYrQpF38SJuG/4O0jr8kc2+psrPdU1gB40kSa3qSHunsfR08KROSHYpk4qZj0wKU2NiX/ugEmP2Qb0lrjIBJVDmGfNOwQPaMR+5slZiIuN5EVYziaun372DXY0YftT5awRg6BW+1GwEbj75Jfe6lBRVdKIZvOIiNsmQSvGtBX60XFfY0TqY6C7Q1O2P43+J5mb1Byne6XQ6CyWmM/d3ItKAzUOUQCy9xfOfxTRUREGrCZH6vzv/fszfPv9epMc8ygpUtcu8eYZLCWXrRqT94kF3fJH7/uh9/vordwF7CWc7iynLu7AsfMb7EUh1OORQIsVYOb0KZg350EEtQvgQQ+UXC3FW+/+x6bOTwgsuT611dU23T0IR2vCpsMfMBudPFyWJ8TNp0/PPQu88/iK5lcValiVgN0KQPv3F78wD/ffPR4UNm1Fz+x12ufz3Itv4MfVG02zeePWXJ+XLxdj45YdvPXcKZHsc3rJ1amCnVZXdG2nWY+LJcfx0+5X4U5PhNlOv3uXtEsBkrt1xr+WLsKwIRmQSPh91lqt4UW38+ZMw/8+WmIG85+YZSaZ4RZcn3V1euzdn4O8PP7NdWaIWjmBlOD/sudj78lv2OKX/e871dVW4dDpn/D5pnlC53fSNbVLAQak90ZCfBxb2LA80VEqlaCnwBLiY1lZc4jsEG7GEtn/fK7Pa6WlyN6+x6y8uyf8cvAd/HfDbBw68xMqteQitcUs0qOKuTqP521iHf9xrN77eqONc+7OM9FXWqzDpbNapwEtmDnqwRgxEewOMGn8SHRJ7MhLym+/53qE/c9HPJktq/e8hre+H48VbCTfc/Jr0OtNCq/loiFcKD4CyqMyS78bi5U7FjV6fygfbndMI5p+/bIY/3r8tNPg0xfOO+zBeLdRALqrqFRKkl8j0GiqsH3n/kZpnhohL9EvB97G55vn4aP10xrB8o2PgvKojKfy54l0u4UCkOljyfVJ+4bWrNviibIVaPYACdilALQdIffMeatPcTX1lFf+xcv14rHk+qTJ78HDvzW5clyPSAgIEmimBOxSAFrQmvqnpy0+xWXtCS9j3qtLltWT+trSDzBg+GSkD72jEVAa5dUXFAKCBBwsAbsUwME0COgECbSaBByoAK3Gg9CwIAG7JSAogN2iEyp6gwQEBfCGqyjwYLcEBAWwW3RCRW+QgKAA3nAVBR7sloCgAHaLrkFFIeixEhDX6Ay7Nj2WA4FwQQJ2SuCapgBiTWWZndWFaoIEPFsCp4p3QFx+rRD6OvP3d3o2awL1ggSsS4Ce2diT938Q19XWoPjSGUEJrMtLyPUiCVDnX3nkeWiqS8FNgrVV11GQdxzlpUUQ5gRedKVdwIonNUE2/968b/HR7unILz3Gkf7/AAAA//+lcqwoAAAABklEQVQDABqhaxjEGcH4AAAAAElFTkSuQmCC';
+
+// ─── GLOBALER ZUSTAND ─────────────────────────────────────────────────────────
+const state = reactive({
+  screen: 'home',            // home | setup | game | settings | stats
+  net: (typeof navigator !== 'undefined' && navigator.onLine === false) ? 'offline' : 'online', // globaler Netz-Status: 'online' | 'offline' | 'reconnecting'
+  settings: loadSettings(),
+  stats: loadStats(),
+  streak: loadStreak(),      // { lastCompletedDate, currentStreak, bestStreak, totalCompleted }
+  streakLostNotice: false,   // true, wenn beim Start ein Streak-Verlust angezeigt werden soll
+  streakExtended: null,      // { current, best, continued, isNewRecord } für den "Streak verlängert"-Screen, sonst null
+  raceStats: loadRace(),     // { racesPlayed, racesWon, racesLost, fastestWinMs } — getrennt von state.race (laufendes Match)
+  puzzleHistory: loadHistory(), // Ringpuffer gelöster Rätsel (neueste zuerst), siehe storage.js
+  achievements: loadAchievements(), // { id: Freischalt-Zeitstempel }, siehe storage.js
+  inventory: loadInventory(),    // { itemId: { acquiredAt, source } } — Besitz von Cosmetics (z.B. Skin 'dynamicColor')
+  wallet: loadWallet(),          // { balance, updatedAt } — In-Game-Währung (Münzen pro Sieg)
+  lastCoinReward: 0,             // zuletzt auf dem Sieg-Screen gutgeschriebene Münzen (0 = ausblenden)
+  lastCoinMult: 1,               // Gesamt-Multiplikator des letzten Siegs (Coop·perfekt·Bestzeit·Streak); >1 → Bonus anzeigen
+  lastStreakUsed: 0,             // Streak-Tage, die in den letzten Sieg-Multiplikator eingeflossen sind (>0 → Streak-Bonus anzeigen)
+  skinJustUnlocked: false,       // einmalige Feier-Anzeige in dieser Session
+  skinCodeInput: '',             // Eingabefeld zum Einlösen des Geheimcodes
+  historyDetail: null,       // { entry, puzzle, cellMeta } während der Endboard-Ansicht eines Verlauf-Eintrags, sonst null
+
+  // Spiel
+  puzzle: null,
+  isRaceGame: false,          // true, während ein Race-/Duell-Match (1v1) läuft
+  isTrainingGame: false,      // true, während der Trainingsmodus (Schritt-für-Schritt-Erklärung) läuft
+  trainingStep: null,         // aktuell erklärter Schritt { r, c, action, reason, group } oder null
+  trainingDone: false,        // true, sobald keine weiteren Tier-1-Schritte mehr gefunden wurden
+  marks: [],                 // 'none' | 'kept' | 'removed'
+  cellMeta: [],              // pro Zelle: { region, color, edges, chip, hint, hintMark }
+  lives: 0, maxLives: 0,
+  hintsLeft: 0,
+  hintsUsed: 0,
+  mistakes: 0,
+  status: 'idle',            // idle | playing | won | lost
+  saveSlot: 'solo',          // STABILE Speicher-Slot-Kennung ('solo'|'coop'|'race'), beim Laden gesetzt.
+                             // persistGame()/quitToHome() entscheiden hierüber — NICHT über die transienten
+                             // Flags coop.active/team.active, die bei Rejoin/Rollenwechsel kurz flackern können.
+                             // So wird der Solo-Slot NIE von einem Coop-/Team-Spiel überschrieben.
+  gameId: null,              // Identität der aktuellen Partie (über Geräte stabil) — für Multi-Device-Session + Belohnungs-Idempotenz.
+  sessionRev: 0,             // zuletzt für diese gameId bekannte Cloud-Session-rev (Compare-and-Set-Basis).
+  sessionReadonly: false,    // true, wenn ein anderes Gerät die Partie übernommen hat → Brett gesperrt bis „Hier weiterspielen".
+  deviceNotice: null,        // { kind:'defunct'|'takeover'|'reload' } — Banner/Hinweis für Cross-Device-Ereignisse (null = keins).
+  versionMismatch: null,     // { local:{coins,wins,ts}, cloud:{coins,wins,ts}, busy } — offener Versions-Mismatch-Dialog (offline vs. Cloud), sonst null.
+  newHighscore: false,        // true, wenn beim letzten Sieg eine neue Bestzeit erzielt wurde
+  wouldHaveBeenBest: false,   // true, wenn die Zeit ohne Fehler/Hinweise eine neue Bestzeit gewesen wäre
+  hintWarnShown: false,       // true, sobald die einmalige Hinweis-Warnung dieser Partie bestätigt wurde
+  hintTutor: null,            // aktiver Tipp-Tutor { steps:[…], i, target:{r,c,want} } — s. js/hinttutor.js
+                              // — highlightet die Gruppe + zeigt eine Leitfrage, OHNE die Zelle/Aktion zu verraten;
+                              // erst ein zweiter Tipp auf den Hinweis-Knopf löst die Zelle wirklich auf.
+  bestTimeNotice: null,       // Text der kurzen Top-Banner-Meldung "Bestzeit nicht mehr möglich"
+  tool: 'pen',               // pen | eraser
+  desktopKeyCapture: false,  // Einstellungen ▸ Desktop: wartet gerade auf einen Tastendruck zum Belegen?
+  startTime: 0,
+  elapsed: 0,
+  history: [],               // Undo-Stack
+  flash: {},                 // "r-c" -> true (rote Fehler-Animation)
+  justResolved: {},          // "row-3" | "col-1" | "region-2" -> true (Fertig-Puls)
+  cellPx: 48,
+  zoom: 1,
+  markedBy: [],               // 2D-Array parallel zu marks: Coop-Spieler-Id, LOCAL_PLAYER_ID (solo/Wettkampf) oder null
+
+  // Auswahl im Setup
+  sel: { ...DEFAULT_GAME_OPTIONS },
+
+  // Coop-Modus
+  coop: {
+    active: false,             // aktive Session
+    role: null,                // 'host' | 'guest'
+    code: '',                  // Host: gewählter Code; Gast: eingegebener Zielcode
+    connected: false,          // Partner verbunden
+    online: true,              // eigene RTDB-Socket-Verbindung steht (fällt bei stillem Idle-Disconnect auf false, siehe Coop.watchConnection) — Chip zeigt "offline" auch wenn nur die eigene Verbindung abriss
+    waitingForGuest: false,    // Host: Raum offen, wartet auf Join / Gast: verbindet
+    lobbyDiffId: 'mittel',
+    lobbyBigNumbers: false,    // „Große Zahlen"-Modus (10–19) für die vom Host gestartete Runde
+    lobbyEndless: false,       // „Endlos-Aufstieg" (geteilte Leben, kein Refill) für die Coop-Runde
+
+    error: null,               // Inline-Fehlermeldung im Lobby-Screen
+    myId: null,                // eigene Firebase-uid dieser Session (Host wie Gast)
+    hostId: null,               // uid des aktuell amtierenden Hosts (für deterministische Host-Übernahme bei Disconnect)
+    players: [],                // [{id, name, color}] — alle bekannten Mitspieler inkl. mir selbst
+    nameDraft: '',              // Entwurf im Namens-Gate, bevor er bestätigt wird
+    identityConfirmed: false,   // true sobald das Namens-Gate in dieser Coop-Session bestätigt wurde
+    pendingJoin: false,         // Einladung angenommen: nach dem Namens-Gate DIREKT beitreten (Code steht schon fest)
+    lifeLossBy: [],              // chronologisch: wer hat welches (gemeinsame) Leben verbraucht
+    mistakesByPlayer: {},        // id -> Anzahl Fehler dieses Spielers im laufenden Rätsel
+    awaitingStart: false,        // Rätsel ist generiert, aber die Zeit läuft noch nicht — wartet auf Start-Klick
+    generating: false,           // Rätsel wird gerade (im Worker) für diese Lobby generiert — Start/Bereit ist bis zur Fertigstellung gesperrt
+
+    teamMode: false,               // Host-Lobby-Toggle: Team-vs-Team statt normalem Coop
+    ffaMode: false,                // Host-Lobby-Toggle: Free-for-All (jeder gegen jeden, 3–4 Spieler) — Race-Familie mit N Gegnern
+    raceMode: false,               // Host-Lobby-Toggle: Race-/Duell-Modus (1v1, getrennte Fortschritte) statt normalem Coop
+
+    invitePickerOpen: false,       // Freunde-Auswahl zum Einladen in die Lobby offen?
+    invitedUids: [],               // in dieser Lobby bereits eingeladene Freunde (uid)
+  },
+
+  // Team-vs-Team (Feature 12b) — getrennt von state.coop, da es einen zweiten,
+  // nur aggregiert sichtbaren "Gegner" gibt. Die Formations-Lobby (Team-
+  // Zuweisung pro Spieler) läuft über state.coop.players[].team im selben Raum
+  // wie normaler Coop; siehe startTeamMatch()/applyTeamStart() für Details.
+  team: {
+    active: false,         // true während eines laufenden Team-vs-Team-Matches
+    myTeam: null,           // 'A' | 'B'
+    matchOver: false,       // true sobald ein Team fertig ist (hartes Match-Ende für beide)
+    winningTeam: null,      // 'A' | 'B', sobald matchOver
+    endReason: null,        // 'won' | 'lost' -- WARUM das Match endete (das Team, das
+                            // den Ausschlag gegeben hat, hat selbst fertiggelöst/alle Leben
+                            // verloren/aufgegeben), nötig damit der Ergebnis-Screen nicht
+                            // pauschal "Gelöst!" zeigt, wenn man nur durchs Leben-/Aufgabe-Ende
+                            // der Gegenseite gewonnen hat.
+    opponentPct: 0,         // zuletzt bekannter Fortschritt des Gegner-Teams (nur Prozent, keine Zellinhalte)
+    opponentMistakes: 0,
+    opponentMistakesByPlayer: {}, // uid -> Fehleranzahl, fürs Einzel-Leben-Verlust-Panel im Ergebnis-Screen
+    myPct: 0,               // eigener Fortschritt zum Zeitpunkt des Match-Endes (für den Vergleichs-Screen)
+  },
+
+  // Race-/Duell-Modus (Feature 11) — strikt 1v1, KEIN geteiltes Gitter: jeder
+  // Spieler sieht nur den eigenen aggregierten Fortschritt des Gegners (Prozent/
+  // Fehlerzahl), nie dessen Zellinhalte. state.coop.active bleibt während des
+  // Rennens absichtlich false, damit coopSend() niemals Zug-Events versendet —
+  // Antwort-Leak ist dadurch baulich ausgeschlossen, nicht nur durch Konvention.
+  race: {
+    active: false,          // true während eines laufenden Race-Matches
+    opponentId: null,        // uid des Gegners (für raceProgress-Lookup)
+    opponentName: '',
+    opponentColor: '#888',
+    matchOver: false,        // true sobald einer fertig ist (hartes Match-Ende für beide)
+    winner: null,            // 'me' | 'opponent', sobald matchOver
+    endReason: null,         // 'won' | 'lost' -- WARUM das Match endete (Outcome der
+                             // Seite, die das Match ausgelöst hat: echtes Fertiglösen, alle
+                             // Leben verloren oder aufgegeben). Zusammen mit winner ergibt das
+                             // 6 eindeutige, unterscheidbare Szenarien für den Ergebnis-Screen --
+                             // ohne dieses Feld zeigte "Gelöst!" auch dann, wenn man nur gewonnen
+                             // hat, weil der Gegner alle Leben verlor oder aufgab.
+    myPct: 0,
+    opponentPct: 0,
+    opponentMistakes: 0,
+    // Free-for-All (jeder gegen jeden, 3–4 Spieler): dieselbe Race-Mechanik
+    // (eigenes Gitter, geteilter Seed, per-uid-Fortschritt), aber MEHRERE Gegner.
+    // Der Transport (raceProgress/{uid}) ist bereits pro-Spieler; hier halten wir
+    // die Liste aller Gegner statt genau eines. Die 1v1-Felder oben bleiben für
+    // den klassischen 1v1-Ergebnis-/HUD-Text erhalten.
+    // ── KI-Duell ──────────────────────────────────────────────────────────────
+    // Ein KI-Duell ist ein vollwertiges Race-Match, aber OHNE Firebase/Raum: der
+    // Gegner ist ein lokaler opponents-Eintrag, dessen pct ein Scheduler treibt
+    // (s. startAiDuel/scheduleBotAction). Funktioniert daher auch offline.
+    ai: false,              // true, wenn der Gegner der KI-Bot ist
+    aiLevel: 'medium',      // feste Stärke-Stufe (PRESET_LEVELS)
+    aiSkill: 1,             // fester Faktor 1 — die Stärke steuert allein die Stufe
+                            // (der frühere Prozent-Regler war überflüssig neben den Stufen)
+    aiTargetMs: 0,          // kalibrierte Zielzeit dieses Duells (nur Diagnose)
+    aiMode: 'preset',       // 'preset' = feste Stärke-Stufe · 'individual' = Klon (eigener oder Freund)
+    aiClone: false,         // true = gegen den EIGENEN Klon spielen (Spielstil aus eigenen Partien)
+    aiFriend: null,         // uid eines FREUNDES-Klons (schlägt aiClone/Stufe) oder null
+    friendClones: {},       // uid → Cloud-Eintrag aus /aiProfiles (beim Öffnen des Screens geholt)
+    clonesLoading: false,   // true, solange die Freundes-Klone geladen werden
+    ffa: false,             // true, wenn dieses Race-Match ein FFA (≥3 Spieler) ist
+    opponents: [],          // [{ id, name, color, pct, mistakes, out }] — alle Gegner (ohne mich)
+    winnerName: '',         // Name des ersten Fertigen (für den FFA-Ergebnis-Text)
+    rematchPending: false,  // true nur nach einem beendeten Match bis zum nächsten Hosten --
+                             // steuert, ob die Race-Lobby ihre eigene Schwierigkeitsauswahl
+                             // nochmal zeigt (siehe rematchRace()/startHosting()).
+  },
+
+  // UI
+  toast: null,
+  modal: null,               // null | 'howto' | 'changelog' | 'confirm'
+  confirm: null,             // { title, msg, onYes }
+  showWhatsNew: false,
+  whatsNewSince: null,       // zuletzt gesehene Version beim App-Start -> "Was ist neu" zeigt alle Einträge seither
+  updateCheck: 'idle',       // manuelle Update-Prüfung (Klick auf die Version): idle | busy | found (Dialog offen)
+  statsTab: 'allgemein',     // aktiver Reiter im Statistik-Screen: allgemein | solo | coop
+  settingsTab: '',           // aufgeklappte Einstellungs-Karte ('' = alle zu; spiel | darstellung | farbe | ton | konto | daten). Bewusst NICHT persistiert — Einstellungen starten immer zugeklappt.
+  // Optionaler Account (E-Mail+Username+PW, Cloud-Sync). Anonymous-first: ohne
+  // Login bleibt alles lokal. status: 'anon' | 'in'; busy während Auth-Aktionen.
+  account: {
+    status: 'anon', uid: null, email: '', username: '', role: 'user',
+    mode: 'in',              // Formular-Umschalter: 'in' (Anmelden) | 'up' (Registrieren)
+    email_in: '', pw_in: '', email_up: '', username_up: '', pw_up: '',
+    usernameEditing: false, usernameDraft: '',   // Username im Profil ändern
+    usernameCheck: 'idle',   // Live-Eindeutigkeit: 'idle'|'checking'|'available'|'taken'|'invalid'|'unchanged'|'error'
+    busy: false, error: null, notice: null,
+    syncState: 'idle',       // 'idle' | 'syncing' | 'ok' | 'error' — sichtbarer Cloud-Sync-Status
+    syncErrorMsg: '',        // konkrete Fehlermeldung des letzten fehlgeschlagenen Syncs
+    lastSyncAt: 0,           // Zeitstempel der letzten erfolgreichen Cloud-Sicherung
+    // Admin (nur sichtbar/aktiv bei role==='admin'; Rules erzwingen es serverseitig)
+    adminConsoleOpen: false,  // Vollbild-Admin-Konsole (Nutzer-Tabelle) offen?
+    adminUsers: [], adminFilter: '', adminEditUser: null, adminBusy: false, adminError: null,
+    adminBalance: '', adminUsername: '', adminItem: '', adminFieldKey: '', adminFieldVal: '', adminEmail: '',
+    adminBalanceMode: 'donate', // 'donate' (+) | 'subtract' (−) | 'target' (=) — Guthaben-Änderungsmodus
+    adminBalanceAmount: '',     // Eingabe-Menge für den gewählten Modus
+    adminNotify: true,        // Haken „Nutzer benachrichtigen" bei Geschenk/Entzug/Guthaben (nicht bei Selbst-Aktionen)
+    pwNew1: '', pwNew2: '', pwFormOpen: false,  // „Passwort ändern“-Formular (neues Passwort 2×)
+    // Daten-Editor im Bearbeiten-Modal (frischer /users/{uid}/data-Snapshot)
+    adminData: null,          // geladener Snapshot (Quelle für die Sektions-Felder)
+    adminDataLoading: false,
+    adminDataDirty: {},       // pfad -> neuer Wert (ungespeicherte Änderungen)
+    adminInvPending: {},      // itemId -> 'grant' | 'revoke' — GESTAGTE Inventar-Änderungen (erst bei „Speichern" gesendet)
+    adminGiftPickerOpen: false, // kategorisierter Geschenk-Auswahl-Screen (wie Shop) offen?
+    adminDataSection: null,   // aktuell aufgeklappte Sektion ('wallet' | 'stats' | …)
+    adminJsonPath: null, adminJsonDraft: '', adminJsonError: null,  // JSON-Untereditor
+  },
+  // Freunde & Präsenz (nur mit Account nutzbar)
+  friends: {
+    open: false, tab: 'friends',   // 'friends' | 'leaderboard'
+ addOpen: false, // -Popup „Freund hinzufügen" (im Kopf, statt Inline-Formular)
+    addName: '', addBusy: false, addError: null, addNotice: null,
+    list: [], requests: [], presence: {},   // presence: { uid: {online, game, lastActive} }
+    now: Date.now(),   // reaktiver Zeit-Tick für die Präsenz-Frische (Heartbeat bumpt ihn)
+  },
+  leaderboard: {
+    diff: 'sehrleicht',        // aktuell angezeigte Schwierigkeit
+    entries: [], loading: false,
+  },
+  lobbyInvites: [],            // eingehende Lobby-Einladungen von Freunden
+  pendingLobbyInvite: null,    // aktuell als Banner angezeigte Einladung (Annehmen/Ablehnen)
+  // Solo → Coop Live-Umwandlung (Freund in die LAUFENDE Solo-Partie einladen):
+  // 'idle' = kein Einladungs-Raum · 'connecting' = Raum wird erstellt ·
+  // 'hosting' = Raum offen, warten auf Beitritt (Spiel läuft solange als Solo
+  // weiter) · 'converted' = jemand ist beigetreten, Partie ist jetzt Coop.
+  soloInvite: { status: 'idle', code: '' },
+  // „Endlos-Aufstieg"-Solo-Modus (js/endless.js): ein Lauf über immer schwerere
+  // Level auf gemeinsamem Leben-/Hinweis-Pool. active=true markiert die laufende
+  // Partie als Endlos (analog isTrainingGame/isRaceGame). endlessSummary hält den
+  // Ergebnis-Screen nach Laufende.
+  endless: { active: false, coop: false, advancing: false, level: 0, lives: 0, hints: 0, score: 0, coins: 0, best: 0, lifeLossBy: [], accumMs: 0 },
+  // Wochen-Missionen (js/missions.js): aktive Missionen der Woche + Fortschritt +
+  // Eingelöst-Status. weekKey rotiert wöchentlich (initMissions setzt beim Start/
+  // Wochenwechsel neu). claimNotice = kurzer Feier-Toast beim Einlösen.
+  missions: { weekKey: null, list: [], progress: {}, claimed: {} },
+  endlessSummary: null,          // { score, best, coins, newBest } | null (Run-Ende-Screen)
+  endlessLevelFlash: null,       // kurze „Level geschafft"-Einblendung { level } | null
+  generating: false,
+  paused: false,             // Pausenmodus (Feld verdeckt, Zeit gestoppt)
+  resumeCountdown: null,     // 2-s-Countdown beim Fortsetzen aus der Pause (null = kein Countdown)
+  joinFreeze: false,         // kurz nach einem Mid-Game-Beitritt: Skin-Rotation aus (s. handleCoopMsg INIT)
+  resumeAvailable: null,     // gespeichertes Solo-Spiel (zum Fortsetzen)
+  resumeAvailableCoop: null, // gespeichertes Coop-Spiel (zum Fortsetzen, separater Slot)
+  resumeAvailableEndless: null, // gespeicherter Solo-Endlos-Lauf (zum Fortsetzen, eigener Slot)
+  saves: [],                 // Bibliothek gespeicherter Partien (neueste zuerst), s. refreshResume
+  savesOpen: false,          // Spielstand-Liste (Bottom-Sheet) offen?
+  winFx: null,                   // laufende Sieganimation { id, pieces, seq } | null (s. launchWinFx)
+  prestigeOpen: false,           // Prestige-Screen (verdiente Abzeichen) offen?
+  masterUnlock: false,           // Feier-Screen „Großmeister freigeschaltet" offen?
+  prestigeUnlock: null,          // Feier einer neu erreichten Prestige-Stufe { sym, tier, key, more } | null
+  chat: { open: false, messages: [], unread: 0, draft: '', kb: 0, typingUids: [] },  // Multiplayer-Textchat (ephemer; kb = Tastatur-Höhe px; typingUids = gerade tippende Mitspieler, live aus Coop.onTyping)
+  shopCategory: null,            // offene Shop-Kategorie ('winfx' | null = Kategorien-Übersicht)
+  shopPreview: null,             // Item-Vorschau im Shop { cat, id } | null (▶ auf einer Karte, s. shopPreviewIt)
+  walletLogOpen: false,          // Geldverlauf-Modal offen? (Transaktionshistorie)
+  walletLog: [],                 // gecachte Transaktionsliste (neueste zuerst), s. openWalletLog
+  walletLogExpanded: -1,         // Index des aufgeklappten Verlauf-Eintrags (Multiplikator-Aufschlüsselung) | -1
+  adminNotice: null,             // aktuell angezeigte Admin-Benachrichtigung {id, kind, item|amount, from} (Modal)
+  perfectWin: false,         // gradueller Konfetti-/Glanz-Effekt für makellose Siege
+});
+
+let timerHandle = null;
+let saveThrottle = 0;
+let coopIntentionalLeave = false; // unterscheidet bewusstes Verlassen von echtem Verbindungsabbruch
+
+// ─── HELFER ───────────────────────────────────────────────────────────────────
+function showToast(msg, type = 'info', ms = 2000) {
+  state.toast = { msg, type };
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => { state.toast = null; }, ms);
+}
+// Eigenständige, oben sitzende Banner-Meldung (statt des unten sitzenden Toasts) —
+// verdeckt nie das Spielfeld, da sie nur den schmalen Bereich am oberen Rand nutzt.
+function showBestTimeNotice(msg) {
+  state.bestTimeNotice = msg;
+  clearTimeout(showBestTimeNotice._t);
+  showBestTimeNotice._t = setTimeout(() => { state.bestTimeNotice = null; }, 2600);
+}
+function fmtTime(ms) {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  return `${m}:${String(s % 60).padStart(2, '0')}`;
+}
+// Längere Gesamtdauer (Stundenbereich) für den Statistik-Überblick: "3 h 42 min"
+// bzw. "42 min" — fmtTime (m:ss) reicht dafür nicht.
+function fmtDuration(ms) {
+  const totalMin = Math.floor((ms || 0) / 60000);
+  const h = Math.floor(totalMin / 60), m = totalMin % 60;
+  return h > 0 ? `${h} ${t('stats.durH')} ${m} ${t('stats.durMin')}` : `${m} ${t('stats.durMin')}`;
+}
+function avgTimeFor(diffId) {
+  const d = state.stats.byDifficulty[diffId];
+  if (!d || !d.won) return null;
+  return d.sumTimeMs / d.won;
+}
+function coopAvgTimeFor(diffId) {
+  const d = state.stats.byDifficulty[diffId];
+  if (!d || !d.coopWon) return null;
+  return d.coopSumTimeMs / d.coopWon;
+}
+// Host-Lobby-Schwierigkeitskarten zeigen Zeiten passend zum Modus:
+// Coop -> Coop-Zeiten, Wettkampf (Race/Team) -> es gibt dort keine eigenen
+// Bestzeiten, daher die Solo-Zeiten einblenden.
+function lobbyIsCompetition() { return state.coop.raceMode || state.coop.teamMode; }
+function lobbyAvgTimeFor(diffId) {
+  return lobbyIsCompetition() ? avgTimeFor(diffId) : coopAvgTimeFor(diffId);
+}
+function lobbyBestTimeMs(diffId) {
+  const d = state.stats.byDifficulty[diffId];
+  if (!d) return null;
+  const v = lobbyIsCompetition() ? d.bestTimeMs : d.coopBestTimeMs;
+  return v != null ? v : null;
+}
+function racePct(modeStats) {
+  if (!modeStats.racesPlayed) return 0;
+  return Math.round((modeStats.racesWon / modeStats.racesPlayed) * 100);
+}
+// Effektives Theme: manuelle Wahl gewinnt; 'auto' folgt dem System-Theme
+// (prefers-color-scheme) — der Listener in init() wendet Systemwechsel live an.
+function isDarkTheme() {
+  const m = state.settings.themeMode;
+  if (m === 'dark') return true;
+  if (m === 'light') return false;
+  try { return window.matchMedia('(prefers-color-scheme: dark)').matches; } catch (_) { return true; }
+}
+function applyTheme(previewThemeId) {
+  // Ausgerüstetes Shop-Theme (komplette Farbwelt) hat Vorrang: es bestimmt die
+  // Grundwelt (data-theme steuert Farbblind-Overrides & Co.) und liefert die
+  // Browser-Chrome-Farbe. Ohne Theme gilt das eingebaute Hell/Dunkel (themeMode).
+  // previewThemeId: temporäre Shop-Vorschau ohne Setting-Änderung (s. shopPreviewIt).
+  const themeIt = shopItemById(previewThemeId !== undefined ? previewThemeId : shopEquippedId('theme'));
+  const dark = themeIt ? themeIt.data.base === 'dark' : isDarkTheme();
+  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  if (themeIt) document.documentElement.setAttribute('data-apptheme', themeIt.id);
+  else document.documentElement.removeAttribute('data-apptheme');
+  document.documentElement.classList.toggle('colorblind', state.settings.colorBlindMode);
+  const tc = document.querySelector('meta[name="theme-color"]');
+  if (tc) tc.setAttribute('content', themeIt ? themeIt.data.top : (dark ? '#0b1020' : '#eef2f9'));
+}
+// Ausgerüstetes Sound-Paket beim Start scharf schalten (music.js hält es im Modul).
+function applySfxPack() { Music.setSfxPack(shopEquippedId('sfx')); }
+function applyMusicPack() { Music.setMusicPack(shopEquippedId('music')); }
+function applyLocale() {
+  if (!state.settings.language) state.settings.language = detectLocale();
+  setLocale(state.settings.language);
+}
+
+// ─── NAVIGATION ───────────────────────────────────────────────────────────────
+// Bildschirme werden als Stack betrachtet: jede Vorwärtsnavigation legt eine
+// "Zurück-Aktion" auf navStack, jeder Zurück-Schritt (goBack) nimmt die oberste
+// wieder herunter und führt sie aus. So landet man beim Zurücktippen immer auf
+// der unmittelbar zuvor besuchten Stelle statt pauschal auf Home -- auch
+// innerhalb verketteter Unterschritte (z.B. Coop: Name → Hosten → Bestätigen).
+// Eine Zurück-Aktion ist eine Closure, die genau ihren Vorwärtsschritt rückgängig
+// macht (inkl. Seiteneffekten wie Verbindungsabbau) -- dadurch funktioniert der
+// Stack auch für Coop-Unterschritte, die keine eigenen Screens sind.
+let navStack = [];
+function pushNav(backFn) { navStack.push(backFn); }
+// Vorwärts zu einem einfachen Menü-Screen, mit dem aktuellen Screen als
+// Rückkehrpunkt (nur für Screens ohne Unterschritte verwenden).
+function navTo(screen) {
+  const from = state.screen;
+  pushNav(() => navigate(from));
+  navigate(screen);
+}
+// Einen Schritt zurück im Stack. Leerer Stack = wir sind an einer Wurzel:
+// dann (sicherheitshalber) zurück nach Home, im Coop zusätzlich aufräumen.
+function goBack() {
+  const fn = navStack.pop();
+  if (fn) { fn(); return; }
+  if (state.screen === 'coop') coopReset();
+  navigate('home');
+}
+// Screen Wake Lock: hält den Bildschirm während eines laufenden Spiels wach.
+// Ohne das ging das Gerät nach 1-3 Min ohne Eingabe in den Standby → die PWA
+// fiel in den Hintergrund und die Coop-RTDB-Verbindung brach ab (der eigentliche
+// Grund der gemeldeten Disconnects — nicht bloß deren Anzeige). Best effort: nicht
+// jeder Browser kann die API, Fehler werden geschluckt; die Sperre wird vom Browser
+// beim Verstecken der Seite automatisch gelöst und bei Rückkehr neu angefordert.
+let wakeLock = null;
+async function requestWakeLock() {
+  try {
+    if (!('wakeLock' in navigator) || wakeLock) return;
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', () => { wakeLock = null; });
+    log('game', 'Wake Lock aktiv (Bildschirm bleibt an)');
+  } catch (e) { wakeLock = null; log('game', 'Wake Lock nicht verfügbar', e); }
+}
+async function releaseWakeLock() {
+  const wl = wakeLock; wakeLock = null;
+  try { if (wl) { await wl.release(); log('game', 'Wake Lock freigegeben'); } } catch (_) {}
+}
+
+function navigate(screen) {
+  // Wurzeln des Stacks: Home ist der Ausgangspunkt, das Spiel ein eigener Modus
+  // (aus dem Spiel führt der Weg über Pause/Aufgeben, nicht über den Stack).
+  if (screen === 'home' || screen === 'game') navStack = [];
+  state.screen = screen;
+  if (screen === 'game') { startTimer(); requestWakeLock(); } else { stopTimer(); releaseWakeLock(); }
+  updateMusic();
+  // Präsenz für Freunde aktualisieren (im Spiel vs. Menü) — nur wenn eingeloggt.
+  if (state.account.status === 'in') pushPresence();
+  // Beim Zurückkehren ins Hauptmenü die Rolle (u.a. Admin) frisch aus der Cloud
+  // holen — gedrosselt (max. alle 30 s), damit ein neu gesetzter Admin-Status
+  // ohne App-Neustart sichtbar wird. Der refreshAccount-Aufruf persistiert die
+  // Rolle zudem lokal (siehe dort), sodass sie danach sofort verfügbar ist.
+  if (screen === 'home' && state.account.status === 'in') maybeRefreshRole();
+  // Ein während des Spiels aufgeschobenes Neuladen (Update/Cloud-Übernahme) jetzt
+  // nachholen, sobald wir sicher zurück im Menü sind — nie mitten im Spiel.
+  if (screen === 'home') nextTick(flushPendingReload);
+  // overflow-anchor:none allein verhinderte nicht jeden Fall eines mittig
+  // startenden Screens (z.B. wenn ein Banner erst nach dem ersten Layout
+  // einklappt) -- expliziter Scroll-Reset nach dem Render macht "oben
+  // starten" unabhängig vom genauen Lade-Timing einzelner Inhalte.
+  nextTick(() => { document.querySelector('.screen')?.scrollTo(0, 0); scheduleScrollLockUpdate(); });
+}
+
+// ─── HINTERGRUNDMUSIK ─────────────────────────────────────────────────────────
+// Welcher Spielmodus läuft gerade? Bestimmt, welche Musik-Einstellung greift.
+// "competition" deckt Race (1v1) UND Team (2v2) ab; Team setzt zwar coop.active,
+// wird aber zuerst geprüft, damit es nicht als "coop" zählt.
+function currentMusicMode() {
+  if (state.isTrainingGame) return 'training';
+  if (state.race.active || state.team.active) return 'competition';
+  if (state.coop.active) return 'coop';
+  return 'solo';
+}
+function musicEnabledForMode(mode) {
+  const s = state.settings;
+  return mode === 'training' ? s.musicTraining
+    : mode === 'competition' ? s.musicCompetition
+    : mode === 'coop' ? s.musicCoop
+    : s.musicSolo;
+}
+// Einzige Stelle, die Musik startet/stoppt. Zwei Kontexte:
+//  • Aktiv laufendes Rätsel (Spielscreen, nicht pausiert, nicht Coop-Lobby) ->
+//    es greift der Schalter des aktuellen Spielmodus.
+//  • Alles andere (Menüs, Statistik, Verlauf, Pause, Ergebnis-Screen ...) ->
+//    es greift der "Menü/App"-Schalter (musicMenu).
+// Sind alle Schalter an, läuft die Musik nahtlos durch (play() ist idempotent,
+// solange sie schon läuft -> kein Neustart beim Wechsel Menü<->Spiel).
+// Aufgerufen an allen Übergängen (navigate, Start, Pause, Sieg/Niederlage,
+// Settings) sowie bei der ersten Nutzergeste (AudioContext-Freischaltung).
+// true, solange eine ▶-Sound/Musik-Vorschau (Shop/Einstellungen) läuft — dann
+// steuert die Vorschau die Wiedergabe selbst und updateMusic() greift NICHT ein
+// (sonst würgt ein zwischenzeitlicher Aufruf die Vorschau ab oder stummt sie).
+let soundPreviewActive = false;
+// Shop-Untermenü „Klänge" (sfx) oder „Musik" (music): dort soll ALLES still sein
+// (keine Menü-Musik, keine beiläufigen UI-Sounds) — nur die ▶-Vorschau macht Ton.
+function inSoundShop() {
+  return state.screen === 'shop' && (state.shopCategory === 'sfx' || state.shopCategory === 'music');
+}
+function updateMusic() {
+  // „Alles stummschalten": Musik komplett aus (spart auch CPU) — die UI-Sounds
+  // sind zusätzlich über den zentralen makeup-Gain (Music.setMuted) still.
+  if (state.settings.muteAll) { Music.stop(); return; }
+  // Läuft gerade eine Vorschau, die Wiedergabe NICHT anfassen; nur sicherstellen,
+  // dass die UI-Sounds hörbar sind (die Vorschau räumt selbst wieder auf).
+  if (soundPreviewActive) { Music.setSfxMuted(false); return; }
+  const inActiveGame = state.screen === 'game' && state.status === 'playing'
+    && !state.paused && !state.coop.awaitingStart;
+  // Im Sound-Untermenü des Shops: Menü-Musik aus + beiläufige UI-Sounds stumm.
+  const soundShop = inSoundShop();
+  Music.setSfxMuted(soundShop);
+  const shouldPlay = inActiveGame ? musicEnabledForMode(currentMusicMode()) : (state.settings.musicMenu && !soundShop);
+  if (shouldPlay) Music.play(state.settings.musicVolume);
+  else Music.stop();
+}
+// Ein-Klick „Alles stumm" (Home-Menü) — zusätzlich zur Master-Lautstärke.
+function toggleMuteAll() {
+  setSetting('muteAll', !state.settings.muteAll);
+  Music.setMuted(state.settings.muteAll);
+  updateMusic();
+  log('app', 'Alles-Stumm umgeschaltet', { muted: state.settings.muteAll });
+}
+
+// overflow-y:auto auf .screen ist nötig, damit lange Inhalte (z.B. Stats,
+// Verlauf) scrollen können -- aber iOS/Safari erlaubt das elastische
+// Zieh-und-Zurückschnapp-Gefühl auf JEDEM overflow:auto-Container, auch wenn
+// dessen Inhalt gar nicht über den sichtbaren Bereich hinausgeht. Deshalb hier
+// pro Screen messen, ob tatsächlich etwas zu scrollen ist, und sonst per Klasse
+// auf overflow:hidden umschalten (siehe .screen.no-overflow in styles.css) --
+// echtes Scrollen bleibt unberührt, nur das sinnlose Wabbeln verschwindet.
+let scrollLockTimer = null;
+function updateScreenScrollLock() {
+  const el = document.querySelector('.screen');
+  if (!el) return;
+  el.classList.toggle('no-overflow', el.scrollHeight <= el.clientHeight + 1);
+}
+// GEDROSSELT (250 ms trailing) statt pro Frame: die Messung liest scrollHeight
+// und erzwingt damit ein synchrones Voll-Layout. Der MutationObserver (init)
+// feuert bei JEDER DOM-Änderung — während des Spielens also bei jedem Timer-
+// Tick/Puls; ein Layout pro Frame auf einem 169-Zellen-Brett war auf älteren
+// Geräten ein spürbarer Teil der Spätspiel-Last. Die Klasse ist rein kosmetisch
+// (iOS-Wabbeln), 4 Messungen/s reichen völlig.
+function scheduleScrollLockUpdate() {
+  if (scrollLockTimer) return;
+  scrollLockTimer = setTimeout(() => { scrollLockTimer = null; updateScreenScrollLock(); }, 250);
+}
+
+// ─── TIMER ────────────────────────────────────────────────────────────────────
+// Geräteübergreifend konsistente „Jetzt"-Zeit für den Spieltimer: in
+// Mehrspielerpartien (Coop/Race/Team) die serverkorrigierte Zeit (Coop.serverNow),
+// damit alle Geräte trotz abweichender lokaler Uhr denselben — und nie negativen —
+// Timer zeigen. Solo bleibt reines Date.now() (Offset 0). Der Startzeitpunkt
+// (state.startTime) MUSS mit derselben Uhr gestempelt werden, die ihn ausliest.
+function gameNow() {
+  return (state.coop.active || state.race.active || state.team.active) ? Coop.serverNow() : Date.now();
+}
+function startTimer() {
+  stopTimer();
+  if (state.status !== 'playing' || state.paused || state.coop.awaitingStart) return;
+  timerHandle = setInterval(() => {
+    // KERN-PERFORMANCEREGEL: state.elapsed ist reaktiv, und die App ist EINE
+    // große Vue-Komponente — jede Änderung rendert das komplette Spiel-Template
+    // inkl. ALLER Zellen neu (cellClasses/cellStyle/Aria ×169 auf 13×13). Der
+    // frühere 250-ms-Takt hieß: 4 Voll-Renders pro Sekunde, dauerhaft, mit
+    // Kosten, die mit der Zahl markierter Zellen WACHSEN — auf älteren Geräten
+    // war der Main-Thread im Spätspiel damit gesättigt (Sekunden Tap-Latenz,
+    // „Pause hängt"). Die Anzeige zeigt ohnehin nur ganze Sekunden: reaktiv
+    // wird deshalb NUR beim Sekundenwechsel geschrieben (1 Render/s statt 4);
+    // die 250-ms-Abtastung bleibt für einen präzisen Sekundenumbruch.
+    const e = Math.max(0, gameNow() - state.startTime);
+    if (Math.floor(e / 1000) !== Math.floor(state.elapsed / 1000)) state.elapsed = e;
+  }, 250);
+  updateMusic(); // ein aktiv laufendes Rätsel ist genau der Moment für Musik
+}
+function stopTimer() { if (timerHandle) { clearInterval(timerHandle); timerHandle = null; } }
+
+// ─── PAUSE ────────────────────────────────────────────────────────────────────
+// remoteElapsed: bei einer vom Partner empfangenen Pause-Nachricht übernehmen wir
+// dessen exakt eingefrorenen Wert, statt ihn lokal neu zu berechnen — sonst würde
+// die (kleine, aber sichtbare) Netzwerklatenz zwischen "Pause gedrückt" und
+// "Nachricht angekommen" dazu führen, dass beide Seiten eine leicht andere Zeit
+// einfrieren (der gemeldete ca. 1-Sekunden-Unterschied).
+function pauseGame(broadcast = true, remoteElapsed) {
+  if (state.status !== 'playing' || state.paused || state.coop.awaitingStart) return;
+  state.paused = true;
+  state.elapsed = remoteElapsed != null ? remoteElapsed : Math.max(0, gameNow() - state.startTime); // einfrieren
+  stopTimer();
+  updateMusic();
+  if (broadcast) {
+    // Race: state.coop.active bleibt absichtlich false (siehe state.race-Kommentar),
+    // coopSend() wäre hier also ein No-op -- analog zum MSG.START-Versand direkt
+    // über Coop.send(), damit der Gegner trotzdem mitpausiert/-startet wird.
+    if (state.race.active && !state.race.ai) Coop.send({ type: Coop.MSG.PAUSE, paused: true, elapsed: state.elapsed });
+    else if (state.coop.active) coopSend({ type: Coop.MSG.PAUSE, paused: true, elapsed: state.elapsed });
+  }
+  persistGame();          // aktuellen Stand lokal sichern …
+  syncCloudNow('pause');  // … und beim Pausieren sofort in die Cloud
+}
+function resumeFromPause(broadcast = true) {
+  if (!state.paused) return;
+  clearResumeCountdown();   // z.B. Remote-Resume mitten im eigenen Countdown
+  state.paused = false;
+  state.startTime = gameNow() - state.elapsed; // Zeit fortsetzen
+  startTimer();
+  updateMusic();
+  if (broadcast) {
+    if (state.race.active && !state.race.ai) Coop.send({ type: Coop.MSG.PAUSE, paused: false });
+    else if (state.coop.active) coopSend({ type: Coop.MSG.PAUSE, paused: false });
+  }
+}
+// ── Resume-Countdown (3-2-1 + ablaufender Balken) ─────────────────────────────
+// „Fortsetzen" aus der Pause startet nicht mehr abrupt: erst läuft 1,5 s lang
+// ein Balken ab („Weiter geht's", keine Ziffern), das Spiel bleibt solange
+// PAUSIERT (Timer eingefroren, Brett verdeckt — kein versehentlicher Tap ins
+// Brett). Erst danach läuft resumeFromPause inkl. Coop-Broadcast (der Partner
+// resumt wie bisher in dem Moment — beide Uhren starten gemeinsam). Ein während
+// des Countdowns eintreffendes Remote-Resume bricht ihn ab (kein Doppel-Resume).
+// Dauer hier UND in der CSS-Balken-Animation (@keyframes resume-drain) pflegen.
+const RESUME_COUNTDOWN_MS = 1500;
+let resumeCountdownTimer = null;
+function clearResumeCountdown() {
+  if (resumeCountdownTimer) { clearTimeout(resumeCountdownTimer); resumeCountdownTimer = null; }
+  state.resumeCountdown = null;
+}
+// fromRemote=true: ein MITSPIELER hat „Fortsetzen" gedrückt (RESUME_COUNT-Event)
+// — der Balken läuft auch hier, aber NUR der Drücker resumt am Ende und
+// broadcastet das RESUME (sonst Doppel-Resume/Uhr-Races). Bleibt das RESUME
+// aus (Netzabriss), fällt der Remote-Countdown nach kurzer Karenz zurück ins
+// Pausenmenü statt ewig auf dem Balken zu hängen.
+function startResumeCountdown(fromRemote = false) {
+  // Klick-Handler übergeben das Event-Objekt als 1. Argument — nur ein
+  // EXPLIZITES true (RESUME_COUNT-Handler) zählt als remote.
+  fromRemote = fromRemote === true;
+  if (!state.paused || state.resumeCountdown) return;
+  state.resumeCountdown = 1;
+  log('game', 'Resume-Countdown gestartet', { fromRemote });
+  if (!fromRemote) {
+    // Partner sollen den Countdown SYNCHRON sehen (das Pausenmenü schließt
+    // sonst bei ihnen erst abrupt mit dem fertigen RESUME).
+    if (state.race.active && !state.race.ai) Coop.send({ type: Coop.MSG.RESUME_COUNT });
+    else if (state.coop.active) coopSend({ type: Coop.MSG.RESUME_COUNT });
+  }
+  resumeCountdownTimer = setTimeout(() => {
+    // Abbruchfälle: Remote-Resume (paused=false via resumeFromPause→clear) oder
+    // Screen-Wechsel (Zum-Menü-Pfade) — nie in einen toten Zustand resumen.
+    if (!state.paused || state.screen !== 'game') { clearResumeCountdown(); return; }
+    clearResumeCountdown();
+    if (!fromRemote) resumeFromPause();
+  }, fromRemote ? RESUME_COUNTDOWN_MS + 2500 : RESUME_COUNTDOWN_MS);
+}
+
+// Einstellungen sind von JEDEM Screen aus über das Zahnrad erreichbar. Wir merken
+// uns den Ausgangs-Screen, um beim Schließen wieder dorthin zurückzukehren (statt
+// immer nach Home). Wird aus dem laufenden Spiel geöffnet, pausiert das Spiel —
+// pauseGame() broadcastet im Coop/Race, sodass ALLE Spieler mitpausieren; es
+// schützt sich selbst gegen Doppelpause/Lobby/Nicht-Spielen.
+let settingsReturn = null;
+// Sektionen der Einstellungs-Seitenleiste (Drawer), bewusst nach Relevanz
+// sortiert: spielrelevantes zuerst, Farbe/Anpassung als eigener Reiter, Konto,
+// Daten/Sicherung ganz zuletzt.
+const SETTINGS_SECTIONS = [
+  { id: 'spiel',       ic: 'controller', key: 'settings.tabGame' },
+  { id: 'darstellung', ic: 'theme', key: 'settings.secAppearance' },
+  { id: 'farbe',       ic: 'palette', key: 'settings.secColors' },
+  { id: 'ton',         ic: 'sound', key: 'settings.tabSound' },
+  { id: 'konto',       ic: 'user', key: 'settings.tabAccount' },
+  { id: 'daten',       ic: 'save', key: 'settings.tabData' },
+];
+// Münz-Belohnung einer Schwierigkeit für die Anzeige auf der Auswahlkarte
+// (Basiswert; im Coop/Wettkampf verdoppelt). Perfekt-Bonus bleibt bewusst außen
+// vor, da er erst beim Sieg feststeht.
+function coinFor(d, coopish) {
+  return coinReward(DIFFICULTIES.indexOf(d), { coop: !!coopish });
+}
+
+// ─── SLIDER-SCHWIERIGKEITSAUSWAHL ─────────────────────────────────────────────
+// Die Auswahl läuft über EINEN Slider statt eine Kartenwand — in ALLEN Modi
+// (Solo-Setup + Coop/Race/Team-Lobby). Die gemeinsame Optik/Logik steckt in der
+// wiederverwendbaren Vue-Komponente <difficulty-slider> (s. DifficultySlider
+// weiter unten). Hier nur die Morph-Variablen für den Hintergrund einer Stufe:
+// der Container (Solo-Section bzw. Coop-Karte) setzt sie via :style, die
+// registrierten @property-Vars (--dacc/--dacc-d/--dheat, styles.css) vererben in
+// die Komponente und morphen den Verlauf smooth. NICHT das app-weite --accent.
+function diffVars(id) {
+  const d = DIFF_BY_ID[id] || DIFFICULTIES[0];
+  return { '--dacc': d.accent, '--dacc-d': d.accentD, '--dheat': String(d.heat) };
+}
+// Streak-Münz-Bonus in Prozent (für die Anzeige, z.B. Streak 5 ⇒ 25).
+function streakBonusPct(streak) {
+  return Math.round(coinStreakBonus(streak) * 100);
+}
+// Shop öffnen/schließen (eigener Screen; Coins oben).
+let shopReturn = null;
+function openShop(category) {
+  // Direkteinstieg in eine Kategorie erlaubt (z.B. Settings-Link „Shop ›"),
+  // sonst startet der Shop in der Kategorien-Übersicht. WICHTIG: nur bekannte
+  // Kategorie-Strings akzeptieren — @click="openShop" übergibt sonst das
+  // Click-EVENT als „Kategorie" und der Kategorie-Zweig rendert mit Unsinn.
+  const valid = category === 'winfx' || !!SHOP_CATS[category];
+  state.shopCategory = valid ? category : null;
+  if (state.screen === 'shop') { updateMusic(); return; }
+  shopReturn = state.screen;
+  navigate('shop'); // ruft updateMusic() → Sound-Untermenü ggf. sofort still
+}
+function closeShop() { const b = shopReturn || 'home'; shopReturn = null; state.shopCategory = null; navigate(b); }
+// Kategorie öffnen/schließen — Zurück in der Kategorie führt zur Übersicht, nicht raus.
+// updateMusic() nach jedem Kategoriewechsel, damit das Sound-Untermenü (sfx/music)
+// die Menü-Musik + UI-Sounds sofort stummt bzw. beim Verlassen wieder freigibt.
+function openShopCategory(cat) {
+  state.shopCategory = cat; state.shopPreview = null; updateMusic();
+  if (cat === 'sfx' || cat === 'music') log('app', 'Shop-Sound-Untermenü: Ton isoliert (nur Vorschau)', { cat });
+}
+function closeShopCategory() { state.shopCategory = null; state.shopPreview = null; updateMusic(); }
+
+// ── Geldverlauf (Transaktionshistorie) ────────────────────────────────────────
+// Lädt die persistierte Liste (neueste zuerst) frisch beim Öffnen — so ist sie
+// nach zwischenzeitlichen Käufen/Siegen/Geschenken aktuell.
+function openWalletLog() { state.walletLog = loadWalletLog(); state.walletLogOpen = true; }
+function closeWalletLog() { state.walletLogOpen = false; }
+// Lesbarer Text zur maschinellen `reason`-Kennung einer Buchung. 'shop:<id>' und
+// 'winfx:<id>'/'winfx_<id>' referenzieren ein gekauftes Item → dessen Namen zeigen.
+// Herkunfts-Detailzeile eines Verlauf-Eintrags (aus meta): Schwierigkeit · Modus
+// · Basis · ×Multiplikator (Gründe). Alt-Einträge ohne meta zeigen nichts.
+// Einzeiler-Kontext eines Verlauf-Eintrags: Schwierigkeit · Modus (aus meta).
+function walletEntryDetail(e) {
+  const m = e && e.meta;
+  if (!m) return '';
+  const parts = [];
+  if (m.difficulty && DIFF_BY_ID[m.difficulty]) parts.push(t('difficulty.' + m.difficulty));
+  if (m.mode) parts.push(t('friends.mode.' + m.mode));
+  return parts.join(' · ');
+}
+// Volle Aufschlüsselung EINER Sieg-Belohnung: Basis, jeder Multiplikator-Faktor
+// einzeln (wie der Gesamt-Multiplikator zustande kam) und die Endsumme. Rückgabe:
+// [{ k, v }] Zeilen für die aufklappbare Detailansicht. Leer, wenn keine Meta.
+function walletEntryFactors(e) {
+  const m = e && e.meta;
+  if (!m || m.base == null) return [];
+  const rows = [{ k: t('wallet.detail.baseLabel'), v: String(m.base) }];
+  if (m.coopMult) rows.push({ k: t('wallet.detail.coopFactor'), v: '×2' });
+  if (m.perfect) rows.push({ k: t('wallet.detail.perfect'), v: '×2' });
+  if (m.bestTime) rows.push({ k: t('wallet.detail.bestTime'), v: '×2' });
+  if (m.streakPct) rows.push({ k: t('wallet.detail.streakFactor', { days: m.streakDays || 0 }), v: '+' + m.streakPct + '%' });
+  if (m.mult != null) rows.push({ k: t('wallet.detail.total'), v: '×' + m.mult, total: true });
+  return rows;
+}
+// Ist der Eintrag aufschlüsselbar (Sieg mit Belohnungs-Meta)?
+function walletEntryExpandable(e) { return walletEntryFactors(e).length > 1; }
+function toggleWalletEntry(i) { state.walletLogExpanded = state.walletLogExpanded === i ? -1 : i; }
+function walletReasonLabel(reason) {
+  if (!reason) return t('wallet.reason.other');
+  const shopMatch = /^shop:(.+)$/.exec(reason);
+  if (shopMatch) {
+    const name = shopItemDisplayName(shopMatch[1]);
+    return t('wallet.reason.purchase', { item: name || shopMatch[1] });
+  }
+  const key = 'wallet.reason.' + reason;
+  const s = t(key);
+  return s === key ? reason : s;
+}
+// Item-Anzeigename zur rohen Item-Kennung aus einem 'shop:<id>'-reason. Der Kauf
+// speichert die ROHE Item-id (Sieganimation wie 'stars' oder generischer
+// Shop-Artikel wie eine Paletten-id) — beide Namensräume der Reihe nach probieren.
+function shopItemDisplayName(id) {
+  const eff = t('shop.effect.' + id); if (eff !== 'shop.effect.' + id) return eff;
+  const it = t('shop.it.' + id); if (it !== 'shop.it.' + id) return it;
+  return id;
+}
+
+// ── Sieganimationen: erste echte Shop-Kategorie (Katalog: js/wineffects.js) ────
+function ownsWinFx(id) { return ownsEffect(state.inventory, id); }
+// EINE Quelle der Wahrheit für "welche Animation ist aktiv": dieselbe Auflösung
+// wie im Shop (resolveActiveEffect). Der Settings-Picker MUSS diesen Wert nutzen
+// (statt roh state.settings.winEffect), sonst können Einstellungen und Shop
+// auseinanderlaufen, falls die gespeicherte Wahl (noch) nicht besessen ist —
+// dann fällt der Shop auf Confetti zurück, das Settings-Dropdown zeigte aber den
+// nicht-besessenen Rohwert. So sind beide garantiert verknüpft.
+function activeWinFxId() { return resolveActiveEffect(state.settings.winEffect, state.inventory); }
+function winFxActive(id) { return activeWinFxId() === id; }
+// Liste der eigenen (kaufbaren + gekauften) Effekte für den Settings-Picker.
+function ownedWinFx() { return WIN_EFFECTS.filter(e => ownsWinFx(e.id)); }
+function buyWinFx(id) {
+  if (ownsWinFx(id)) return;
+  const price = effectPrice(id);
+  const r = spendCurrency(price, 'shop:' + id);
+  if (!r.ok) { showToast(t('shop.notEnough'), 'error', 2600); return; }
+  state.wallet = loadWallet();
+  state.inventory = grantInventory(winEffectInvKey(id), 'shop');
+  setSetting('winEffect', id); // Gekauftes direkt aktivieren — das will man praktisch immer
+  log('game', 'Sieganimation gekauft', { id, price, balance: r.balance });
+  showToast(t('shop.bought'), 'success', 2400);
+  if (state.account.status === 'in') Account.scheduleSyncUp();
+}
+function activateWinFx(id) {
+  if (!ownsWinFx(id)) return;
+  setSetting('winEffect', id);
+  showToast(t('shop.activated'), 'success', 1800);
+}
+// Vorschau: spielt die Animation sofort auf dem aktuellen Screen ab (Overlay ist
+// global) — ohne Kauf, ohne Sieg. Perfekt-Variante zeigt das volle Spektakel.
+function previewWinFx(id) { launchWinFx(true, id); }
+
+// ── Generische Shop-Artikel (Katalog: js/shopitems.js) ────────────────────────
+// Gleiche Mechanik wie Sieganimationen: kaufen (Coins → Inventar, Union-synct),
+// ausrüsten (settings[settingKey]), Gratis-Standard immer verfügbar.
+function shopCatItems(cat) { return catItems(cat); }
+function ownsShop(it) { return ownsShopItem(state.inventory, it); }
+function shopEquippedId(cat) {
+  const meta = SHOP_CATS[cat];
+  return resolveEquipped(cat, meta && meta.settingKey ? state.settings[meta.settingKey] : null, state.inventory);
+}
+function shopOwnedCount(cat) { return catItems(cat).filter((it) => ownsShop(it)).length; }
+function equipShopItem(it) {
+  if (!ownsShop(it) || !SHOP_CATS[it.cat].settingKey) return;
+  setSetting(SHOP_CATS[it.cat].settingKey, it.id);
+  showToast(t('shop.activated'), 'success', 1800);
+}
+// ── Ausrüsten direkt in den Einstellungen ─────────────────────────────────────
+// „Alles Erworbene ausrüstbar": je Shop-Kategorie ein Auswahl-Picker (Gratis-
+// Standard + besessene Items). Wird pro Kategorie nur gezeigt, wenn man dort
+// mindestens ein Item besitzt (sonst ist ohnehin nur der Standard aktiv).
+// skinpreset ist ausgenommen (wird ANGEWENDET, nicht ausgerüstet — s. Skin-Editor).
+function settingsVisualCats() { return ['theme', 'palette', 'font', 'frame'].filter((c) => shopOwnedCount(c) > 0); }
+function settingsSoundCats() { return ['sfx', 'music'].filter((c) => shopOwnedCount(c) > 0); }
+function settingsCatOptions(cat) {
+  const meta = SHOP_CATS[cat];
+  const opts = [{ id: meta.free, name: t('shop.free.' + cat) }];
+  for (const it of catItems(cat)) if (ownsShop(it)) opts.push({ id: it.id, name: shopItemDisplayName(it.id) });
+  return opts;
+}
+function equipCatFromSettings(cat, id) {
+  const meta = SHOP_CATS[cat];
+  if (id === meta.free) { equipShopFree(cat); return; }
+  const it = shopItemById(id);
+  if (it && it.cat === cat) equipShopItem(it);
+}
+// Hör-Vorschau eines Sound-Pakets: Paket kurz aktivieren, kleine Demo-Sequenz
+// spielen, danach das ausgerüstete Paket wiederherstellen (auch ohne Kauf).
+// soundPreviewActive + setSfxMuted(false) sorgen dafür, dass die Vorschau AUCH im
+// Sound-Untermenü (wo UI-Sounds sonst stumm sind) hörbar ist; nach der Demo wird
+// per updateMusic() der Ausgangszustand (Untermenü wieder still) hergestellt.
+let sfxPreviewTimer = null;
+function previewSfxPack(it) {
+  soundPreviewActive = true;
+  Music.setSfxMuted(false);
+  Music.setSfxPack(it.id);
+  Music.sfxKeep();
+  setTimeout(() => Music.sfxComplete(2), 320);
+  setTimeout(() => Music.sfxWin(), 760);
+  clearTimeout(sfxPreviewTimer);
+  sfxPreviewTimer = setTimeout(() => {
+    Music.setSfxPack(shopEquippedId('sfx'));
+    soundPreviewActive = false;
+    updateMusic();
+  }, 2600);
+}
+// Hör-Vorschau eines Musik-Pakets: Paket setzen + Musik kurz anspielen, danach
+// das ausgerüstete Paket wiederherstellen. soundPreviewActive schützt die Vorschau
+// davor, von einem zwischenzeitlichen updateMusic() gestoppt zu werden; am Ende
+// stellt updateMusic() den Ausgangszustand her (Menü-Musik an, außer im Sound-
+// Untermenü — dort bleibt es still). State/Settings bleiben unberührt.
+let musicPreviewTimer = null;
+function previewMusicPack(it) {
+  soundPreviewActive = true;
+  Music.setMusicPack(it.id);
+  if (!Music.isPlaying()) Music.play(state.settings.musicVolume ?? 0.6);
+  clearTimeout(musicPreviewTimer);
+  musicPreviewTimer = setTimeout(() => {
+    Music.setMusicPack(shopEquippedId('music'));
+    soundPreviewActive = false;
+    updateMusic();
+  }, 5200);
+}
+function equipShopFree(cat) {
+  if (!SHOP_CATS[cat].settingKey) return;
+  setSetting(SHOP_CATS[cat].settingKey, SHOP_CATS[cat].free);
+  showToast(t('shop.activated'), 'success', 1800);
+}
+// ── Item-Vorschau im Shop: JEDES Item vorher ansehen (auch ohne Kauf) ─────────
+// Brett-Kategorien (palette/font/frame/skinpreset) rendern ein Live-Demo-Brett
+// über den Karten; ▶ wählt das Vorschau-Item (Toggle), ohne Auswahl zeigt das
+// Demo den ausgerüsteten Zustand. Badges → Namens-Chip; Sound → Hör-Demo;
+// Theme → echte App-Optik wechselt für 4 s (danach zurück zum Ausgerüsteten).
+function shopPreviewIt(it) {
+  if (it.cat === 'sfx') { previewSfxPack(it); return; }
+  if (it.cat === 'music') { previewMusicPack(it); return; }
+  if (it.cat === 'theme') { previewThemeTemp(it.id); return; }
+  const cur = state.shopPreview;
+  state.shopPreview = (cur && cur.id === it.id) ? null : { cat: it.cat, id: it.id };
+}
+// ▶ auf der Gratis-Standard-Karte: Vorschau des eingebauten Defaults.
+function shopPreviewFree(cat) {
+  if (cat === 'sfx') { previewSfxPack({ id: SHOP_CATS.sfx.free }); return; }
+  if (cat === 'music') { previewMusicPack({ id: SHOP_CATS.music.free }); return; }
+  if (cat === 'theme') { previewThemeTemp(SHOP_CATS.theme.free); return; }
+  const cur = state.shopPreview;
+  const id = SHOP_CATS[cat].free;
+  state.shopPreview = (cur && cur.id === id) ? null : { cat, id };
+}
+let themePreviewTimer = 0;
+function previewThemeTemp(id) {
+  applyTheme(id); // rein optisch, kein Setting — nach 4 s zurück zum Ausgerüsteten
+  log('game', 'Theme-Vorschau', { id });
+  showToast(t('shop.previewTheme'), 'info', 3600);
+  clearTimeout(themePreviewTimer);
+  themePreviewTimer = setTimeout(() => applyTheme(), 4000);
+}
+// Vorschau-Item einer Kategorie (▶-Auswahl), sonst der ausgerüstete Zustand.
+function shopDemoId(cat) {
+  if (state.shopPreview && state.shopPreview.cat === cat) return state.shopPreview.id;
+  return cat === 'skinpreset' ? null : shopEquippedId(cat);
+}
+function shopDemoActive(it) { return !!(state.shopPreview && state.shopPreview.id === it.id); }
+// Demo-Brett: 4 Cage-Farben in der Vorschau-Palette (classic = unverändert).
+function shopDemoCells() {
+  const it = shopItemById(shopDemoId('palette'));
+  return [0, 2, 5, 9].map((i) => {
+    const c = applyPaletteFx(REGION_COLORS[i], it ? it.fx : null);
+    return `hsl(${c.h} ${c.s}% ${c.l}%)`;
+  });
+}
+// Klassen fürs Demo-Brett (Zahlen-Stil/Rahmen); Gratis-Standard = keine Klasse.
+function shopDemoClass(cat) {
+  const id = shopDemoId(cat);
+  if (!id || id === SHOP_CATS[cat].free) return '';
+  return (cat === 'font' ? 'font-' : 'frame-') + id;
+}
+// Skin-Demo: Vorschau-Preset als Pseudo-Einstellungen rendern, sonst die
+// aktuellen Skin-Einstellungen des Nutzers (wie in Einstellungen ▸ Farbe).
+function shopDemoSkin() {
+  const it = shopItemById(shopDemoId('skinpreset'));
+  const s = it ? {
+    skinStyle: it.data.style, skinColor1: it.data.c[0] || '', skinColor2: it.data.c[1] || '', skinColor3: it.data.c[2] || '',
+    skinSpeed: it.data.speed, skinGlow: it.data.glow, skinThickness: it.data.thickness, skinApplyTo: 'both', skinDirection: 'cw',
+  } : state.settings;
+  return { vars: buildSkinVars(s), classes: buildSkinClasses(s, true) };
+}
+// Badge-Demo: eigener Name + Vorschau-/ausgerüstetes Abzeichen als Chip.
+function shopDemoBadgeName() { return myUsername() || state.settings.coopName || '?'; }
+// Anzeige-Elemente der Gratis-Standard-Karte („Klassisch"): dieselbe Vorschau
+// wie auf den Kauf-Karten — Original-Cage-Farben bzw. die eingebaute Farbwelt.
+function shopFreeDots(cat) {
+  if (cat === 'palette') return [0, 3, 6, 9, 12, 15].map((i) => { const c = REGION_COLORS[i]; return `hsl(${c.h} ${c.s}% ${c.l}%)`; });
+  if (cat === 'theme') return isDarkTheme() ? ['#0b1020', '#151b2e', '#4f7dff', '#e8ebf5'] : ['#eef2f9', '#ffffff', '#4f7dff', '#1c2333'];
+  return null;
+}
+function buyShopItem(it) {
+  if (ownsShop(it)) return;
+  const price = shopItemPrice(it);
+  const r = spendCurrency(price, 'shop:' + it.id);
+  if (!r.ok) { showToast(t('shop.notEnough'), 'error', 2600); return; }
+  state.wallet = loadWallet();
+  state.inventory = grantInventory(shopInvKey(it), 'shop');
+  if (SHOP_CATS[it.cat].settingKey) setSetting(SHOP_CATS[it.cat].settingKey, it.id); // direkt ausrüsten
+  if (it.cat === 'skinpreset') applySkinPreset(it); // Gekauftes direkt anwenden
+  log('game', 'Shop-Artikel gekauft', { id: it.id, cat: it.cat, price, balance: r.balance });
+  showToast(t('shop.bought'), 'success', 2400);
+  if (state.account.status === 'in') Account.scheduleSyncUp();
+}
+// 🎨 Skin-Vorlage anwenden: schreibt die Skin-Einstellungen (Stil/Farben/
+// Tempo/Glow/Dicke) und schaltet den Skin ein. Frei kaufbar/anwendbar OHNE
+// den exklusiven dynamischen Skin — der schaltet nur zusätzlich den freien
+// Skin-EDITOR frei (Vorlagen-Besitz aktiviert das Rendering, s. skinActive).
+function applySkinPreset(it) {
+  if (!ownsShop(it)) return;
+  const d = it.data || {};
+  setSetting('skinStyle', d.style || 'gradient');
+  setSetting('skinColor1', (d.c && d.c[0]) || '');
+  setSetting('skinColor2', (d.c && d.c[1]) || '');
+  setSetting('skinColor3', (d.c && d.c[2]) || '');
+  if (d.speed != null) setSetting('skinSpeed', d.speed);
+  if (d.glow != null) setSetting('skinGlow', d.glow);
+  if (d.thickness != null) setSetting('skinThickness', d.thickness);
+  setSetting('skinEnabled', true);
+  log('game', 'Skin-Vorlage angewendet', { id: it.id });
+  showToast(t('shop.applied'), 'success', 1800);
+}
+// Brett-Klasse des ausgerüsteten Zahlen-Stils ('' = Klassisch).
+function boardFontClass() {
+  const id = shopEquippedId('font');
+  return id && id !== 'classic' ? 'font-' + id : '';
+}
+// Brett-Klasse des ausgerüsteten Rahmens ('' = keiner).
+function boardFrameClass() {
+  const id = shopEquippedId('frame');
+  return id && id !== 'none' ? 'frame-' + id : '';
+}
+// ── Brett-Optik (Modulebene, damit die BoardGrid-Child-Komponente sie nutzt) ──
+// Dynamischer Skin (Cosmetic 'dynamicColor'): mindestens eine gekaufte Skin-
+// Vorlage aktiviert das Skin-Rendering auch OHNE den exklusiven Skin (der
+// schaltet nur den freien Editor frei).
+const skinUnlocked = computed(() => !!state.inventory[SKIN_ID]);
+const skinPresetOwned = computed(() => SKINPRESET_ITEMS.some((p) => ownsShopItem(state.inventory, p)));
+const skinActive = computed(() => (skinUnlocked.value || skinPresetOwned.value) && state.settings.skinEnabled);
+const skinVars = computed(() => skinActive.value ? buildSkinVars(state.settings) : {});
+const skinBoardClasses = computed(() => buildSkinClasses(state.settings, skinActive.value));
+const gridStyle = computed(() => ({
+  gridTemplateColumns: `var(--hdr) repeat(${state.puzzle?.cols || 1}, var(--cell))`,
+  gridTemplateRows: `var(--hdr) repeat(${state.puzzle?.rows || 1}, var(--cell))`,
+  '--cell': state.cellPx + 'px',
+  '--hdr': state.cellPx + 'px',
+  '--fs': Math.max(11, Math.round(state.cellPx * 0.4)) + 'px',
+}));
+// Aktive Paletten-Transformation für cellStyle (null = Klassisch/unverändert).
+function activePaletteFx() {
+  const it = shopItemById(shopEquippedId('palette'));
+  return it ? it.fx : null;
+}
+// Vorschau-Punkte einer Karte: Paletten zeigen 6 transformierte Cage-Farben,
+// Themes ihre 4 Kern-Farben (bg, Karte, Akzent, Text); sonst keine Punkte.
+function shopPreviewDots(it) {
+  if (it.cat === 'palette') {
+    return [0, 3, 6, 9, 12, 15].map((i) => {
+      const c = applyPaletteFx(REGION_COLORS[i], it.fx);
+      return `hsl(${c.h} ${c.s}% ${c.l}%)`;
+    });
+  }
+  if (it.cat === 'theme') return it.data.sw;
+  if (it.cat === 'skinpreset') {
+    if (it.data.style === 'rainbow') return [0, 60, 120, 180, 240, 300].map((h) => `hsl(${h} 90% 55%)`);
+    return it.data.c;
+  }
+  return null;
+}
+// Kategorie-Titel für die Shop-Topbar (Kategorie-Karten nutzen dieselben Keys).
+function shopCategoryTitle(cat) {
+  if (cat === 'winfx') return t('shop.winFxTitle');
+  if (cat === 'palette') return t('shop.item.boardPalettes');
+  if (cat === 'theme') return t('shop.item.appThemes');
+  if (cat === 'sfx') return t('shop.item.soundPacks');
+  if (cat === 'music') return t('shop.item.musicPacks');
+  if (cat === 'font') return t('shop.item.numberFonts');
+  if (cat === 'frame') return t('shop.item.boardFrames');
+  if (cat === 'skinpreset') return t('shop.item.skinPresets');
+  return t('shop.title');
+}
+
+function openSettings() {
+  if (state.screen === 'settings') return;
+  settingsReturn = state.screen;
+  if (state.screen === 'game') pauseGame();
+  // Immer zugeklappt starten — die zuletzt offene Karte wird bewusst nicht
+  // gemerkt (Deep-Links wie „Konto" setzen ihre Karte direkt NACH dem Öffnen).
+  state.settingsTab = '';
+  navigate('settings');
+}
+// Sektion direkt öffnen (Deep-Links von Home: Konto, Skin-Editor). Beim Konto
+// zusätzlich den Account-Status auffrischen (wie zuvor beim Tab-Klick).
+function selectSettingsSection(id) {
+  state.settingsTab = id;
+  if (id === 'konto') refreshAccount();
+}
+// Accordion-Karte auf-/zuklappen (der frühere Drawer entfällt — alle Bereiche
+// sind als Karten-Köpfe direkt auf der Seite sichtbar). Erneuter Tap schließt.
+function toggleSettingsCard(id) {
+  if (state.settingsTab === id) { state.settingsTab = ''; return; }
+  selectSettingsSection(id);
+}
+// Zurück aus den Einstellungen zum Ausgangs-Screen. Ein währenddessen pausiertes
+// Spiel bleibt pausiert (Pause-Overlay mit „Fortsetzen") — bewusst kein Auto-Resume.
+function closeSettings() {
+  const back = settingsReturn || 'home';
+  settingsReturn = null;
+  navigate(back);
+}
+
+// ─── COOP-LOBBY: "Bereit?" vor dem eigentlichen Start ─────────────────────────
+// Ein frisch generiertes Coop-Rätsel zeigt zunächst nur die Lobby ("Mitspieler
+// sind da, Zeit läuft noch nicht") statt sofort loszulaufen — wer auch immer
+// zuerst auf "Starten" tippt, legt den gemeinsamen Startzeitpunkt fest.
+function startCoopGame(startTime) {
+  state.coop.awaitingStart = false;
+  state.elapsed = 0;
+  state.startTime = startTime;
+  // Diagnose: eigene Uhr-Abweichung zur (server-korrigierten) Startzeit festhalten
+  // — so lässt sich ein „falsche/negative Zeit"-Report im Protokoll nachvollziehen.
+  log('coop', 'Coop-Timer gestartet', { startTime, localNow: Date.now(), serverNow: gameNow(), skewMs: gameNow() - Date.now() });
+  startTimer();
+  updateMusic();
+  syncCloudNow('coopStart'); // Runden-Start: Stand sofort in die Cloud
+}
+function startCoopRound() {
+  if (!state.coop.awaitingStart) return;
+  // Der Host darf erst final starten, wenn sein EIGENES Rätsel fertig generiert
+  // ist (sonst liefe die Zeit ohne Spielfeld los).
+  if (state.coop.generating) return;
+  // Nur der Host darf final starten, und erst sobald alle Mitspieler bereit
+  // sind (siehe Bereit-System oben) -- da ein Gast sich erst nach Abschluss
+  // seiner eigenen Generierung bereit melden kann, ist "alle bereit" zugleich
+  // die Garantie, dass bei jedem Client ein fertiges Rätsel vorliegt.
+  if (state.coop.role !== 'host' || !allGuestsReady()) return;
+  // Serverkorrigierter Startzeitpunkt (siehe gameNow): der Host stempelt hier mit
+  // derselben Server-Uhr, gegen die alle Clients ihre Spielzeit rechnen — sonst
+  // ergab die Uhr-Abweichung des Hosts bei Gästen eine falsche/negative Zeit.
+  const startTime = gameNow();
+  startCoopGame(startTime);
+  // Race-Matches halten state.coop.active absichtlich auf false (siehe
+  // state.race-Kommentar), wodurch coopSend()s Guard das START-Signal
+  // verschlucken würde -- hier muss roh über Coop.send() verschickt werden.
+  // Team-Matches haben state.coop.active zwar auf true, aber coopSend()
+  // leitet bei aktivem Team-Modus auf den team-skopierten Kanal um (siehe
+  // coopSend()) -- das START-Signal muss aber BEIDE Teams erreichen, daher
+  // auch hier roh über Coop.send() verschicken statt über coopSend().
+  if (state.race.active || state.team.active) Coop.send({ type: Coop.MSG.START, startTime });
+  else coopSend({ type: Coop.MSG.START, startTime });
+}
+
+// ─── ZELLEN-METADATEN (Regionen, Ränder, Chips) ───────────────────────────────
+function buildCellMeta(puzzle) {
+  const { rows, cols, regions } = puzzle;
+  const meta = Array.from({ length: rows }, () =>
+    Array.from({ length: cols }, () => ({ region: -1, color: null, edges: {}, chip: null, hint: false, hintMark: false })));
+  // Regions-ID-Gitter aufbauen
+  const rid = Array.from({ length: rows }, () => Array(cols).fill(-1));
+  regions.forEach((reg, ri) => { for (const [r, c] of reg.cells) rid[r][c] = ri; });
+  const same = (r, c, ri) => r >= 0 && r < rows && c >= 0 && c < cols && rid[r][c] === ri;
+
+  regions.forEach((reg, ri) => {
+    const color = REGION_COLORS[reg.colorIndex % REGION_COLORS.length];
+    let chipCell = null;
+    for (const [r, c] of reg.cells) {
+      const m = meta[r][c];
+      m.region = ri; m.color = color;
+      // Rand auf einer Seite, wenn der Nachbar zu einer anderen Region gehört (oder außerhalb)
+      m.edges = {
+        t: !same(r - 1, c, ri), b: !same(r + 1, c, ri),
+        l: !same(r, c - 1, ri), r: !same(r, c + 1, ri),
+      };
+      if (chipCell === null || r < chipCell[0] || (r === chipCell[0] && c < chipCell[1])) chipCell = [r, c];
+    }
+    if (chipCell) meta[chipCell[0]][chipCell[1]].chip = reg.target;
+  });
+  return meta;
+}
+
+// Cage-Farben so wählen, dass die eigene(n) Markierungsfarbe(n) darauf sichtbar
+// bleiben — eine pinke Cage macht einen pinken Einkreis-Ring unsichtbar. Läuft
+// beim Brettaufbau, bei Farb-/Palettenwechsel (setSetting) und wenn im Coop
+// neue Spieler(farben) dazukommen. Bewusst clientseitig: jedes Gerät färbt für
+// SEINE Spielerfarbe sicher (das Puzzle selbst bleibt identisch).
+function applyMarkSafeRegionColors() {
+  const p = state.puzzle;
+  if (!p || !p.regions || !state.cellMeta.length) return;
+  const fx = activePaletteFx();
+  const effectiveColors = REGION_COLORS.map((c) => applyPaletteFx(c, fx));
+  const avoid = [state.settings.coopMyColor, ...(state.coop.active ? state.coop.players.map((pl) => pl.color) : [])]
+    .map(hexToRgb).filter(Boolean);
+  const idxs = remapColorsForMarkVisibility({ regions: p.regions, rows: p.rows, cols: p.cols, effectiveColors, avoidRgbs: avoid });
+  let remapped = 0;
+  p.regions.forEach((reg, ri) => {
+    const color = REGION_COLORS[idxs[ri]];
+    if (idxs[ri] !== ((reg.colorIndex || 0) % REGION_COLORS.length)) remapped++;
+    for (const [r, c] of reg.cells) state.cellMeta[r][c].color = color;
+  });
+  cellStyleCache = [];   // gecachte --rc-*-Styles gehören zur alten Färbung
+  if (remapped) log('game', 'Cage-Farben wegen Spielerfarbe umgelenkt', { remapped });
+}
+
+// ─── OFF-THREAD-GENERIERUNG (on-demand) ───────────────────────────────────────
+// Ein Web Worker generiert Rätsel auf Anfrage auf einem eigenen Thread, sodass die
+// (bei großen Feldern spürbare) Generierung den Haupt-Thread/die UI nie blockiert.
+// Rätsel werden ERST beim Spielstart erzeugt (kein Vorab-Prefetch mehr): Solo zeigt
+// dabei das Lade-Overlay, Coop/Race/Team den Ladebalken in der Bereit-Lobby. Die
+// frühere Hintergrund-Vorgenerierung ALLER Schwierigkeiten beim App-Start wurde
+// entfernt -- sie hat manche Geräte beim Start spürbar ausgebremst.
+// Fällt der Worker aus (nicht unterstützt / Fehler), wird synchron generiert.
+let genWorker = null;
+// Einzel-Generierungen (generateAsync) werden per fortlaufender reqId korreliert,
+// damit parallele Anfragen (z.B. mehrere Lobby-Generierungen) sich nicht vermischen.
+let genReqSeq = 0;
+const genReqPending = new Map();    // reqId -> { resolve, reject }
+function initGenWorker() {
+  // Ob ein Worker zur Verfügung steht, ist DER entscheidende Performance-Faktor:
+  // ohne ihn wird jedes Rätsel synchron auf dem Haupt-Thread erzeugt und friert die
+  // UI bei großen Feldern kurz ein (Buttons reagieren dann verzögert). Daher den
+  // Worker-Status protokollieren, damit er im Diagnoseprotokoll betroffener Geräte
+  // sichtbar wird.
+  if (typeof Worker === 'undefined') { log('perf', 'Kein Web-Worker verfügbar – Rätsel werden SYNCHRON erzeugt (kann UI kurz blockieren)'); return; }
+  try {
+    genWorker = new Worker(new URL('./genworker.js', import.meta.url), { type: 'module' });
+    genWorker.onmessage = (e) => {
+      const { reqId, puzzle, error } = e.data || {};
+      if (reqId == null) return;
+      const pend = genReqPending.get(reqId);
+      if (pend) { genReqPending.delete(reqId); error ? pend.reject(new Error(error)) : pend.resolve(puzzle); }
+    };
+    genWorker.onerror = (e) => {
+      log('error', 'Generator-Worker abgestürzt – ab jetzt synchrone Generierung', { message: e && e.message });
+      genWorker = null;
+      // Anhängige Anfragen scheitern lassen, damit ihr .catch() den synchronen
+      // Fallback bzw. eine Fehlermeldung auslösen kann.
+      genReqPending.forEach(p => p.reject(new Error('worker error')));
+      genReqPending.clear();
+    };
+    log('game', 'Generator-Worker bereit (Off-Thread-Generierung aktiv)');
+  } catch (e) { log('error', 'Generator-Worker-Init fehlgeschlagen – synchrone Generierung', e); genWorker = null; }
+}
+// Generiert ein Rätsel möglichst im Hintergrund-Thread und liefert ein Promise.
+// Ohne Worker (oder bei dessen Ausfall) fällt es auf den synchronen Generator
+// zurück -- minimal verzögert (setTimeout), damit ein zuvor gesetztes Lade-/
+// Lobby-Overlay noch einen Frame rendern kann, bevor der Haupt-Thread blockiert.
+function generateAsync(opts) {
+  return new Promise((resolve, reject) => {
+    if (genWorker) {
+      const reqId = ++genReqSeq;
+      genReqPending.set(reqId, { resolve, reject });
+      genWorker.postMessage({ reqId, opts });
+    } else {
+      // Kein Worker -> synchrone Generierung blockiert kurz den Haupt-Thread.
+      // Protokollieren, um genau solche Geräte im Diagnoseprotokoll zu erkennen.
+      log('perf', 'Synchrone Rätselgenerierung (kein Worker) – UI kann kurz blockieren', { difficulty: opts && opts.difficulty });
+      setTimeout(() => { try { resolve(generatePuzzle(opts)); } catch (err) { reject(err); } }, 30);
+    }
+  });
+}
+
+// ─── NEUES SPIEL ──────────────────────────────────────────────────────────────
+// Übernimmt ein fertiges Rätsel in den Spielzustand und startet (Solo) bzw.
+// sendet es im Coop als Host an die Mitspieler. Gemeinsamer Abschluss für den
+// Cache- wie den On-Demand-Pfad.
+function finishNewGame(puzzle) {
+  loadPuzzleIntoState(puzzle, null);
+  state.generating = false;
+  if (state.coop.active && state.coop.role === 'host') {
+    state.coop.awaitingStart = true;
+    resetReadyFlags();
+    startTimer();
+    coopSend({ type: Coop.MSG.INIT, puzzle: state.puzzle, marks: state.marks, markedBy: wireMarkedBy(), startTime: state.startTime });
+  } else {
+    startTimer();
+    syncCloudNow('gameStart'); // Solo-Start: frisches Spiel sofort in die Cloud
+  }
+}
+// In einer aktiven Coop-Session (als Host) wird das neue Rätsel an den Partner
+// gesendet, statt dass dieser selbst eines wählen müsste — die Lobby bleibt erhalten.
+function newGame(diffId) {
+  state.isTrainingGame = false;
+  state.screen = 'game';
+  // Rätsel erst JETZT erzeugen (kein Vorab-Prefetch mehr). Lade-Overlay zeigen
+  // und off-thread generieren (generateAsync), damit der Haupt-Thread auch bei
+  // großen Feldern flüssig bleibt und der Ladebalken animiert. Ohne Worker fällt
+  // generateAsync selbst auf synchrone Generierung zurück.
+  state.generating = true;
+  // Big-Numbers-Modus (Zellwerte 10–19) nur für freigegebene kleine Felder (6×6–9×9).
+  const bigNumbers = !!state.sel.bigNumbers && bigNumbersAllowed(diffId);
+  log('game', `Puzzle-Generierung gestartet`, { difficulty: diffId, bigNumbers });
+  const t0 = performance.now();
+  generateAsync({ difficulty: diffId, bigNumbers })
+    .then(puzzle => {
+      // tookMs = Wall-Clock bis zum fertigen Rätsel (inkl. Worker) — zeigt auf
+      // langsamen Geräten, ob die Generierung die Wartezeit verursacht.
+      log('game', `Puzzle generiert`, { difficulty: diffId, rows: puzzle.rows, cols: puzzle.cols, tookMs: Math.round(performance.now() - t0) });
+      finishNewGame(puzzle);
+    })
+    .catch(e => {
+      // Nur ein echter Worker-/Generatorfehler landet hier (fehlender Worker wird
+      // in generateAsync bereits synchron abgefangen) -- letzter synchroner Versuch.
+      log('game', `Puzzle-Generierung fehlgeschlagen, synchroner Versuch`, e);
+      try {
+        finishNewGame(generatePuzzle({ difficulty: diffId, bigNumbers }));
+      } catch (err) {
+        log('game', `Synchroner Fallback fehlgeschlagen`, err);
+        state.generating = false;
+        throw err;
+      }
+    });
+}
+
+// Nach jedem Solo-/Coop-Spiel geht's NIE direkt erneut in dieselbe Schwierigkeit,
+// sondern immer zur Schwierigkeitsauswahl, vorbefüllt mit der zuletzt gespielten —
+// so wird eine bewusste Bestätigung erzwungen, bevor das nächste Rätsel startet.
+function goNextPuzzle() {
+  state.sel.difficulty = state.puzzle.difficulty;
+  // Aus dem Spiel heraus zur Auswahl: Zurück führt von hier nach Home.
+  navStack = [() => { coopReset(); navigate('home'); }];
+  navigate('setup');
+}
+
+// Start aus dem Solo-Setup: der „Endlos-Aufstieg"-Schalter entscheidet, ob ein
+// Endlos-Lauf (ignoriert Schwierigkeit/Große Zahlen) oder eine klassische Partie
+// mit der gewählten Schwierigkeit startet. Wird sowohl vom Start-Knopf als auch
+// vom „Zufall"-Knopf (via @randomstart) aufgerufen.
+function setupStart(diffId) {
+  if (state.sel.endless) { startEndless(); return; }
+  newGame(diffId ?? state.sel.difficulty);
+}
+
+// ─── ENDLOS-AUFSTIEG (Solo) ───────────────────────────────────────────────────
+// Ein Lauf über immer schwerere Level (Schwierigkeitsleiter) auf einem GEMEINSAMEN
+// Leben-/Hinweis-Pool, bis man scheitert. Score = geschaffte Level. Komplett lokal;
+// nur der Bestwert wandert (in den Statistiken) mit in die Cloud. Reine Logik in
+// js/endless.js (unit-getestet); hier das Wiring an die Brett-/Belohnungs-Maschinerie.
+function startEndless() {
+  coopReset();
+  state.endlessSummary = null;
+  state.endlessLevelFlash = null;
+  state.endless = {
+    active: true, coop: false, advancing: false, level: 1,
+    // Eigene, ueber den GANZEN Lauf stabile Kennung. Jedes Level bekommt eine
+    // neue gameId (loadPuzzleIntoState) — waere die der Bibliotheks-Schluessel,
+    // legte EIN Lauf pro Level einen eigenen „Spielstand" an und die Liste fuellte
+    // sich mit Zwischenmarkern desselben Laufs, von denen jeder einzeln
+    // fortsetzbar aussah. Ein Lauf ist EIN Eintrag.
+    runId: generateId(),
+    lives: ENDLESS_CFG.startLives, hints: ENDLESS_CFG.startHints,
+    score: 0, coins: 0, best: state.stats.endlessBest || 0,
+    bigNumbers: !!state.sel.bigNumbers,   // „Große Zahlen" gilt für den ganzen Lauf (je Level, wo erlaubt)
+    accumMs: 0,                            // aufsummierte Zeit aller geschafften Level (Gesamt-Timer)
+  };
+  navStack = [() => { navigate('home'); }];  // aus dem Lauf führt Zurück nach Home
+  log('game', 'Endlos-Aufstieg gestartet', { startLives: ENDLESS_CFG.startLives, best: state.endless.best, bigNumbers: state.endless.bigNumbers });
+  loadEndlessLevel();
+}
+function loadEndlessLevel() {
+  const diffId = endlessDiffId(state.endless.level, DIFFICULTIES.map(d => d.id));
+  // „Große Zahlen" je Level nur, wo die Feldgröße es erlaubt (kleine Frühlevel
+  // fallen automatisch auf 1–9 zurück).
+  const bigNumbers = !!state.endless.bigNumbers && bigNumbersAllowed(diffId);
+  state.isTrainingGame = false;
+  state.screen = 'game';
+  state.generating = true;
+  const t0 = performance.now();
+  log('game', 'Endlos-Level-Generierung gestartet', { level: state.endless.level, difficulty: diffId, bigNumbers });
+  generateAsync({ difficulty: diffId, bigNumbers })
+    .then(puzzle => {
+      log('game', 'Endlos-Level generiert', { level: state.endless.level, difficulty: diffId, rows: puzzle.rows, tookMs: Math.round(performance.now() - t0) });
+      finishEndlessLevel(puzzle);
+    })
+    .catch(e => {
+      log('game', 'Endlos-Generierung fehlgeschlagen, synchroner Versuch', e);
+      try { finishEndlessLevel(generatePuzzle({ difficulty: diffId, bigNumbers })); }
+      catch (err) { log('game', 'Endlos synchroner Fallback fehlgeschlagen', err); state.generating = false; throw err; }
+    });
+}
+function finishEndlessLevel(puzzle) {
+  // Rundenstand mit dem GETEILTEN Pool laden (Leben/Hinweise wandern von Level zu
+  // Level mit). saveSlot='endless' (loadPuzzleIntoState) → nie im Solo-Slot persistiert.
+  loadPuzzleIntoState(puzzle, {
+    lives: state.endless.lives, maxLives: ENDLESS_CFG.maxLives, hintsLeft: state.endless.hints,
+  });
+  state.generating = false;
+  startTimer();
+  requestWakeLock();
+  // Solo-Endlos ist ab dem geladenen Level fortsetzbar (auch vor dem ersten Zug).
+  if (!state.endless.coop) saveActiveGameEndless(endlessSnapshot());
+}
+// Level geschafft (aus win(), Solo UND Coop, idempotent): den NORMALEN Gewinn-Screen
+// zeigen (Zeit/Fehler/Hinweise/Schwierigkeit·Größe, Coop-Prozentverteilung,
+// verlorene Leben) — kein Auto-Weiter. Erst „Fortsetzen" (endlessContinue) lädt das
+// nächste Level. So tippt niemand versehentlich ins nächste Brett. Der Lauf bleibt
+// verbunden (Level/Leben/Hinweise/Herz-Farben wandern mit). KEINE normale
+// Sieg-Buchhaltung (Stats/Münzen/Streak) — die kommt gesammelt am Laufende.
+function endlessLevelSolved(remote) {
+  if (state.status === 'won') return;   // Level-Screen zeigt bereits (idempotent)
+  const e = state.endless;
+  if (!remote && !state.paused && state.startTime) state.elapsed = Math.max(0, gameNow() - state.startTime);
+  if (remote) { state.elapsed = remote.timeMs ?? state.elapsed; state.mistakes = remote.mistakes ?? state.mistakes; state.hintsUsed = remote.hintsUsed ?? state.hintsUsed; }
+  state.status = 'won';
+  stopTimer();
+  // Zeit dieses geschafften Levels in den Gesamt-Timer des Laufs übernehmen (genau
+  // einmal je Level dank des status-Guards oben). Ab jetzt zeigt der HUD-Gesamt-
+  // Timer (status!=='playing') accumMs allein — kein Doppelzählen des Level-Timers.
+  e.accumMs = (e.accumMs || 0) + Math.max(0, state.elapsed || 0);
+  e.score = e.level;                                    // dieses Level ist geschafft
+  e.hints = Math.max(0, state.hintsLeft || 0);          // Rest-Hinweise mitnehmen
+  e.lives = Math.max(0, state.lives);                   // Rest-Leben übertragen (kein Refill)
+  if (e.coop) e.lifeLossBy = (state.coop.lifeLossBy || []).slice();  // wer welche Leben verbraucht hat — bewahren
+  state.perfectWin = (state.mistakes || 0) === 0 && (state.hintsUsed || 0) === 0;
+  state.newHighscore = false; state.wouldHaveBeenBest = false; state.lastCoinReward = 0; state.lastStreakUsed = 0;
+  launchWinFx(state.perfectWin);
+  updateMusic();
+  log('game', 'Endlos-Level gelöst', { level: e.score, coop: !!e.coop, lives: e.lives });
+  // ── VOLLE Einzelspiel-Buchhaltung je Level ──────────────────────────────────
+  // Jedes geschaffte Endlos-Level IST ein individuell gewonnenes Spiel seiner
+  // Schwierigkeit: Sieg-Zähler (global + je Schwierigkeit), Zeit-Summen, Bestzeit
+  // + Bestenliste, VOLLE Münzbelohnung mit allen Multiplikatoren (perfekt ×2,
+  // Bestzeit ×2, Coop ×2, Streak-Bonus), Tages-Streak, Verlauf, Missionen,
+  // Achievements/Prestige. „Perfekt" gilt pro Level (mistakes/hintsUsed je Level
+  // frisch), NICHT nach in früheren Leveln verlorenen Leben. Der Lauf selbst wird
+  // am Ende NUR noch als Lauf gewertet (endlessBest/Runs) — die Münzen sind dann
+  // schon je Level geflossen (keine Doppel-Vergütung). Wie in win() läuft die
+  // (teils schwere) Buchhaltung NACH dem ersten gepainteten Frame.
+  afterPaint(() => {
+    if (state.isTrainingGame || !state.puzzle) return;
+    const isCoop = !!e.coop;
+    const diff = state.puzzle.difficulty;
+    // Jedes Endlos-Level ist ein vollwertiges Einzelspiel — also auch eine eigene
+    // Stilprobe. Ohne diesen Aufruf wäre ein langer Endlos-Lauf für den Klon
+    // unsichtbar, obwohl dort die meisten Züge fallen.
+    recordPlaySample();
+    // Streak ZUERST (der Streak-Münz-Multiplikator zählt den heutigen Sieg mit).
+    applyStreakAfterGame();
+    // Bestzeit-Vergleich VOR recordResult einfangen (der Aufruf überschreibt sie).
+    const prevBest = isCoop ? state.stats.byDifficulty[diff]?.coopBestTimeMs : state.stats.byDifficulty[diff]?.bestTimeMs;
+    const disqualified = (state.mistakes || 0) > 0 || (state.hintsUsed || 0) > 0;
+    state.wouldHaveBeenBest = disqualified && (prevBest == null || state.elapsed < prevBest);
+    const { stats, newHighscore } = recordResult({
+      difficulty: diff, outcome: 'won',
+      timeMs: state.elapsed, hintsUsed: state.hintsUsed, mistakes: state.mistakes,
+      coop: isCoop,
+    });
+    state.stats = stats;
+    state.newHighscore = newHighscore;
+    const dIdx = DIFFICULTIES.findIndex(d => d.id === diff);
+    const perfect = (state.mistakes || 0) === 0 && (state.hintsUsed || 0) === 0;
+    const streakDays = state.streak.currentStreak || 0;
+    const bonus = { coop: isCoop, perfect, bestTime: newHighscore, streak: streakDays };
+    // Belohnungs-Idempotenz je Level (jedes Level hat seine eigene gameId) — wie
+    // bei normalen Solo-Siegen; Coop belohnt jeden Spieler selbst (wie win()).
+    const alreadyRewarded = !isCoop && state.gameId && isGameCompleted(state.gameId);
+    const coins = alreadyRewarded ? 0 : coinReward(dIdx, bonus);
+    const mult = Math.round(coinMultiplier(bonus) * 100) / 100;
+    if (coins) state.wallet = grantCurrency(coins, 'win', {
+      difficulty: diff, mode: isCoop ? 'endlessCoop' : 'endless',
+      base: coinBaseForIndex(dIdx), mult, coopMult: isCoop, perfect, bestTime: newHighscore,
+      streakDays: streakDays || 0,
+      streakPct: streakDays ? Math.round(coinStreakBonus(streakDays) * 100) : 0,
+      gameId: state.gameId || null, endlessLevel: e.score,
+    });
+    if (!isCoop && state.gameId) markGameCompleted(state.gameId);
+    state.lastCoinReward = coins;
+    state.lastCoinMult = mult;
+    state.lastStreakUsed = streakDays;
+    e.coins = (e.coins || 0) + coins;   // Lauf-Summe für den Ergebnis-Screen
+    // Neue perfekte Solo-Bestzeit → Online-Bestenliste (Coop-Level bewusst nicht).
+    if (newHighscore && !isCoop && state.account.status === 'in') {
+      Account.publishBestTime(diff, state.elapsed, state.account.username, myBadge());
+    }
+    // Verlauf + Missionen + Achievements/Prestige — exakt wie ein normaler Sieg.
+    state.puzzleHistory = recordHistory({
+      difficulty: diff, dim: { r: state.puzzle.rows, c: state.puzzle.cols },
+      seed: state.puzzle.seed, marks: state.marks.map(row => row.slice()),
+      timeMs: state.elapsed, outcome: 'won', coop: state.coop.active,
+    });
+    recordMissionEvent({
+      won: true, played: true, perfect,
+      coop: state.coop.active, race: false,
+      bigNumbers: !!state.puzzle?.bigNumbers, difficulty: diff, diffIndex: dIdx,
+      streak: streakDays,
+    });
+    checkAchievements();
+    checkMasterUnlock();
+    checkPrestigeUnlocks();
+    // SOLO-Endlos fortsetzbar halten: JETZT (nach der Buchhaltung, inkl. Lauf-
+    // Münzsumme) den Zwischen-Level-Marker sichern — das gelöste Brett selbst
+    // taugt nicht zum Fortsetzen, das Fortsetzen startet frisch bei score+1.
+    if (!isCoop) {
+      const marker = { pending: true, ts: Date.now(), gameId: state.gameId, endless: { runId: e.runId || null, level: e.score + 1, lives: e.lives, hints: e.hints, score: e.score, bigNumbers: !!e.bigNumbers, accumMs: e.accumMs || 0, coins: e.coins || 0 } };
+      saveActiveGameEndless(marker);
+      rememberSave(marker, 'endless', endlessSaveId());   // auch der Zwischenstand gehoert in die Bibliothek
+    }
+    log('game', 'Endlos-Level als Einzelsieg verbucht', { level: e.score, difficulty: diff, coins, mult, newHighscore, perfect, coop: isCoop });
+    syncCloudNow('endlessLevel');
+  });
+}
+// „Fortsetzen" auf dem Endlos-Level-Screen: nächstes (schwereres) Level laden. Solo
+// direkt; Coop nur der Host (generiert + broadcastet), der Gast wartet auf das INIT.
+// Gesamt-Laufzeit des Endlos-Laufs für den HUD-Gesamt-Timer. Während des Spiels:
+// accumMs (Summe der geschafften Level) + elapsed (laufendes Level). Außerhalb
+// (Level-/Ende-Screen): accumMs allein — die Zeit des gerade gelösten Levels wurde
+// in endlessLevelSolved bereits summiert (sonst würde sie doppelt zählen).
+function endlessTotalMs() {
+  const e = state.endless;
+  return (e.accumMs || 0) + (state.status === 'playing' ? Math.max(0, state.elapsed || 0) : 0);
+}
+function endlessContinue() {
+  const e = state.endless;
+  if (e.coop && state.coop.role !== 'host') return;     // Gast wartet auf Host-INIT
+  state.status = 'playing';
+  e.level = e.score + 1;
+  if (e.coop) loadCoopEndlessLevel(); else loadEndlessLevel();
+}
+// Lauf beendet (aus lose(), Leben aufgebraucht): das GESCHEITERTE Schluss-Level
+// als individuelle Niederlage seiner Schwierigkeit verbuchen (jedes Level ist ein
+// Einzelspiel — auch das verlorene), dann den Lauf werten (endlessBest/Runs).
+// Münzen sind bereits JE LEVEL geflossen (endlessLevelSolved) — hier wird nur
+// noch die Lauf-Summe (e.coins) angezeigt, NICHTS erneut gutgeschrieben.
+function endlessGameOver() {
+  const e = state.endless;
+  if (!e.active) return;   // idempotent (Doppel-lose darf nicht doppelt buchen)
+  // Exakte Zeit des gescheiterten Levels stempeln (lose() verzweigt VOR seinem
+  // eigenen Stempel hierher) — zählt in die Niederlagen-Buchhaltung + Gesamtzeit.
+  if (!state.paused && state.startTime && state.status === 'playing') state.elapsed = Math.max(0, gameNow() - state.startTime);
+  stopTimer();
+  const score = e.score;
+  e.accumMs = (e.accumMs || 0) + Math.max(0, state.elapsed || 0);   // auch die Zeit des verlorenen Levels zählt zur Laufzeit
+  // Auch das GESCHEITERTE Level ist Trainingsmaterial: der Spieler hat bis zum Aus
+  // normal gespielt (lose() verzweigt vor seinem eigenen recordPlaySample hierher).
+  recordPlaySample();
+  // Individuelle Niederlage (Zähler global + je Schwierigkeit, Tages-Streak-
+  // Aktivität, Verlauf, Missionen) — exakt wie lose() bei einem Einzelspiel.
+  if (state.puzzle && !state.isTrainingGame) {
+    const { stats } = recordResult({
+      difficulty: state.puzzle.difficulty, outcome: 'lost',
+      timeMs: state.elapsed, hintsUsed: state.hintsUsed, mistakes: state.mistakes,
+      coop: false,
+    });
+    state.stats = stats;
+    applyStreakAfterGame();
+    state.puzzleHistory = recordHistory({
+      difficulty: state.puzzle.difficulty, dim: { r: state.puzzle.rows, c: state.puzzle.cols },
+      seed: state.puzzle.seed, marks: state.marks.map(row => row.slice()),
+      timeMs: state.elapsed, outcome: 'lost', coop: false,
+    });
+  }
+  const { stats, newBest } = recordEndlessRun(score);
+  state.stats = stats;
+  e.active = false;
+  state.status = 'lost';   // saveSlot='endless' → persistGame fasst den Solo-Slot nie an
+  // Lauf vorbei → Fortsetzen-Slot UND Bibliothekseintrag räumen. persistGame
+  // steigt für den Endlos-Slot ganz oben aus und räumt (anders als beim
+  // klassischen Solo-Spiel) hier nichts auf — ohne das blieb der verlorene Lauf
+  // in der Bibliothek liegen und wurde von deren Rückfall sofort wieder als
+  // fortsetzbar angeboten.
+  const deadRunId = endlessSaveId();
+  saveActiveGameEndless(null); state.resumeAvailableEndless = null;
+  if (deadRunId) state.saves = removeSave(deadRunId);
+  state.endlessSummary = { score, best: stats.endlessBest, coins: e.coins || 0, newBest, totalMs: endlessTotalMs() };
+  if (state.settings.sfxLose) Music.sfxLose();
+  log('game', 'Endlos-Lauf beendet', { score, best: stats.endlessBest, coins: e.coins || 0, newBest });
+  recordMissionEvent({
+    played: true, won: false, endlessScore: score,
+    difficulty: state.puzzle?.difficulty,
+    diffIndex: DIFFICULTIES.findIndex(d => d.id === state.puzzle?.difficulty),
+  });
+  checkAchievements();
+  checkMasterUnlock();
+  checkPrestigeUnlocks();
+  syncCloudNow('endlessEnd');
+}
+// Mitten im Lauf aufgeben (Menü): der Lauf wird gewertet (endlessBest/Runs) — die
+// Münzen/Siege der geschafften Level sind bereits je Level geflossen; das
+// ANGEFANGENE Level zählt wie ein verlassenes Einzelspiel NICHT als Niederlage.
+function endlessAbort() {
+  const e = state.endless;
+  if (!e.active) return;
+  const score = e.score;
+  // coop-Flag mitgeben: ein abgebrochener COOP-Endlos-Lauf gehört in die Coop-
+  // Endlos-Statistik (endlessCoopBest/Runs), nicht in die Solo-Werte.
+  const { stats } = recordEndlessRun(score, { coop: !!e.coop });
+  state.stats = stats;
+  e.active = false;
+  // NUR ein SOLO-Lauf räumt den Fortsetzen-Slot. Ein Coop-Endlos-Lauf liegt dort
+  // ohnehin nie (Live-Session, nicht fortsetzbar) — der Slot gehört weiterhin dem
+  // EIGENEN Solo-Lauf. Vorher wurde er bedingungslos geleert: wer einer
+  // Coop-Endlos-Runde beitrat und sie verließ, verlor damit seinen eigenen,
+  // völlig unbeteiligten Solo-Endlos-Stand. (Im Diagnoseprotokoll nachvollzogen:
+  // Solo-Lauf auf Level 5 fortgesetzt, danach Beitritt zu einer fremden
+  // Coop-Endlos-Runde, beim Verlassen war der eigene Lauf weg.)
+  // endlessCoopGameOver räumt den Slot aus genau demselben Grund nicht.
+  if (!e.coop) {
+    const deadRunId = endlessSaveId();
+    saveActiveGameEndless(null); state.resumeAvailableEndless = null;
+    if (deadRunId) state.saves = removeSave(deadRunId);   // aufgegebener Lauf gehört auch aus der Bibliothek
+  }
+  recordMissionEvent({ played: true, endlessScore: score });
+  checkAchievements();
+  log('game', 'Endlos-Lauf abgebrochen', { score, coins: e.coins || 0 });
+  syncCloudNow('endlessAbort');
+}
+// Einmalige Migration beim Start: ALTE Endlos-Läufe (vor dem Einzelspiel-Umbau)
+// rückwirkend als Einzelspiele anrechnen. Quelle ist der SYNCTE Geldverlauf
+// (jeder Lauf hinterließ einen 'endless'-Eintrag mit meta.score/mode/aborted);
+// reconstructEndlessRuns (endless.js, rein/unit-getestet) zerlegt ihn in Siege
+// je Schwierigkeit + Schluss-Niederlagen, applyEndlessBackfill (storage.js)
+// bucht NUR die Zähler (keine erfundenen Zeiten/Bestzeiten/Perfekt-Werte; die
+// Basis-Münzen wurden am damaligen Laufende bereits gezahlt → keine Doppel-
+// Zahlung). Idempotent über das CLOUD-SYNCTE Settings-Flag endlessBackfillDone
+// (Zweitgeräte buchen nicht doppelt; Zähler mergen ohnehin als MAX).
+function runEndlessBackfill() {
+  if (state.settings.endlessBackfillDone) return;
+  const recon = reconstructEndlessRuns(loadWalletLog(), DIFFICULTIES.map(d => d.id));
+  const games = recon.wins + recon.coopWins + recon.losses + recon.coopLosses;
+  if (games > 0) {
+    state.stats = applyEndlessBackfill(recon);
+    log('game', 'Endlos-Backfill: alte Läufe rückwirkend als Einzelspiele verbucht', { runs: recon.runCount, wins: recon.wins, coopWins: recon.coopWins, losses: recon.losses, coopLosses: recon.coopLosses });
+    showToast(t('endless.backfillToast', { wins: recon.wins + recon.coopWins, runs: recon.runCount }), 'success', 6500);
+    checkAchievements();   // nachgebuchte Siege können Zähler-Achievements freischalten
+    syncCloudNow('endlessBackfill');
+  }
+  setSetting('endlessBackfillDone', true);
+}
+function endlessAgain() { state.endlessSummary = null; startEndless(); }
+function closeEndlessSummary() {
+  const wasCoop = !!(state.endlessSummary && state.endlessSummary.coop);
+  state.endlessSummary = null; state.status = 'idle';
+  if (wasCoop) coopReset();   // Coop-Endlos: Raum sauber verlassen
+  // Die Fortsetzen-Knöpfe hängen an ABGELEITETEM Zustand. Anders als der normale
+  // Ergebnis-Screen (quitToHome) lief hier nie ein refreshResume — nach einem
+  // verlorenen Lauf stand Home deshalb ohne jedes Angebot da, obwohl weitere
+  // Stände in der Bibliothek lagen; erst irgendein späteres Spiel brachte sie
+  // zurück (gemeldet).
+  refreshResume();
+  navigate('home');
+}
+
+// ─── COOP-ENDLOS-AUFSTIEG (host-autoritativ) ──────────────────────────────────
+// Wie Solo-Endlos, aber gemeinsam auf einem geteilten Brett mit GETEILTEN Leben
+// (Start 3, KEIN Refill). Nur der Host generiert je Level das Puzzle und
+// broadcastet es als laufendes INIT; beide Seiten erkennen das Lösen über das
+// synchrone Brett (afterMove→win) bzw. das Leben-Aus über die MISTAKE-Sync
+// (applyRemoteMistake→lose). Idempotent (advancing/endlessSummary), da win()/lose()
+// auf beiden Clients feuern.
+function startCoopEndless() {
+  if (!canStartCoopMatch()) return;
+  state.coop.active = true;
+  state.coop.waitingForGuest = false;
+  state.coop.awaitingStart = false;   // kein Bereit-Lobby-Umweg im Endlos
+  state.endless = { active: true, coop: true, advancing: false, level: 1, lives: LIVES, hints: HINTS, score: 0, coins: 0, best: state.stats.endlessCoopBest || 0, bigNumbers: !!state.coop.lobbyBigNumbers, accumMs: 0 };
+  navigate('game');
+  log('coop', 'Coop-Endlos gestartet', { players: state.coop.players.length, bigNumbers: state.endless.bigNumbers });
+  loadCoopEndlessLevel();
+}
+function loadCoopEndlessLevel() {
+  const e = state.endless;
+  const diffId = endlessDiffId(e.level, DIFFICULTIES.map(d => d.id));
+  const bigNumbers = !!e.bigNumbers && bigNumbersAllowed(diffId);
+  state.generating = true;
+  e.advancing = true;
+  const t0 = performance.now();
+  log('coop', 'Coop-Endlos-Level-Generierung', { level: e.level, difficulty: diffId, bigNumbers });
+  generateAsync({ difficulty: diffId, bigNumbers })
+    .then(puzzle => { log('coop', 'Coop-Endlos-Level generiert', { level: e.level, tookMs: Math.round(performance.now() - t0) }); finishCoopEndlessLevel(puzzle); })
+    .catch(err => { log('coop', 'Coop-Endlos-Generierung fehlgeschlagen', err); onLobbyGenFailed(err, 'Coop-Endlos'); });
+}
+function finishCoopEndlessLevel(puzzle) {
+  const e = state.endless;
+  const gameId = generateId();
+  const startTime = gameNow();
+  // Kumulierte Herz-Verluste (wer welches Leben verbraucht hat) über die Level
+  // hinweg BEWAHREN — loadPuzzleIntoState leert lifeLossBy, danach wiederherstellen.
+  const carryLoss = (e.lifeLossBy && e.lifeLossBy.length) ? e.lifeLossBy.slice() : (state.coop.lifeLossBy || []).slice();
+  // Rundenstand mit den GETEILTEN Rest-Leben laden (kein Refill).
+  loadPuzzleIntoState(puzzle, { lives: e.lives, maxLives: LIVES, gameId, startTime });
+  state.coop.lifeLossBy = carryLoss;
+  e.lifeLossBy = carryLoss;
+  state.generating = false;
+  e.advancing = false;
+  // Fertiges Level als LAUFENDES INIT an die Gäste (endless-Marker + Level + Leben +
+  // kumulierte Herz-Verluste); sie steigen sofort ein (running:true).
+  coopSend({ type: Coop.MSG.INIT, gameId, running: true, puzzle: state.puzzle, marks: state.marks, markedBy: wireMarkedBy(), startTime, lives: e.lives, maxLives: LIVES, endless: true, endlessLevel: e.level, lifeLossBy: carryLoss.map(x => x || '') });
+  coopSend({ type: Coop.MSG.START, startTime });
+  startCoopGame(startTime);
+  requestWakeLock();
+}
+// Leben gemeinsam aufgebraucht → Lauf endet für alle (idempotent). Das
+// GESCHEITERTE Schluss-Level ist eine individuelle Coop-Niederlage (jedes Level
+// = Einzelspiel); Münzen sind bereits je Level geflossen (endlessLevelSolved) —
+// die Summary zeigt nur noch die eigene Lauf-Summe (e.coins).
+function endlessCoopGameOver() {
+  if (state.endlessSummary) return;
+  stopTimer();
+  const e = state.endless;
+  const score = e.score;
+  e.accumMs = (e.accumMs || 0) + Math.max(0, state.elapsed || 0);   // Zeit des verlorenen Levels zählt zur Laufzeit
+  recordPlaySample();   // auch das gescheiterte Coop-Level zählt für den Klon
+  // Individuelle Coop-Niederlage für das Schluss-Level (jeder Client bucht seine
+  // eigene Statistik — wie bei einer normalen Coop-Niederlage in lose()).
+  if (state.puzzle && !state.isTrainingGame) {
+    const { stats } = recordResult({
+      difficulty: state.puzzle.difficulty, outcome: 'lost',
+      timeMs: state.elapsed, hintsUsed: state.hintsUsed, mistakes: state.mistakes,
+      coop: true,
+    });
+    state.stats = stats;
+    applyStreakAfterGame();
+    state.puzzleHistory = recordHistory({
+      difficulty: state.puzzle.difficulty, dim: { r: state.puzzle.rows, c: state.puzzle.cols },
+      seed: state.puzzle.seed, marks: state.marks.map(row => row.slice()),
+      timeMs: state.elapsed, outcome: 'lost', coop: true,
+    });
+  }
+  const { stats, newBest } = recordEndlessRun(score, { coop: true });
+  state.stats = stats;
+  e.active = false;
+  state.status = 'lost';
+  state.endlessSummary = { score, best: stats.endlessCoopBest, coins: e.coins || 0, newBest, coop: true, totalMs: endlessTotalMs() };
+  if (state.settings.sfxLose) Music.sfxLose();
+  log('coop', 'Coop-Endlos beendet', { score, best: stats.endlessCoopBest, coins: e.coins || 0, newBest });
+  recordMissionEvent({
+    played: true, won: false, endlessScore: score,
+    coop: true, difficulty: state.puzzle?.difficulty,
+    diffIndex: DIFFICULTIES.findIndex(d => d.id === state.puzzle?.difficulty),
+  });
+  checkAchievements();
+  checkMasterUnlock();
+  checkPrestigeUnlocks();
+  syncCloudNow('endlessCoopEnd');
+}
+
+// ─── WOCHEN-MISSIONEN (js/missions.js) ────────────────────────────────────────
+// Rotierende Wochen-Aufträge mit Fortschritt + einlösbarer Münz-Belohnung. Der
+// Fortschritt zählt abgeschlossene Partien ALLER Modi und setzt sich pro Woche neu.
+function syncMissionsState(m) {
+  state.missions.weekKey = m.weekKey;
+  state.missions.progress = m.progress;
+  state.missions.claimed = m.claimed;
+  state.missions.list = weeklyMissions(m.weekKey);
+}
+function initMissions() {
+  const wk = currentWeekKey();
+  const stored = loadMissions();
+  const fresh = missionStateFor(stored, wk);              // setzt bei Wochenwechsel zurück
+  if (!stored || stored.weekKey !== wk) saveMissions(fresh);
+  syncMissionsState(fresh);
+  log('app', 'Missionen initialisiert', { weekKey: wk, count: state.missions.list.length });
+}
+// Nach einer abgeschlossenen Partie den Missions-Fortschritt fortschreiben.
+function recordMissionEvent(ctx) {
+  const wk = currentWeekKey();
+  if (state.missions.weekKey !== wk) { const f = missionStateFor(loadMissions(), wk); saveMissions(f); syncMissionsState(f); }
+  const progress = applyMissionEvent(state.missions.list, state.missions.progress, ctx);
+  if (JSON.stringify(progress) === JSON.stringify(state.missions.progress)) return;
+  state.missions.progress = progress;
+  saveMissions({ weekKey: state.missions.weekKey, progress, claimed: state.missions.claimed });
+}
+function missionsClaimable() { return claimableCount(state.missions.list, state.missions.progress, state.missions.claimed); }
+function claimMissionReward(id) {
+  const m = missionById(id);
+  if (!m || !isMissionClaimable(m, state.missions.progress, state.missions.claimed)) return;
+  state.wallet = grantCurrency(m.reward, 'mission', { mission: id, week: state.missions.weekKey });
+  state.missions.claimed = { ...state.missions.claimed, [id]: true };
+  saveMissions({ weekKey: state.missions.weekKey, progress: state.missions.progress, claimed: state.missions.claimed });
+  if (state.settings.sfxWin) Music.sfxWin();
+  showToast(t('missions.claimed', { n: m.reward }), 'success', 2600);
+  log('app', 'Mission eingelöst', { id, reward: m.reward });
+  syncCloudNow('missionClaim');
+}
+// Missionen-Übersicht als Pop-up (Modal über dem aktuellen Screen), keine eigene
+// Seite mehr — so bleibt man auf Home und schließt einfach wieder.
+function openMissions() { state.modal = 'missions'; log('app', 'Missionen-Übersicht geöffnet'); }
+function missionProgressVal(m) { return missionValue(m, state.missions.progress); }
+function missionDone(m) { return isMissionComplete(m, state.missions.progress); }
+function missionClaimedUI(m) { return isMissionClaimed(m, state.missions.claimed); }
+function missionClaimableUI(m) { return isMissionClaimable(m, state.missions.progress, state.missions.claimed); }
+
+// Trainingsmodus: Schritt-für-Schritt-Erklärung erzwungener Züge (siehe
+// training.js). Das Rätsel wird GEZIELT so ausgewählt, dass es sich komplett
+// mit den einfachen, in Worten erklärbaren Tier-1-Schritten lösen lässt --
+// sonst würde der Durchlauf plötzlich auf ein Rätsel treffen, das v1 nicht
+// erklären kann. Solo, kein Netz, keine eigenen Storage-Keys (siehe Plan).
+const TRAINING_GEN_BUDGET = 40; // Versuche, bis ein voll Tier-1-lösbares Rätsel gefunden ist
+function startTrainingGame() {
+  coopReset();
+  state.generating = true;
+  state.screen = 'game';
+  setTimeout(() => {
+    log('game', `Trainingsrätsel-Generierung gestartet`);
+    let puzzle = generatePuzzle({ difficulty: 'sehrleicht' });
+    for (let i = 0; i < TRAINING_GEN_BUDGET && !isFullyTier1Solvable(puzzle); i++) {
+      puzzle = generatePuzzle({ difficulty: 'sehrleicht' });
+    }
+    log('game', `Trainingsrätsel generiert`, { rows: puzzle.rows, cols: puzzle.cols });
+    loadPuzzleIntoState(puzzle, null);
+    // Erst NACH loadPuzzleIntoState setzen, da dieses isTrainingGame/trainingStep/
+    // trainingDone als generischer Reset-Punkt für alle Spielstart-Pfade auf false
+    // zurücksetzt (siehe dort) -- sonst würde der Reset diese Zeilen sofort überschreiben.
+    state.isTrainingGame = true;
+    state.trainingStep = null;
+    state.trainingDone = false;
+    state.generating = false;
+    startTimer();
+    trainingNextStep();
+  }, 30);
+}
+
+// Sucht den nächsten erzwungenen Schritt und zeigt ihn als Erklär-Overlay an
+// -- die Markierung selbst passiert erst im "anwenden"-Klick (applyTrainingStep),
+// damit die Begründung zuerst gelesen werden kann, bevor sich das Feld ändert.
+function trainingNextStep() {
+  state.trainingStep = findTrainingStep(state.puzzle, state.marks);
+  state.trainingDone = !state.trainingStep;
+}
+
+function applyTrainingStep() {
+  const step = state.trainingStep;
+  if (!step) return;
+  setMark(step.r, step.c, step.action, false);
+  state.trainingStep = null;
+  if (state.status === 'playing') trainingNextStep();
+}
+
+function loadPuzzleIntoState(puzzle, saved) {
+  // Genereller Reset-Punkt für alle Spielstart-Pfade (Solo, Coop, Race, Team,
+  // Fortsetzen, Daily/Boss) -- ohne den blieb der Trainingsmodus-Banner nach
+  // einem Abbruch per Zurück-Button (quitToHome() setzt isTrainingGame nicht
+  // zurück) in jedem danach gestarteten "normalen" Spiel sichtbar. startTrainingGame()
+  // setzt isTrainingGame direkt NACH diesem Aufruf wieder auf true.
+  state.isTrainingGame = false;
+  cellStyleCache = [];   // Style-Referenz-Cache gehört zum alten Brett (s. cellStyle)
+  state.trainingStep = null;
+  state.trainingDone = false;
+  state.paused = false;
+  resetChat();  // Chat ist pro Partie frisch (ephemer)
+  // Speicher-Slot JETZT festnageln (die Aufrufer setzen coop/team/race VOR diesem
+  // Aufruf korrekt) — immun gegen späteres Flackern von coop.active bei Rejoin/
+  // Rollenwechsel. Team läuft (wie Coop) im Coop-Slot; Race wird nie persistiert.
+  state.saveSlot = state.race.active ? 'race' : (state.coop.active || state.team.active) ? 'coop' : state.endless.active ? 'endless' : 'solo';
+  log('game', 'loadPuzzle: saveSlot festgelegt', { slot: state.saveSlot, coop: state.coop.active, team: state.team.active, race: state.race.active });
+  // Partie-Identität: beim Fortsetzen die gespeicherte gameId behalten, sonst eine
+  // neue erzeugen (Multi-Device-Session + Belohnungs-Idempotenz). sessionRev-Basis
+  // frisch: ein fortgesetztes Spiel kennt seine Cloud-rev erst nach dem Reconcile.
+  state.gameId = (saved && saved.gameId) || generateId();
+  state.sessionRev = 0;
+  state.sessionReadonly = false;
+  state.puzzle = puzzle;
+  state.cellMeta = buildCellMeta(puzzle);
+  applyMarkSafeRegionColors();   // Cage-Farben meiden die (lokalen) Spielerfarben
+  if (saved && saved.hintMarks) for (const [r, c] of saved.hintMarks) state.cellMeta[r][c].hintMark = true;
+  // Raster IMMER dicht normalisieren (nie roh uebernehmen): ein per Coop-INIT
+  // empfangenes markedBy kommt aus Firebase RTDB und ist dort loechrig, weil RTDB
+  // null-Werte nicht speichert — leere Zeilen fehlen ganz, Luecken machen aus dem
+  // Array ein Objekt. Ungepruefte Zugriffe `markedBy[r][c]` im Brett-Render warfen
+  // dann einen TypeError, Vue brach den Brett-Teilbaum ab und das Brett fehlte
+  // komplett im DOM (gemeldeter „Blackscreen beim Beitritt", belegt durch das
+  // Beitritts-Render-Protokoll: cells 0 / w 0 / h 0 bei geladenem Spielstand).
+  // Gilt genauso fuer einen alten/beschaedigten Spielstand aus dem Speicher.
+  state.marks = Coop.normalizeGrid(saved?.marks, puzzle.rows, puzzle.cols, 'none');
+  state.markedBy = Coop.normalizeGrid(saved?.markedBy, puzzle.rows, puzzle.cols, null);
+  // Einmal je Brett-Aufbau (nicht pro Zelle) protokollieren, WENN tatsaechlich ein
+  // loechriges Raster geheilt wurde — macht einen erneuten Blackscreen-Bericht
+  // sofort entscheidbar, statt wieder raten zu muessen.
+  if (saved && saved.markedBy && !gridIsDense(saved.markedBy, puzzle.rows, puzzle.cols)) {
+    log('coop', 'Loechriges markedBy-Raster geheilt', {
+      rows: puzzle.rows, cols: puzzle.cols,
+      wasArray: Array.isArray(saved.markedBy),
+      gotRows: Array.isArray(saved.markedBy) ? saved.markedBy.length : Object.keys(saved.markedBy).length,
+    });
+  }
+  state.maxLives = saved?.maxLives ?? LIVES;
+  state.lives = saved?.lives ?? LIVES;
+  // Hinweise sind in ALLEN Modi unbegrenzt (Nutzerwunsch) — auch ein alter
+  // Spielstand/Endlos-Lauf mit endlichem Rest-Pool wird auf ∞ angehoben.
+  state.hintsLeft = HINTS;
+  state.hintsUsed = saved?.hintsUsed ?? 0;
+  state.mistakes = saved?.mistakes ?? 0;
+  state.coop.lifeLossBy = [];
+  state.coop.mistakesByPlayer = {};
+  state.history = [];
+  state.flash = {};
+  state.justResolved = {};
+  state.tool = state.settings.confirmTool || 'pen';
+  state.status = 'playing';
+  state.newHighscore = false;
+  state.wouldHaveBeenBest = false;
+  state.perfectWin = false;
+  state.hintWarnShown = false;
+  state.hintTutor = null;
+  state.elapsed = saved?.elapsed ?? 0;
+  // Bei Coop-INIT übernimmt der Gast den exakten Host-Startzeitpunkt, damit beide
+  // Seiten dieselbe Zeit anzeigen (sonst Drift durch Verbindungsaufbau-Latenz).
+  state.startTime = saved?.startTime ?? (gameNow() - state.elapsed);
+  state.zoom = 1;
+  computeCellSize();
+  // .board-wrap existiert beim ersten Aufruf (vor dem nächsten Vue-Render) noch
+  // nicht im DOM -- der nextTick-Nachschlag korrigiert die Fallback-Schätzung,
+  // sobald die echte Größe (Hoch- oder Querformat) feststeht. Zusätzlich ab jetzt
+  // per ResizeObserver auf .board-wrap dauerhaft nachziehen (Layout-Settle,
+  // Adressleiste, Rotation) → Brett bleibt immer vollständig eingepasst.
+  nextTick(() => { computeCellSize(); observeBoardWrap(); });
+  startPlayLog();   // Spielstil-Aufzeichnung für diese Partie beginnen
+  persistGame();
+}
+
+// ─── ZELLGRÖSSE (responsiv + Zoom) ────────────────────────────────────────────
+// Misst die tatsächlich verfügbare Fläche von .board-wrap (Breite UND Höhe),
+// damit Zellen im Querformat (wo die Höhe statt der Breite limitiert) nicht zu
+// groß werden. Vor dem ersten Render (DOM noch nicht da) greift ein grober
+// Fallback über window.innerWidth/-Height, den der nextTick-Aufruf in
+// loadPuzzleIntoState() danach durch die echte Messung ersetzt.
+// Desktop = Maus-Zeiger + breites Fenster. Muss zur gleichnamigen CSS-Media-
+// Query (.app.app-game-Breite) passen, damit JS-Zellgröße und CSS-Breite
+// dieselbe Fläche annehmen.
+function desktopBoard() {
+  try { return window.matchMedia && window.matchMedia('(min-width: 720px) and (pointer: fine)').matches; }
+  catch (_) { return false; }
+}
+function computeCellSize() {
+  if (!state.puzzle) return;
+  const cols = state.puzzle.cols;
+  const rows = state.puzzle.rows;
+  const wrap = document.querySelector('.board-wrap');
+  let availW, availH;
+  if (wrap && wrap.clientWidth && wrap.clientHeight) {
+    availW = wrap.clientWidth - 12; // 2*6px Board-Wrap-Padding
+    availH = wrap.clientHeight - 12;
+  } else {
+    availW = Math.min(window.innerWidth - 44, 496); // 2*(14px App-Padding + 6px Board-Wrap-Padding) + Sicherheitspuffer
+    availH = window.innerHeight - 200; // grobe Schätzung für Kopf-/Werkzeugleiste vor dem ersten Render
+  }
+  // Aktiver Brett-Rahmen legt außen einen 10px-Innenabstand um die Spielfläche
+  // (2*10 = 20px je Achse, s. .board[class*="frame-"] in styles.css). Dieser
+  // Platz muss VOR der Zellgröße abgezogen werden, sonst wird das Brett um 20px
+  // breiter/höher als der verfügbare Raum und ragt aus dem Bildschirm.
+  const framePad = boardFrameClass() ? 20 : 0;
+  availW -= framePad; availH -= framePad;
+  const idealW = Math.floor(availW / (cols + 1)); // +1 für Kopfspalte
+  const idealH = Math.floor(availH / (rows + 1)); // +1 für Kopfzeile
+  const ideal = Math.min(idealW, idealH);
+  // Deckel für die Auto-Einpassung: begrenzt die Zellgröße, damit kleine Bretter
+  // auf großen Displays nicht riesig wirken. Skaliert mit der kürzeren Bildschirm-
+  // kante (= bindende Achse, da das Brett in BEIDE Richtungen passen muss), damit
+  // es auf JEDEM Gerät und in JEDER Ausrichtung so groß wie sinnvoll möglich ist:
+  //  • Desktop (Maus + breites Fenster): 128px — .app.app-game ist dort breit.
+  //  • Tablet / großes Querformat (kurze Kante ≥ 600px, z.B. iPad in beiden
+  //    Ausrichtungen): Deckel wächst mit der kurzen Kante (bis 120px), sonst
+  //    begrenzte der alte 56er-Handy-Deckel das Feld auf iPad/Querformat unnötig.
+  //  • Handy (kurze Kante < 600px, inkl. Handy-Querformat mit niedriger Höhe): 56px.
+  // Die tatsächlich verfügbare Fläche kommt weiterhin aus der .board-wrap-Messung
+  // (availW/availH) — der Deckel ist nur die Obergrenze, kein fixer Wert.
+  const shortSide = Math.min(window.innerWidth || 0, window.innerHeight || 0);
+  const cap = desktopBoard() ? 128
+    : (shortSide >= 600 ? Math.min(120, Math.round(shortSide * 0.14)) : 56);
+  // KEIN hoher Mindestwert mehr: Beim Öffnen MUSS das ganze Brett passen — lieber
+  // kleine Zellen als eine abgeschnittene Zeile/Spalte. Der frühere 26px-Boden
+  // ließ das größte Brett (14×14 = 15 Einheiten) auf schmalen Handys eine Spalte
+  // aus dem Bild ragen. Nur ein winziger Boden gegen 0 in Extremfällen.
+  const base = Math.max(10, Math.min(cap, ideal));
+  state.cellPx = Math.round(base * state.zoom);
+}
+// Beobachtet die tatsächliche Größe von .board-wrap und passt die Zellgröße neu
+// an, sobald sie sich ändert (Layout-Settle nach dem Öffnen, Adressleiste ein-/
+// ausblenden, Rotation, Sidebar). So ist das Brett IMMER sofort vollständig
+// eingepasst — die erste (evtl. noch nicht ausgemessene) Berechnung wird direkt
+// korrigiert, kein Zeilen/Spalten-Overflow beim Start/Fortsetzen.
+let boardResizeObserver = null;
+function observeBoardWrap() {
+  try {
+    if (typeof ResizeObserver !== 'function') return;
+    const wrap = document.querySelector('.board-wrap');
+    if (!wrap) return;
+    if (!boardResizeObserver) boardResizeObserver = new ResizeObserver(() => computeCellSize());
+    else boardResizeObserver.disconnect();
+    boardResizeObserver.observe(wrap);
+  } catch (_) {}
+}
+function setZoom(delta) {
+  state.zoom = Math.max(0.7, Math.min(2.2, +(state.zoom + delta).toFixed(2)));
+  computeCellSize();
+}
+// Zoom auf den Standard (automatische Einpassung, zoom = 1) zurücksetzen. Der
+// Button dafür wird nur eingeblendet, wenn überhaupt gezoomt wurde (zoom !== 1).
+function resetZoom() {
+  if (state.zoom === 1) return;
+  state.zoom = 1;
+  computeCellSize();
+}
+
+// ─── SUMMEN & FERTIG-STATUS ───────────────────────────────────────────────────
+function rowSum(r) {
+  let s = 0; const p = state.puzzle; for (let c = 0; c < p.cols; c++) if (state.marks[r][c] === 'kept') s += p.values[r][c]; return s;
+}
+function colSum(c) {
+  let s = 0; const p = state.puzzle; for (let r = 0; r < p.rows; r++) if (state.marks[r][c] === 'kept') s += p.values[r][c]; return s;
+}
+function regionSum(i) {
+  let s = 0; const p = state.puzzle; for (const [r, c] of p.regions[i].cells) if (state.marks[r][c] === 'kept') s += p.values[r][c]; return s;
+}
+// Eine Gruppe gilt erst als "aufgelöst", wenn JEDE Zelle korrekt markiert ist
+// (Lösungszellen eingekreist, alle anderen gelöscht) — nicht schon, wenn die
+// Summe stimmt. Kein automatisches Auflösen.
+const cellCorrect = (r, c) => state.puzzle.solution[r][c]
+  ? state.marks[r][c] === 'kept'
+  : state.marks[r][c] === 'removed';
+function rowResolved(r) { const p = state.puzzle; for (let c = 0; c < p.cols; c++) if (!cellCorrect(r, c)) return false; return true; }
+function colResolved(c) { const p = state.puzzle; for (let r = 0; r < p.rows; r++) if (!cellCorrect(r, c)) return false; return true; }
+function regionResolved(i) { const p = state.puzzle; for (const [r, c] of p.regions[i].cells) if (!cellCorrect(r, c)) return false; return true; }
+// ── Render-Performance: aufgelöste Zeilen/Spalten/Käfige EINMAL vorberechnen ──
+// Vorher scannte jede der bis zu 196 Zellen (14×14 „R.I.P.") bei JEDEM Render ihren
+// Käfig/ihre Zeile/Spalte neu (regionResolved/…). Das lief nicht nur pro Zug, sondern
+// bei JEDEM Re-Render (z.B. den vielen Puls-Animationen gegen Spielende) → CPU-Dauerlast,
+// Hitze, zunehmendes Ruckeln. Diese Sets rechnen nur neu, wenn sich state.marks ändert
+// (ein Zug); die Render-Nutzung (cellClasses/Template) ist dann ein O(1)-Set-Lookup.
+const resolvedRowSet = computed(() => { const p = state.puzzle; const s = new Set(); if (p) for (let r = 0; r < p.rows; r++) if (rowResolved(r)) s.add(r); return s; });
+const resolvedColSet = computed(() => { const p = state.puzzle; const s = new Set(); if (p) for (let c = 0; c < p.cols; c++) if (colResolved(c)) s.add(c); return s; });
+const resolvedRegionSet = computed(() => { const p = state.puzzle; const s = new Set(); if (p) for (let i = 0; i < p.regions.length; i++) if (regionResolved(i)) s.add(i); return s; });
+// Render-Helfer (O(1)) — NUR im Template/cellClasses verwenden (Spiellogik nutzt
+// weiter die rohen row/col/regionResolved für die punktuelle Vorher/Nachher-Prüfung).
+function rowResolvedR(r) { return resolvedRowSet.value.has(r); }
+function colResolvedR(c) { return resolvedColSet.value.has(c); }
+function regionResolvedR(i) { return resolvedRegionSet.value.has(i); }
+// Zeilen-/Spaltensummen ebenfalls EINMAL pro Zug cachen statt in jedem Header-
+// Render (mehrfach: Wert + Match-Klasse) die ganze Zeile/Spalte neu aufzusummieren.
+const rowSums = computed(() => { const p = state.puzzle; if (!p) return []; const a = new Array(p.rows); for (let r = 0; r < p.rows; r++) { let s = 0; for (let c = 0; c < p.cols; c++) if (state.marks[r][c] === 'kept') s += p.values[r][c]; a[r] = s; } return a; });
+const colSums = computed(() => { const p = state.puzzle; if (!p) return []; const a = new Array(p.cols); for (let c = 0; c < p.cols; c++) { let s = 0; for (let r = 0; r < p.rows; r++) if (state.marks[r][c] === 'kept') s += p.values[r][c]; a[c] = s; } return a; });
+function rowSumR(r) { return rowSums.value[r] || 0; }
+function colSumR(c) { return colSums.value[c] || 0; }
+// aktuelle Summen stimmen (Hilfsanzeige): Summe der eingekreisten == Ziel — aus dem Cache.
+const rowSumMatch = r => rowSums.value[r] === state.puzzle.rowTargets[r];
+const colSumMatch = c => colSums.value[c] === state.puzzle.colTargets[c];
+// Regionfarben-Cache: die (statische) Käfig-Basisfarbe × ausgerüstete Palette EINMAL
+// je distinkter Farbe transformieren — vorher lief applyPaletteFx (HSL-Mathe + 2 Shop-
+// Lookups) in cellStyle PRO ZELLE PRO RENDER (×196 auf dem 14×14). m.color ist eine
+// Referenz in REGION_COLORS, daher als Map-Key nutzbar. Neu nur bei Paletten-Wechsel.
+const colorKey = (c) => c.h + '-' + c.s + '-' + c.l;  // stabiler Key (unabhängig von Objekt-Referenz)
+const regionColorVars = computed(() => {
+  const fx = activePaletteFx();
+  const map = new Map();
+  for (const color of REGION_COLORS) {
+    const col = applyPaletteFx(color, fx);
+    map.set(colorKey(color), { '--rc-h': col.h, '--rc-s': col.s + '%', '--rc-l': col.l + '%', '--rc-ink': regionChipInk(col) });
+  }
+  return map;
+});
+
+// Kurzer, smoother Leucht-Puls für eine gerade fertig gewordene Reihe/Spalte/Cage.
+function pulseResolved(kind, idx) {
+  const key = `${kind}-${idx}`;
+  state.justResolved[key] = true;
+  setTimeout(() => { delete state.justResolved[key]; }, 900);
+}
+
+// ─── SPIELZÜGE ────────────────────────────────────────────────────────────────
+
+// ─── LANGES DRÜCKEN (Markierung zurücksetzen, nur Solo + "Beim Prüfen") ───────
+// Nur hier kann eine Zelle ohne festen Fehler-Status falsch markiert worden
+// sein (im 'instant'-Modus lehnt setMark falsche Züge sofort ab) — daher ist
+// das Zurückholen per langem Drücken auf diesen Modus beschränkt, und auf
+// Solo, da Coop-Markierungen mit dem Partner synchron bleiben müssen.
+const LONGPRESS_MS = 500;          // Haltedauer bis zum Zurücksetzen auf 'none'
+const LONGPRESS_TOLERANCE_PX = 10; // Bewegungstoleranz während des Haltens
+                                    // (verhindert Fehlauslösung beim Schwenken eines gezoomten Felds)
+let pressState = null;       // { r, c, x, y, timer } während eines Pointer-Holds, sonst null
+let suppressClickUntil = 0;  // Date.now()-Zeitstempel; bis dahin wird der nächste Klick auf der Zelle ignoriert
+
+function canLongPressRestore(r, c) {
+  // Long-Press-Zurücknahme gab es nur im entfernten „Beim Prüfen"-Modus. Fehler
+  // werden jetzt immer sofort aufgedeckt (falsche Markierung greift gar nicht
+  // erst), daher gibt es nichts zurückzunehmen → Feature deaktiviert.
+  return false;
+}
+
+function onCellPointerDown(e, r, c) {
+  if (!canLongPressRestore(r, c)) return;
+  if (pressState) clearTimeout(pressState.timer);
+  pressState = { r, c, x: e.clientX, y: e.clientY, timer: null };
+  pressState.timer = setTimeout(() => {
+    if (!pressState || pressState.r !== r || pressState.c !== c) return;
+    suppressClickUntil = Date.now() + 400;
+    pressState = null;
+    setMark(r, c, 'none', true);
+  }, LONGPRESS_MS);
+}
+
+function onCellPointerMove(e) {
+  if (!pressState) return;
+  const dx = e.clientX - pressState.x, dy = e.clientY - pressState.y;
+  if (Math.hypot(dx, dy) > LONGPRESS_TOLERANCE_PX) {
+    clearTimeout(pressState.timer);
+    pressState = null;
+  }
+}
+
+function onCellPointerCancel() {
+  if (pressState) { clearTimeout(pressState.timer); pressState = null; }
+}
+
+function onCellTap(r, c) {
+  if (Date.now() < suppressClickUntil) { suppressClickUntil = 0; return; }
+  // Nur-Lese: ein anderes Gerät hat diese Solo-Partie übernommen — Brett gesperrt,
+  // bis der Nutzer im Banner „Hier weiterspielen" wählt (holt den Besitz zurück).
+  if (state.sessionReadonly) return;
+  if (state.status !== 'playing' || state.generating || state.paused) return;
+  // Solange noch erzwungene Schritte existieren, steuert ausschließlich der
+  // "nächster Schritt"-Button -- erst wenn Tier-1-Logik nicht mehr weiterkommt
+  // (trainingDone, sollte dank TRAINING_GEN_BUDGET praktisch nie vorkommen),
+  // darf frei zu Ende getippt werden.
+  if (state.isTrainingGame && !state.trainingDone) return;
+  const cur = state.marks[r][c];
+  if (cur !== 'none') return; // already marked — only undo can reverse
+  const next = state.tool === 'pen' ? 'kept' : 'removed';
+  setMark(r, c, next, true);
+}
+
+function setMark(r, c, next, user, fromId) {
+  if (user) state.hintTutor = null; // eigene Aktion verwirft den offenen Tipp-Tutor (Zahlen wären veraltet)
+  const cur = state.marks[r][c];
+  if (cur === next) return;
+
+  // Fehler werden IMMER sofort aufgedeckt: eine falsche Markierung wird gar nicht
+  // erst gesetzt, sondern rot geblitzt und als Fehler gezählt.
+  if (user) {
+    const sol = state.puzzle.solution[r][c];
+    const wrong = (next === 'kept' && !sol) || (next === 'removed' && sol);
+    if (wrong) {
+      // Der Fehlgriff gehört MIT ins Zug-Log (nur ein Array-Push): erst dadurch
+      // lässt sich später sagen, WO jemand danebengreift — in welcher Spielphase
+      // und bei welcher Art von Deduktion — statt bloß WIE OFT.
+      if (moveLog) moveLog.push({ r, c, want: next, t: state.elapsed, err: 1 });
+      flashError(r, c); registerMistake(); return;
+    }
+  }
+
+  const region = state.cellMeta[r][c].region;
+  const wasRow = rowResolved(r), wasCol = colResolved(c);
+  const wasRegion = region >= 0 ? regionResolved(region) : false;
+
+  // Spielstil-Aufzeichnung: NUR ein Array-Push (kein localStorage, keine Analyse)
+  // — der Tap-Pfad muss billig bleiben (Board-Render-Regeln in CLAUDE.md). Die
+  // Auswertung läuft einmal am Spielende, s. recordPlaySample().
+  // FREMDE Züge (Coop/Team, geteiltes Brett) wandern MIT ins Log, markiert als
+  // `other`: die Auswertung stellt das Brett Zug für Zug nach, und ohne die Züge
+  // des Partners wäre dieser Nachbau ab dem ersten fremden Zug falsch — die
+  // Deduktions-Einordnung MEINER Züge damit auch. Gemessen werden sie nicht.
+  if (next !== 'none' && moveLog && (user || state.coop.active || state.team.active)) {
+    moveLog.push(user ? { r, c, want: next, t: state.elapsed } : { r, c, want: next, t: state.elapsed, other: 1 });
+  }
+
+  state.history = [{ r, c, prev: cur }]; // nur der letzte Zug ist rückgängig machbar
+  state.marks[r][c] = next;
+  // Außerhalb einer aktiven Coop-/Team-/Wettkampf-Lobby ist state.coop.myId
+  // null (keine Firebase-Identität nötig) -- LOCAL_PLAYER_ID markiert eigene
+  // Züge trotzdem als "meine", damit die eigene Farbe (state.settings.coopMyColor)
+  // auch solo greift (siehe cellStyle()).
+  state.markedBy[r][c] = next === 'none' ? null : (user ? (state.coop.myId || LOCAL_PLAYER_ID) : fromId);
+  if (user && state.coop.active) coopSend({ type: Coop.MSG.MOVE, r, c, mark: next, from: state.coop.myId });
+
+  // Aktions-Sound nur für eigene Züge (sonst klingelt jeder Partner-Tap im Coop).
+  if (user) {
+    if (next === 'kept' && state.settings.sfxKeep) Music.sfxKeep();
+    else if (next === 'removed' && state.settings.sfxRemove) Music.sfxRemove();
+  }
+
+  // Wie viele Strukturen löst dieser eine Zug gleichzeitig auf? -> Stufung.
+  let resolved = 0;
+  if (!wasRow && rowResolved(r)) { pulseResolved('row', r); resolved++; }
+  if (!wasCol && colResolved(c)) { pulseResolved('col', c); resolved++; }
+  if (region >= 0 && !wasRegion && regionResolved(region)) { pulseResolved('region', region); resolved++; }
+  if (resolved > 0 && state.settings.sfxComplete) Music.sfxComplete(resolved);
+
+  afterMove();
+}
+
+function afterMove() {
+  clearStaleTutor();
+  persistGame();
+  if (state.team.active) pushTeamProgress();
+  if (state.race.active) pushRaceProgress();
+  if (isSolved()) win();
+}
+// Verwirft den aktiven Tipp-Tutor, sobald seine Zielzelle gelöst ist — egal
+// wodurch (Auflösen, Coop-Partner-Zug): die Erklärung wäre dann veraltet.
+function clearStaleTutor() {
+  const tt = state.hintTutor;
+  if (tt && state.marks[tt.target.r][tt.target.c] !== 'none') state.hintTutor = null;
+}
+
+let lastErrorSfx = 0;
+function flashError(r, c) {
+  const key = `${r}-${c}`;
+  state.flash[key] = true;
+  setTimeout(() => { delete state.flash[key]; }, 650);
+  // Fehler-Ton — beim Mehrfach-Check (doCheck markiert viele Zellen auf einmal)
+  // nur einmal spielen, nicht pro Zelle.
+  if (state.settings.sfxError && Date.now() - lastErrorSfx > 120) { lastErrorSfx = Date.now(); Music.sfxError(); }
+}
+
+// by: wer den Fehler begangen hat ('me'/Peer-ID im Coop, sonst null). Wird im Coop
+// an den/die Partner gesendet, damit Fehler & gemeinsame Leben bei allen synchron
+// bleiben (eine rein lokale Sofort-Aufdeckung würde der Partner sonst nie erfahren).
+function registerMistake() {
+  const by = state.coop.active ? state.coop.myId : null;
+  state.mistakes++;
+  if (by) state.coop.mistakesByPlayer[by] = (state.coop.mistakesByPlayer[by] || 0) + 1;
+  if (state.coop.active) coopSend({ type: Coop.MSG.MISTAKE, by, n: 1 });
+  // Leben sind immer aktiv: jeder Fehler zieht ein Leben ab.
+  state.lives--;
+  if (state.coop.active) state.coop.lifeLossBy.push(by);
+  showBestTimeNotice(t('game.lifeLostNotice'));
+  if (state.lives <= 0) { state.lives = 0; lose(); }
+  persistGame();
+  // Ohne diese beiden Pushs sah die Gegenseite einen Fehler erst beim nächsten
+  // KORREKTEN Zug (der über afterMove() läuft) -- ein Fehler-Zug selbst kehrt
+  // oben in setMark() vorzeitig zurück und erreicht afterMove() nie. Bewusst
+  // UNGEDROSSELT (wie bei broadcastTeamDone()) statt über den normalen
+  // 2s-Throttle, da Fehler -- anders als jeder einzelne Zug -- selten genug
+  // sind, dass ein Sofort-Push hier kein Kosten-/Schreibvolumen-Problem ist,
+  // für die Gegenseite aber sofort sichtbar sein soll.
+  if (state.team.active) {
+    teamProgressThrottle = Date.now();
+    Coop.setTeamProgress(state.team.myTeam, { pct: progressPct(), mistakes: state.mistakes, mistakesByPlayer: { ...state.coop.mistakesByPlayer } });
+  }
+  if (state.race.active) {
+    raceProgressThrottle = Date.now();
+    Coop.setRaceProgress(state.coop.myId, { pct: progressPct(), mistakes: state.mistakes });
+  }
+}
+
+// Wendet einen vom Partner gemeldeten Fehler an (ohne erneut zu senden — sonst
+// würde die Nachricht zwischen Host und Gast endlos hin- und herlaufen).
+function applyRemoteMistake(by, n) {
+  state.mistakes += n;
+  if (by) state.coop.mistakesByPlayer[by] = (state.coop.mistakesByPlayer[by] || 0) + n;
+  // Leben sind immer aktiv (siehe registerMistake).
+  for (let i = 0; i < n; i++) {
+    state.lives--;
+    state.coop.lifeLossBy.push(by);
+    showBestTimeNotice(t('game.lifeLostNotice'));
+    if (state.lives <= 0) { state.lives = 0; lose(); return; }
+  }
+}
+
+// Gelöst, wenn JEDE Zelle korrekt markiert ist (Lösung eingekreist, Rest gelöscht).
+function isSolved() {
+  const p = state.puzzle; if (!p) return false;
+  for (let r = 0; r < p.rows; r++)
+    for (let c = 0; c < p.cols; c++)
+      if (!cellCorrect(r, c)) return false;
+  return true;
+}
+
+// ─── TEAM-VS-TEAM / RACE: aggregierter Fortschritt für die Gegenseite ─────────
+// Nur ein Prozentwert + Fehlerzahl wandern über teamProgress/{team} bzw.
+// raceProgress/{uid} -- nie Zellinhalte (sonst Antwort-Leak an die Gegenseite,
+// siehe Plan). progressPct() ist bewusst generisch (kein Team-/Race-Bezug im
+// Namen), da beide Modi denselben reinen Puzzle-Fortschritt brauchen.
+function progressPct() {
+  const p = state.puzzle; if (!p) return 0;
+  let total = 0, correct = 0;
+  for (let r = 0; r < p.rows; r++)
+    for (let c = 0; c < p.cols; c++) { total++; if (cellCorrect(r, c)) correct++; }
+  return total ? Math.round((correct / total) * 100) : 0;
+}
+let teamProgressThrottle = 0;
+let teamProgressTimer = null;
+// Reines "leading edge"-Throttle (nur sofort senden, sonst verwerfen) ließ
+// die Gegenseite bei mehreren schnellen Zügen auf einem veralteten Prozentwert
+// sitzen, bis der nächste Zug zufällig außerhalb des Zeitfensters fiel --
+// blieb der Spieler danach kurz stehen (z.B. zum Nachdenken), zeigte die
+// Gegenseite dauerhaft einen falschen Stand. Ein nachgelagerter Timer holt
+// den letzten Stand garantiert nach, auch ohne weiteren Zug.
+function pushTeamProgress() {
+  const now = Date.now();
+  const elapsed = now - teamProgressThrottle;
+  if (elapsed >= 2000) {
+    teamProgressThrottle = now;
+    Coop.setTeamProgress(state.team.myTeam, { pct: progressPct(), mistakes: state.mistakes, mistakesByPlayer: { ...state.coop.mistakesByPlayer } });
+  } else if (!teamProgressTimer) {
+    teamProgressTimer = setTimeout(() => {
+      teamProgressTimer = null;
+      teamProgressThrottle = Date.now();
+      Coop.setTeamProgress(state.team.myTeam, { pct: progressPct(), mistakes: state.mistakes, mistakesByPlayer: { ...state.coop.mistakesByPlayer } });
+    }, 2000 - elapsed);
+  }
+}
+// Empfängt den Fortschritt BEIDER Teams (eigener + gegnerischer) -- die eigene
+// Hälfte wird einfach ignoriert, da der lokale Stand ohnehin genauer ist.
+function onTeamProgressUpdate(progressByTeam) {
+  const opponentTeam = state.team.myTeam === 'A' ? 'B' : 'A';
+  const opp = progressByTeam[opponentTeam];
+  if (opp) {
+    state.team.opponentPct = opp.pct || 0;
+    state.team.opponentMistakes = opp.mistakes || 0;
+    state.team.opponentMistakesByPlayer = opp.mistakesByPlayer || {};
+  }
+}
+let raceProgressThrottle = 0;
+let raceProgressTimer = null;
+// Gleicher Fix wie bei pushTeamProgress() oben -- ein reines leading-edge-
+// Throttle ließ den Gegner-Fortschritt im Race auf einem veralteten Stand
+// einfrieren, sobald keine weiteren Züge mehr außerhalb des Zeitfensters
+// kamen. Der Timer garantiert, dass der letzte Stand spätestens nach Ablauf
+// des Throttle-Fensters nachgereicht wird.
+function pushRaceProgress() {
+  if (state.race.ai) return;   // KI-Duell ist rein lokal — es gibt keinen Raum
+  const now = Date.now();
+  const elapsed = now - raceProgressThrottle;
+  if (elapsed >= 2000) {
+    raceProgressThrottle = now;
+    Coop.setRaceProgress(state.coop.myId, { pct: progressPct(), mistakes: state.mistakes });
+  } else if (!raceProgressTimer) {
+    raceProgressTimer = setTimeout(() => {
+      raceProgressTimer = null;
+      raceProgressThrottle = Date.now();
+      Coop.setRaceProgress(state.coop.myId, { pct: progressPct(), mistakes: state.mistakes });
+    }, 2000 - elapsed);
+  }
+}
+// Empfängt den Fortschritt beider Spieler (eigener + Gegner) -- nur der
+// Gegner-Eintrag (per uid) ist relevant, der eigene Stand ist lokal genauer.
+function onRaceProgressUpdate(progressByUid) {
+  // FFA: Fortschritt/Fehler ALLER Gegner aus der per-uid-Map aktualisieren.
+  if (state.race.ffa) {
+    for (const o of state.race.opponents) {
+      const p = progressByUid[o.id];
+      if (p) { o.pct = p.pct || 0; o.mistakes = p.mistakes || 0; }
+    }
+  }
+  const opp = progressByUid[state.race.opponentId];
+  if (opp) { state.race.opponentPct = opp.pct || 0; state.race.opponentMistakes = opp.mistakes || 0; }
+}
+
+// "Prüfen"-Modus (Fehler erst auf Knopfdruck). by: wer den Check ausgelöst hat
+// (für die Fehler-/Lebenszuordnung im Coop) — bleibt beim Weiterleiten an weitere
+// Mitspieler unverändert, damit die Zuordnung auch beim Host-Relay erhalten bleibt.
+function doCheck(by = state.coop.active ? state.coop.myId : null, broadcast = true) {
+  if (state.status !== 'playing') return;
+  if (broadcast && state.coop.active) coopSend({ type: Coop.MSG.CHECK, from: by });
+  const p = state.puzzle; const wrong = [];
+  for (let r = 0; r < p.rows; r++)
+    for (let c = 0; c < p.cols; c++) {
+      const mk = state.marks[r][c], sol = p.solution[r][c];
+      if ((mk === 'kept' && !sol) || (mk === 'removed' && sol)) wrong.push([r, c]);
+    }
+  if (wrong.length === 0) {
+    if (isSolved()) { win(); return; }
+    showToast(t('game.stillCorrect'), 'info');
+    return;
+  }
+  log('game', `Check ausgeführt`, { errors: wrong.length });
+  wrong.forEach(([r, c]) => flashError(r, c));
+  state.mistakes += wrong.length;
+  if (by) state.coop.mistakesByPlayer[by] = (state.coop.mistakesByPlayer[by] || 0) + wrong.length;
+  // Leben sind immer aktiv.
+  state.lives--;
+  if (state.coop.active) state.coop.lifeLossBy.push(by);
+  showBestTimeNotice(t('game.lifeLostNotice'));
+  if (state.lives <= 0) { state.lives = 0; lose(); return; }
+  showToast(t('game.errorsFound', { count: wrong.length }), 'error');
+  persistGame();
+}
+
+// Wendet einen Hinweis auf eine Zelle an (lokal ausgelöst oder vom Coop-Partner empfangen).
+// user kennzeichnet, wer den Hinweis ausgelöst hat (für die Coop-Farbmarkierung).
+function applyHintEffect(r, c, mark, user = true, fromId) {
+  const region = state.cellMeta[r][c].region;
+  const wasRow = rowResolved(r), wasCol = colResolved(c);
+  const wasRegion = region >= 0 ? regionResolved(region) : false;
+
+  state.history = [{ r, c, prev: state.marks[r][c] }];
+  state.marks[r][c] = mark;
+  state.markedBy[r][c] = state.coop.active ? (user ? state.coop.myId : fromId) : null;
+  // .hint = kurzer Leucht-Puls (Quadrat), .hintMark = bleibt für den Rest des Rätsels
+  state.cellMeta[r][c].hint = true;
+  state.cellMeta[r][c].hintMark = true;
+  setTimeout(() => { if (state.cellMeta[r]) state.cellMeta[r][c].hint = false; }, 1400);
+
+  let resolved = 0;
+  if (!wasRow && rowResolved(r)) { pulseResolved('row', r); resolved++; }
+  if (!wasCol && colResolved(c)) { pulseResolved('col', c); resolved++; }
+  if (region >= 0 && !wasRegion && regionResolved(region)) { pulseResolved('region', region); resolved++; }
+  if (resolved > 0 && state.settings.sfxComplete) Music.sfxComplete(resolved);
+
+  afterMove();
+}
+
+// ── Tipp-Tutor (keine Stufen mehr) ───────────────────────────────────────────
+// Ein Tipp startet den Tutor (js/hinttutor.js): eine Kette kleiner Schritte,
+// die mit den KONKRETEN Zahlen des Bretts erklärt, warum der nächste Zug
+// zwingend ist — erst Bereich highlighten, dann Zwischenstand, dann die
+// eigentliche Logik (z.B. echte Kombinations-Aufzählung), zuletzt die
+// Folgerung. JEDER Schritt wird per „Weiter" bestätigt (auch der Tipp-Knopf
+// selbst schaltet weiter); der letzte Schritt führt den Zug aus. Die Strafe
+// (Bestzeit futsch) fällt einmal beim Start an, wie bisher.
+function useHint() {
+  if (state.status !== 'playing' || state.hintsLeft <= 0 || state.isRaceGame || state.team.active) return;
+  if (state.hintTutor) { tutorNext(); return; } // Tipp-Knopf = „Weiter"
+  confirmThenStartHint();
+}
+// Einmalige Bestzeit-Warnung je Partie, dann den Tutor starten — bei Abbruch
+// bleibt hintWarnShown false, sodass die Warnung erneut käme.
+function confirmThenStartHint() {
+  if (!state.hintWarnShown) {
+    ask(t('game.hintConfirmTitle'), t('game.hintConfirmMsg'), () => { state.hintWarnShown = true; startHint(); });
+    return;
+  }
+  startHint();
+}
+function startHint() {
+  const t0 = Date.now();
+  const tut = buildHintTutorial(state.puzzle, state.marks);
+  if (!tut) return;
+  registerHintPenalty();
+  if (state.settings.sfxHint) Music.sfxHint();
+  state.hintTutor = { steps: tut.steps, i: 0, target: tut.target };
+  log('game', 'Tipp-Tutor gestartet', { reason: tut.reason, steps: tut.steps.length, tookMs: Date.now() - t0 });
+}
+// „Weiter"-Knopf: nächster Schritt; auf dem LETZTEN Schritt wird der erklärte
+// Zug ausgeführt (inkl. Coop-Sync via doRevealCell).
+function tutorNext() {
+  const tt = state.hintTutor;
+  if (!tt) return;
+  if (tt.i < tt.steps.length - 1) { tt.i++; return; }
+  const a = tt.target;
+  state.hintTutor = null;
+  log('game', 'Tipp-Tutor abgeschlossen', { r: a.r, c: a.c });
+  doRevealCell(a.r, a.c, a.want);
+}
+function dismissTutor() { state.hintTutor = null; }
+// Text des aktuellen Tutor-Schritts: i18n-Key + konkrete Zahlen; {unit}/{unit2}
+// werden hier zu menschenlesbaren Bereichs-Labels („Zeile 3", „Käfig") aufgelöst.
+function tutorUnitLabel(u) {
+  if (!u) return '';
+  return t('training.group.' + u.kind, { n: u.ref + 1 });
+}
+function tutorStepText() {
+  const tt = state.hintTutor;
+  if (!tt) return '';
+  const s = tt.steps[tt.i];
+  const params = { ...s.params, unit: tutorUnitLabel(s.unit), unit2: tutorUnitLabel(s.unit2) };
+  let text = t('tutor.' + s.key, params);
+  if (s.key === 'combos' && s.params.more > 0) text += ' ' + t('tutor.moreCombos', { n: s.params.more });
+  return text;
+}
+// Strafe für die Hinweis-Nutzung: zählt den Hinweis (entwertet die Bestzeit) und
+// meldet das einmal sichtbar. Läuft genau einmal je Hinweis-Sequenz (in Stufe 1).
+function registerHintPenalty() {
+  state.hintsLeft--; state.hintsUsed++;
+  showBestTimeNotice(t('game.hintUsedNotice'));
+}
+// Auflöse-Kern: deckt Zelle (r,c) mit der korrekten Markierung auf und synct sie
+// im Coop. Zählt NICHT erneut — die Strafe lief bereits in Stufe 1.
+function doRevealCell(r, c, want) {
+  log('game', `Hinweis aufgelöst`, { r, c });
+  if (state.settings.sfxHint) Music.sfxHint(); // Stufe 3 — Ton bei jeder Hinweis-Instanz
+  applyHintEffect(r, c, want);
+  if (state.coop.active) coopSend({ type: Coop.MSG.HINT, r, c, mark: want, from: state.coop.myId });
+}
+
+function undo(broadcast = true) {
+  if (!state.history.length || state.status !== 'playing') return;
+  // Ton nur bei eigener Aktion (broadcast=true); ein vom Partner empfangenes
+  // UNDO (broadcast=false) soll lokal keinen Sound auslösen.
+  if (broadcast && state.settings.sfxUndo) Music.sfxUndo();
+  const last = state.history.pop();
+  state.marks[last.r][last.c] = last.prev;
+  state.markedBy[last.r][last.c] = null; // prev ist immer 'none' (siehe Markier-Sperre)
+  log('game', `Rückgängig`);
+  persistGame();
+  if (broadcast && state.coop.active) coopSend({ type: Coop.MSG.UNDO });
+}
+
+// ─── COOP ────────────────────────────────────────────────────────────────────
+const CODE_RE = /^\d{6}$/;
+
+// Im Team-vs-Team-Modus laufen Zug-Nachrichten (MOVE/MISTAKE/UNDO/HINT/CHECK/
+// PAUSE/START/STATUS) über den team-skopierten Kanal statt des raumweiten
+// Event-Logs -- so erreichen sie nie das gegnerische Team. Das "Team X ist
+// fertig"-Signal (TEAM_DONE) wird bewusst NICHT über coopSend() verschickt,
+// sondern direkt über Coop.send() (siehe win()), da es absichtlich beide Teams
+// erreichen muss.
+// Ausgangs-Puffer für die Roster-Lücke: ist ein Mitspieler kurz weg
+// (connected=false), werden eigene Züge NICHT mehr stillschweigend verworfen
+// (das ließ die Bretter unbemerkt auseinanderlaufen — „halbe Lobby"), sondern
+// gepuffert und beim Wiederauftauchen in Originalreihenfolge nachgesendet.
+// Eigene Socket-Ausfälle puffert das Firebase-SDK ohnehin selbst.
+let coopOutbox = [];
+const COOP_OUTBOX_MAX = 300;
+function coopSend(msg) {
+  if (!state.coop.active) return;
+  if (!state.coop.connected) {
+    coopOutbox.push(msg);
+    if (coopOutbox.length > COOP_OUTBOX_MAX) coopOutbox.shift();
+    return;
+  }
+  if (state.team.active) Coop.sendTeamEvent(state.team.myTeam, msg);
+  else Coop.send(msg);
+}
+function flushCoopOutbox() {
+  if (!coopOutbox.length) return;
+  const pending = coopOutbox; coopOutbox = [];
+  log('coop', `Sende ${pending.length} gepufferte Züge nach Roster-Heilung nach`);
+  for (const m of pending) {
+    if (state.team.active) Coop.sendTeamEvent(state.team.myTeam, m);
+    else Coop.send(m);
+  }
+}
+
+// ─── Multiplayer-Chat ─────────────────────────────────────────────────────────
+// Läuft über die room-weiten Events (Coop.send) — erreicht in ALLEN Modi
+// (Coop, Race/1v1, FFA, Team) alle im Raum. Nachrichten sind ephemer (nur
+// in-memory), werden pro Partie geleert. Der Absender empfängt sein eigenes
+// Event NICHT zurück (coop.js filtert author===uid), daher lokal einfügen.
+const CHAT_MAX = 120;      // Ringpuffer-Länge
+const CHAT_TEXT_MAX = 300; // max. Zeichen je Nachricht
+function isMultiplayer() { return !!(state.coop.active || state.race.active || state.team.active); }
+function chatSenderName() { return myUsername() || state.settings.coopName || t('chat.anon'); }
+function pushChatMessage(m) {
+  const msgs = state.chat.messages;
+  msgs.push(m);
+  if (msgs.length > CHAT_MAX) msgs.splice(0, msgs.length - CHAT_MAX);
+  if (!state.chat.open && !m.self) state.chat.unread = Math.min(99, state.chat.unread + 1);
+  if (state.chat.open) nextTick(scrollChatToEnd);
+}
+function receiveChat(msg) {
+  const text = String(msg.text || '').slice(0, CHAT_TEXT_MAX);
+  if (!text) return;
+  pushChatMessage({ uid: msg.author || null, name: String(msg.name || t('chat.anon')).slice(0, 40), color: msg.color || null, badge: msg.badge || null, text, self: false, ts: Date.now() });
+  if (state.settings.sfxHint) Music.sfxChat();  // EIGENER Chat-Ton (nicht der Hinweis-Ton)
+  log('coop', 'Chat empfangen', { len: text.length });
+}
+function sendChat() {
+  const text = String(state.chat.draft || '').trim().slice(0, CHAT_TEXT_MAX);
+  if (!text || !isMultiplayer()) return;
+  stopChatTyping();   // Nachricht raus = nicht mehr am Tippen
+  const name = chatSenderName();
+  const color = state.settings.coopMyColor;
+  const badge = myBadge();
+  Coop.send({ type: Coop.MSG.CHAT, name, color, badge, text });  // room-weit (auch im Team-Modus an alle 4)
+  pushChatMessage({ uid: state.coop.myId, name, color, badge, text, self: true, ts: Date.now() });
+  state.chat.draft = '';
+  log('coop', 'Chat gesendet', { len: text.length });
+}
+// ── Tipp-Indikator („… schreibt", à la WhatsApp) ──────────────────────────────
+// Beim Tippen im Chat wird der eigene Status als transienter Raum-Knoten gesetzt
+// (Coop.setTyping — KEIN events-Eintrag, gedrosselt auf max. 1 Schreibzugriff /
+// 2 s) und nach 3 s Tipp-Pause bzw. beim Senden/Schließen wieder entfernt
+// (onDisconnect räumt Abstürze auf). Alle Clients sehen die live tippenden
+// Mitspieler (state.chat.typingUids, via Coop.onTyping in init()) — als
+// animierte Punkte am Chat-Button der Topbar UND als Tipp-Blase im Chat.
+let typingSentAt = 0, typingStopTimer = null;
+function onChatTyping() {
+  if (!isMultiplayer()) return;
+  const now = Date.now();
+  if (now - typingSentAt > 2000) { typingSentAt = now; Coop.setTyping(true); }
+  clearTimeout(typingStopTimer);
+  typingStopTimer = setTimeout(stopChatTyping, 3000);
+}
+function stopChatTyping() {
+  clearTimeout(typingStopTimer); typingStopTimer = null;
+  if (typingSentAt) { typingSentAt = 0; Coop.setTyping(false); }
+}
+// Gerade tippende MITSPIELER als Anzeigedaten (Name + Farbe aus dem Roster).
+function typingPlayers() {
+  if (!state.chat.typingUids.length) return [];
+  return state.chat.typingUids
+    .filter((u) => u !== state.coop.myId)
+    .map((u) => state.coop.players.find((p) => p.id === u) || { id: u, name: t('common.defaultPlayerName'), color: '#888' });
+}
+function scrollChatToEnd() {
+  const el = document.querySelector('.chat-msgs');
+  if (el) el.scrollTop = el.scrollHeight;
+}
+// Beim Tippen im Chat schiebt die eingeblendete Tastatur (Mobile) das Eingabefeld
+// aus dem sichtbaren Bereich. visualViewport meldet die verbleibende Sichthöhe →
+// wir heben das Bottom-Sheet um die Tastaturhöhe an (margin-bottom), sodass Feld
+// UND die letzten Nachrichten sichtbar bleiben. Handler nur aktiv, solange offen.
+let chatVvHandler = null;
+function bindChatViewport() {
+  const vv = window.visualViewport;
+  if (!vv || chatVvHandler) return;
+  const update = () => {
+    const kb = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+    if (kb !== state.chat.kb) { state.chat.kb = kb; nextTick(scrollChatToEnd); }
+  };
+  chatVvHandler = update;
+  vv.addEventListener('resize', update);
+  vv.addEventListener('scroll', update);
+  update();
+}
+function unbindChatViewport() {
+  const vv = window.visualViewport;
+  if (vv && chatVvHandler) { vv.removeEventListener('resize', chatVvHandler); vv.removeEventListener('scroll', chatVvHandler); }
+  chatVvHandler = null;
+  state.chat.kb = 0;
+}
+function openChat() { state.chat.open = true; state.chat.unread = 0; bindChatViewport(); nextTick(() => { scrollChatToEnd(); document.querySelector('.chat-input')?.focus(); }); }
+function closeChat() { state.chat.open = false; unbindChatViewport(); stopChatTyping(); }
+function toggleChat() { state.chat.open ? closeChat() : openChat(); }
+function resetChat() { unbindChatViewport(); stopChatTyping(); state.chat.messages = []; state.chat.unread = 0; state.chat.open = false; state.chat.draft = ''; state.chat.typingUids = []; }
+
+// Nachrichten, die einen LAUFENDEN Spielzustand voraussetzen — ohne geladenes
+// Brett (z.B. direkt nach dem Beitritt, bevor das INIT eintrifft) würden sie
+// ins Leere greifen bzw. Reste eines früheren Spiels manipulieren.
+const COOP_GAME_MSGS = new Set([Coop.MSG.MOVE, Coop.MSG.UNDO, Coop.MSG.CHECK, Coop.MSG.MISTAKE, Coop.MSG.PAUSE, Coop.MSG.HINT, Coop.MSG.STATUS]);
+// Echte Spiel-Aktionen eines Mitspielers (kein STATUS/PAUSE): treffen sie ein,
+// LÄUFT die Runde beim Absender bereits — ein Gast, der noch in der Bereit-Lobby
+// steht, muss dann sofort einsteigen (Sicherheitsnetz gegen jeden Lobby-Hänger,
+// unabhängig von running-Flag/START/Timing).
+const COOP_LIVE_ACTIVITY = new Set([Coop.MSG.MOVE, Coop.MSG.UNDO, Coop.MSG.CHECK, Coop.MSG.MISTAKE, Coop.MSG.HINT]);
+// Minimale Struktur-Prüfung eines per INIT empfangenen Puzzles: alles, was das
+// Brett-Template/loadPuzzleIntoState zwingend braucht. Verhindert, dass ein
+// kaputtes INIT die App halb lädt (Spiel-Screen ohne Brett = Blackscreen).
+function validPuzzleShape(p) {
+  return !!(p && Number.isInteger(p.rows) && p.rows > 0 && Number.isInteger(p.cols) && p.cols > 0
+    && Array.isArray(p.values) && p.values.length === p.rows && Array.isArray(p.values[0])
+    && Array.isArray(p.solution) && p.solution.length === p.rows
+    && Array.isArray(p.rowTargets) && Array.isArray(p.colTargets));
+}
+// ── Resync-Watchdog (Gast-Selbstheilung) ──────────────────────────────────────
+// Hängt ein Beitretender verbunden im Raum, hat aber nach ein paar Sekunden kein
+// Brett (INIT verloren/verworfen/fehlgeschlagen), fordert er den Rundenstand
+// aktiv beim Host an (MSG.RESYNC → Host antwortet mit broadcastRunningInit bzw.
+// dem Lobby-INIT). Mehrere Versuche, dann Ruhe — der Blackscreen-Schutz-Screen
+// (Template) bietet ohnehin jederzeit den Ausweg ins Menü.
+let coopResyncTimer = null, coopResyncTries = 0;
+function coopNeedsResync() {
+  return state.coop.active && state.coop.connected && !state.puzzle && !state.coop.generating && state.coop.role !== 'host';
+}
+function startCoopResyncWatchdog() {
+  if (coopResyncTimer) return;
+  coopResyncTries = 0;
+  coopResyncTimer = setInterval(() => {
+    if (!coopNeedsResync()) { stopCoopResyncWatchdog(); return; }
+    if (coopResyncTries >= 4) { log('coop', 'Resync-Watchdog: aufgegeben (kein Brett nach 4 Versuchen)'); stopCoopResyncWatchdog(); return; }
+    coopResyncTries++;
+    log('coop', 'Resync-Watchdog: fordere Rundenstand beim Host an', { attempt: coopResyncTries });
+    Coop.send({ type: Coop.MSG.RESYNC });
+  }, 5000);
+}
+function stopCoopResyncWatchdog() { if (coopResyncTimer) { clearInterval(coopResyncTimer); coopResyncTimer = null; } }
+watch(coopNeedsResync, (stuck) => { if (stuck) startCoopResyncWatchdog(); else stopCoopResyncWatchdog(); });
+
+function handleCoopMsg(msg) {
+  // Race hält state.coop.active absichtlich false (s. state.race-Kommentar),
+  // empfängt aber legitime PAUSE-Events über den Raum → race.active zählt mit.
+  if (COOP_GAME_MSGS.has(msg.type) && (!state.puzzle || (!state.coop.active && !state.team.active && !state.race.active))) return;
+  // Sicherheitsnetz: hängt der Gast noch in der Bereit-Lobby (awaitingStart),
+  // kommt aber schon eine echte Spielaktion des Partners, ist die Runde live →
+  // sofort einsteigen, DANN das Event anwenden. Fängt jeden Fall ab, in dem
+  // running/START den Gast nicht rechtzeitig gestartet haben.
+  if (state.coop.awaitingStart && state.puzzle && COOP_LIVE_ACTIVITY.has(msg.type)) {
+    log('coop', 'Spielaktion in der Bereit-Lobby empfangen – steige sofort ein', { type: msg.type });
+    startCoopGame(state.startTime || gameNow());
+  }
+  if (msg.type === Coop.MSG.MOVE) {
+    // Coop-Endlos: zwischen zwei Leveln (advancing) keine verspäteten Züge des
+    // gerade gelösten Bretts mehr anwenden — sie träfen sonst das nächste Level.
+    if (state.endless.active && state.endless.coop && state.endless.advancing) return;
+    setMark(msg.r, msg.c, msg.mark, false, msg.from);
+  } else if (msg.type === Coop.MSG.UNDO) {
+    undo(false);
+  } else if (msg.type === Coop.MSG.CHECK) {
+    doCheck(msg.from, false);
+  } else if (msg.type === Coop.MSG.MISTAKE) {
+    applyRemoteMistake(msg.by, msg.n);
+  } else if (msg.type === Coop.MSG.PAUSE) {
+    if (msg.paused) pauseGame(false, msg.elapsed); else resumeFromPause(false);
+  } else if (msg.type === Coop.MSG.RESUME_COUNT) {
+    // Ein Mitspieler hat „Fortsetzen" gedrückt → denselben Countdown-Balken
+    // zeigen (das eigentliche RESUME kommt am Balken-Ende vom Drücker).
+    if (state.paused && state.screen === 'game') startResumeCountdown(true);
+  } else if (msg.type === Coop.MSG.HINT) {
+    applyHintEffect(msg.r, msg.c, msg.mark, false, msg.from);
+  } else if (msg.type === Coop.MSG.INIT) {
+    // Ein ERNEUT gesendetes INIT (der Host holt einen mitten in der Runde
+    // Beigetretenen zuverlässig ab, s. broadcastRunningInit) darf eine bereits
+    // laufende EIGENE Partie nicht neu laden: wer schon aktiv exakt diese gameId
+    // spielt, ignoriert das Duplikat (sonst würde ihm mitten im Spiel das Brett
+    // zurückgesetzt). Neue Beitretende (kein Brett / andere gameId / in Lobby)
+    // verarbeiten es normal.
+    if (state.coop.active && state.puzzle && !state.coop.awaitingStart
+        && state.status === 'playing' && msg.gameId && state.gameId === msg.gameId) {
+      log('coop', 'INIT ignoriert (spiele diese Partie bereits)', { gameId: msg.gameId });
+      return;
+    }
+    log('coop', 'INIT empfangen', { running: !!msg.running, gameId: msg.gameId || null, hasStart: msg.startTime != null });
+    // BLACKSCREEN-PRÄVENTION: das Puzzle VOR jeder Zustandsänderung prüfen. Ein
+    // kaputtes/beschnittenes INIT (Versionsversatz, sanitize-Verlust, Schreib-
+    // abbruch) lud sonst halb — die App landete auf dem Spiel-Screen ohne Brett
+    // (= toter schwarzer Bildschirm). Ungültig → ignorieren + Rundenstand aktiv
+    // beim Host anfordern (RESYNC); der Host sendet erneut (broadcastRunningInit
+    // bzw. Lobby-INIT) — Selbstheilung statt kaputter Lobby.
+    if (!validPuzzleShape(msg.puzzle)) {
+      log('coop', 'INIT mit ungültigem Puzzle verworfen → RESYNC angefordert', { gameId: msg.gameId || null });
+      Coop.send({ type: Coop.MSG.RESYNC });
+      return;
+    }
+    // Coop-Flags ZUERST setzen (VOR loadPuzzleIntoState): der Beitretende lädt so
+    // im Coop-Kontext — saveSlot='coop' (nicht versehentlich 'solo', was den
+    // Solo-Slot mit einem Coop-Brett überschrieb) und applyMarkSafeRegionColors
+    // rechnet gleich mit den Coop-Spielerfarben statt erst nachträglich per watch.
+    state.coop.active = true;
+    state.coop.connected = true;
+    state.coop.waitingForGuest = false;
+    state.coop.awaitingStart = true;
+    state.coop.generating = false;
+    // Coop-Endlos: der endless-Marker im INIT setzt beim Gast den Endlos-Zustand
+    // (Level + geteilte Rest-Leben). Jedes Level kommt als eigenes (running-)INIT
+    // mit frischer gameId, daher nie durch den Duplikat-Guard oben blockiert.
+    // Ohne Marker sicherstellen, dass ein evtl. Alt-Endlos aus ist (normales Coop).
+    if (msg.endless) {
+      // accumMs (Gesamt-Timer) UND coins (eigene Lauf-Münzsumme) über die
+      // Level-INITs hinweg BEWAHREN — der Gast hat beides beim Lösen des gerade
+      // beendeten Levels in endlessLevelSolved summiert; ein frischer INIT darf
+      // sie nicht zurücksetzen.
+      state.endless = { active: true, coop: true, advancing: false, level: msg.endlessLevel || 1, lives: msg.lives ?? LIVES, hints: HINTS, score: (msg.endlessLevel || 1) - 1, coins: state.endless.coins || 0, best: state.stats.endlessCoopBest || 0, bigNumbers: !!(msg.puzzle && msg.puzzle.bigNumbers), accumMs: state.endless.accumMs || 0 };
+    } else if (state.endless.active) {
+      state.endless.active = false;
+    }
+    // Gäste generieren nichts selbst -- sie bekommen das fertige Rätsel des Hosts
+    // und sind damit sofort "fertig" (kein Ladebalken in der Lobby nötig).
+    // lives/maxLives/hintsLeft/hintsUsed/mistakes sind optional (rückwärts-
+    // kompatibel): eine live zu Coop umgewandelte Solo-Partie (s. Solo → Coop)
+    // schickt ihren Zwischenstand mit, damit Beitretende nicht mit vollen
+    // Leben/Hinweisen in eine halb gespielte Runde einsteigen. gameId übernehmen,
+    // damit ein späteres Wiederhol-INIT (s.o.) als Duplikat erkannt wird.
+    loadPuzzleIntoState(msg.puzzle, {
+      marks: msg.marks, markedBy: msg.markedBy, startTime: msg.startTime, gameId: msg.gameId,
+      lives: msg.lives, maxLives: msg.maxLives, hintsLeft: msg.hintsLeft, hintsUsed: msg.hintsUsed, mistakes: msg.mistakes,
+    });
+    // Coop-Endlos: kumulierte Herz-Verluste (wer welches Leben verbrauchte) vom
+    // Host übernehmen — loadPuzzleIntoState hat lifeLossBy geleert, daher DANACH.
+    if (msg.endless && Array.isArray(msg.lifeLossBy)) {
+      state.coop.lifeLossBy = msg.lifeLossBy.map(x => x || null);
+      state.endless.lifeLossBy = state.coop.lifeLossBy.slice();
+    }
+    navigate('game');
+    // iOS-Schwarzbild: HIER baut der Beitretende ein komplett neues Brett auf,
+    // OHNE dass ein visibilitychange oder pageshow davor lag — und genau an diesen
+    // beiden Ereignissen hängt die bisherige Prävention. Nach einem Kaltstart über
+    // eine Einladung (iOS killt die PWA aggressiv) ist das die einzige Stelle, an
+    // der ein großer frischer Teilbaum ohne Repaint-Anstoß erscheint. Im gemeldeten
+    // Fall zeigte das Protokoll Brett geladen, Timer gestartet, Wake Lock aktiv und
+    // KEINE Ausnahme — der Zustand war also korrekt, nur nicht gezeichnet.
+    nudgeRepaint('coopInit');
+    // Ein Beitretender bekommt das Brett MIT dem bisherigen Spielstand — bei einer
+    // umgewandelten Solo-Partie also auf einen Schlag Dutzende markierte Zellen.
+    // Jede markierte Zelle traegt beim dynamischen Skin eine eigene rotierende
+    // Ebene; in einer normalen Coop-Runde entstehen die nach und nach, hier alle in
+    // EINEM Frame. Genau diese Konstellation hat WebKit schon einmal zerlegt (s.
+    // js/skins.js). Deshalb die Rotation kurz anhalten, bis das Brett steht — die
+    // Klasse `.skin-freeze` gibt es dafuer bereits (Pause-Pfad).
+    startJoinFreeze(countMarked());
+    // running: die Runde LÄUFT bereits (Solo→Coop-Umwandlung / Nachzügler in einer
+    // laufenden Coop-Runde) — sofort starten, OHNE auf das separate START-Event zu
+    // warten. Damit kann der Beitretende unter keinen Umständen (Event-Reihenfolge,
+    // verlorenes START) in der Bereit-Lobby hängen bleiben; ein danach noch
+    // eintreffendes START ist durch die awaitingStart-Prüfung unten ein No-op.
+    if (msg.running) { log('coop', 'INIT running:true → starte Runde sofort'); startCoopGame(msg.startTime); }
+  } else if (msg.type === Coop.MSG.START) {
+    log('coop', 'START empfangen', { awaitingStart: state.coop.awaitingStart });
+    if (state.coop.awaitingStart) startCoopGame(msg.startTime);
+  } else if (msg.type === Coop.MSG.STATUS) {
+    // In der Bereit-Lobby kann ein Rundenende unmöglich echt sein — nur ein
+    // verirrtes/verspätetes Event einer früheren Runde. Ignorieren, sonst
+    // beendet es die noch gar nicht gestartete Runde sofort.
+    if (state.coop.awaitingStart) return;
+    const remote = { timeMs: msg.timeMs, mistakes: msg.mistakes, hintsUsed: msg.hintsUsed };
+    if (msg.status === 'won') win(remote);
+    else if (msg.status === 'lost') lose(remote);
+  } else if (msg.type === Coop.MSG.IDENTITY) {
+    // Nur der Host wertet Identitäts-Meldungen aus und verteilt die Liste neu —
+    // er entscheidet (Konfliktauflösung), welche Farbe ein Mitspieler tatsächlich bekommt.
+    hostRegisterPlayer(msg.author, msg.name, msg.color, msg.username, msg.badge);
+  } else if (msg.type === Coop.MSG.ROSTER) {
+    const prevHostId = state.coop.hostId;
+    state.coop.players = msg.players;
+    if (msg.hostId) {
+      state.coop.hostId = msg.hostId;
+      // Eigene Rolle korrigieren falls ein anderer Spieler inzwischen Host wurde
+      // (tritt auf wenn der ursprüngliche Host via resumeCoopGame() wieder beitritt).
+      if (state.coop.role === 'host' && msg.hostId !== state.coop.myId) {
+        state.coop.role = 'guest';
+      }
+      if (prevHostId && msg.hostId !== prevHostId && msg.hostId !== state.coop.myId) {
+        const newHostName = playerLabel(msg.players.find(p => p.id === msg.hostId)) || t('common.defaultPlayerName');
+        showToast(t('coop.newHostIs', { name: newHostName }), 'info', 3000);
+      }
+    }
+    state.coop.teamMode = !!msg.teamMode;
+    updateConnectedFlag();
+  } else if (msg.type === Coop.MSG.READY) {
+    // Nur der Host wertet Bereit-Meldungen aus und verteilt die Liste neu --
+    // exakt das gleiche Muster wie IDENTITY (Konfliktauflösung/Quelle der Wahrheit).
+    if (state.coop.role === 'host') {
+      const p = state.coop.players.find(pl => pl.id === msg.author);
+      if (p) { p.ready = true; broadcastRoster(); }
+    }
+  } else if (msg.type === Coop.MSG.UNREADY) {
+    if (state.coop.role === 'host') {
+      const p = state.coop.players.find(pl => pl.id === msg.author);
+      if (p) { p.ready = false; broadcastRoster(); }
+    }
+  } else if (msg.type === Coop.MSG.RESYNC) {
+    // Ein Gast hängt ohne Brett und bittet um den Rundenstand: der Host sendet
+    // erneut — läuft die Runde, den kompletten laufenden Stand (bereits aktive
+    // Spieler ignorieren das Wiederhol-INIT dank gameId-Guard); steht die
+    // Bereit-Lobby, das Lobby-INIT. Selbstheilung gegen verlorene/kaputte INITs.
+    if (state.coop.role === 'host' && state.coop.active && state.puzzle) {
+      if (!state.coop.awaitingStart && state.status === 'playing') {
+        log('coop', 'RESYNC-Anfrage → sende laufenden Rundenstand erneut', { from: msg.author });
+        broadcastRunningInit();
+      } else if (state.coop.awaitingStart) {
+        log('coop', 'RESYNC-Anfrage → sende Lobby-INIT erneut', { from: msg.author });
+        Coop.send({ type: Coop.MSG.INIT, gameId: state.gameId, puzzle: state.puzzle, marks: state.marks, markedBy: wireMarkedBy(), startTime: state.startTime });
+      }
+    }
+  } else if (msg.type === Coop.MSG.TEAM_START) {
+    applyTeamStart(msg.seed, msg.difficulty, !!msg.bigNumbers);
+  } else if (msg.type === Coop.MSG.TEAM_DONE) {
+    if (!state.team.active || state.team.matchOver) return;
+    state.team.matchOver = true;
+    // "won" entscheidet das eigene Team; "lost" gibt den Sieg automatisch
+    // an die Gegenseite (kein Zu-Ende-Spielen für eigene Stats, siehe Plan).
+    state.team.winningTeam = msg.outcome === 'won' ? msg.team : (msg.team === 'A' ? 'B' : 'A');
+    state.team.endReason = msg.outcome;
+    if (msg.team === state.team.myTeam) return; // eigenes Team meldet sich direkt aus win()/lose()
+    // Eigenen Endstand-Prozentwert für die Ergebnisanzeige festhalten (analog zu
+    // RACE_DONE, Zeile darunter) -- ohne das blieb state.team.myPct auf der
+    // empfangenden Seite stehen (0/veraltet) und der 2v2-Endscreen zeigte einen
+    // falschen eigenen Prozentwert an.
+    state.team.myPct = progressPct();
+    if (state.status === 'playing') {
+      const remote = { timeMs: state.elapsed, mistakes: state.mistakes, hintsUsed: state.hintsUsed };
+      if (state.team.winningTeam === state.team.myTeam) win(remote);
+      else lose(remote);
+    }
+  } else if (msg.type === Coop.MSG.RACE_START) {
+    applyRaceStart(msg.seed, msg.difficulty, !!msg.bigNumbers);
+  } else if (msg.type === Coop.MSG.RACE_DONE) {
+    if (!state.race.active) return;
+    if (msg.from === state.coop.myId) return; // eigenes Ergebnis wird lokal in win()/lose() behandelt
+    // Endstand des Melders für die Ergebnis-Balken festhalten.
+    const fin = state.race.opponents.find(o => o.id === msg.from);
+    if (fin) { fin.pct = msg.finalPct ?? fin.pct; fin.mistakes = msg.finalMistakes ?? fin.mistakes; }
+    if (msg.from === state.race.opponentId) {
+      state.race.opponentPct = msg.finalPct ?? state.race.opponentPct;
+      state.race.opponentMistakes = msg.finalMistakes ?? state.race.opponentMistakes;
+    }
+    if (state.race.ffa) {
+      // FFA (jeder gegen jeden): nur ein GELÖSTES Spiel ("won") beendet das Match
+      // für alle -- der erste Fertige gewinnt, alle anderen verlieren. Ein
+      // Ausgeschiedener ("lost": Leben verloren/aufgegeben) fällt nur raus, die
+      // Übrigen spielen weiter; bin danach nur noch ich übrig, gewinne ich.
+      if (msg.outcome === 'won') {
+        if (state.race.matchOver) return;
+        state.race.matchOver = true;
+        state.race.winner = 'opponent';
+        state.race.endReason = 'won';
+        state.race.winnerName = (fin && fin.name) || t('common.defaultPlayerName');
+        state.race.myPct = progressPct();
+        if (state.status === 'playing') lose({ timeMs: state.elapsed, mistakes: state.mistakes, hintsUsed: state.hintsUsed });
+        return;
+      }
+      if (fin) fin.out = true;
+      if (state.race.matchOver) return;
+      if (state.race.opponents.every(o => o.out) && state.status === 'playing') {
+        state.race.matchOver = true;
+        state.race.winner = 'me';
+        state.race.endReason = 'lost';
+        state.race.winnerName = myUsername() || t('common.you');
+        state.race.myPct = progressPct();
+        win({ timeMs: state.elapsed, mistakes: state.mistakes, hintsUsed: state.hintsUsed });
+      }
+      return;
+    }
+    // Strikt 1v1: jede empfangene RACE_DONE stammt notwendig vom (einzigen)
+    // Gegner und beendet das Match binär.
+    if (state.race.matchOver) return;
+    state.race.matchOver = true;
+    state.race.winner = msg.outcome === 'won' ? 'opponent' : 'me';
+    state.race.endReason = msg.outcome;
+    state.race.myPct = progressPct();
+    if (state.status === 'playing') {
+      const remote = { timeMs: state.elapsed, mistakes: state.mistakes, hintsUsed: state.hintsUsed };
+      if (state.race.winner === 'me') win(remote);
+      else lose(remote);
+    }
+  } else if (msg.type === Coop.MSG.CHAT) {
+    receiveChat(msg);
+  }
+}
+
+// keepRoom: der Aufrufer hat eine wiederaufnehmbare Coop-Session gesichert
+// (quitToHome mitten in der Runde) — der Raum in der RTDB muss dann für
+// „Coop fortsetzen" bestehen bleiben, selbst wenn er im Moment des Verlassens
+// (scheinbar) leer ist (s. Coop.leave()).
+function coopReset({ keepRoom = false } = {}) {
+  coopIntentionalLeave = true;
+  coopOutbox = [];
+  Coop.leave({ keepRoom });
+  if (!keepRoom) clearCoopSession();
+  // Solo-Einladungs-Zustand gehört zur (gerade verlassenen) Coop-Verbindung.
+  soloInviteMyId = null; pendingSoloJoin = null;
+  state.soloInvite = { status: 'idle', code: '' };
+  // Ausstehende nachgelagerte Fortschritts-Pushs (siehe pushTeamProgress()/
+  // pushRaceProgress() oben) dürfen nicht nach dem Verlassen des Raums noch
+  // feuern -- der Raum existiert dann ggf. nicht mehr.
+  clearTimeout(teamProgressTimer); teamProgressTimer = null;
+  clearTimeout(raceProgressTimer); raceProgressTimer = null;
+  const keepDiff = state.coop.lobbyDiffId;
+  const keepBig = state.coop.lobbyBigNumbers;
+  const keepEndless = state.coop.lobbyEndless;
+  // Ein laufender Coop-Endlos-Lauf wird beim Verlassen der Coop-Session beendet.
+  if (state.endless.active && state.endless.coop) state.endless.active = false;
+  state.coop.active = false; state.coop.role = null; state.coop.code = '';
+  state.coop.connected = false; state.coop.waitingForGuest = false;
+  state.coop.lobbyDiffId = keepDiff; state.coop.lobbyBigNumbers = keepBig; state.coop.lobbyEndless = keepEndless; state.coop.error = null;
+  state.coop.myId = null; state.coop.hostId = null; state.coop.players = []; state.coop.awaitingStart = false;
+  state.coop.generating = false;
+  state.coop.teamMode = false;
+  stopBot();
+  botState = null;
+  state.race.ai = false;
+  state.coop.raceMode = false;
+  state.coop.ffaMode = false;
+  state.coop.invitePickerOpen = false; state.coop.invitedUids = [];
+  state.coop.pendingJoin = false;   // haengt an der gerade verlassenen Einladung
+  state.team.active = false; state.team.myTeam = null; state.team.matchOver = false;
+  state.team.winningTeam = null; state.team.endReason = null; state.team.opponentPct = 0; state.team.opponentMistakes = 0; state.team.myPct = 0;
+  state.team.opponentMistakesByPlayer = {};
+  state.race.active = false; state.race.opponentId = null; state.race.opponentName = '';
+  state.race.opponentColor = '#888'; state.race.matchOver = false; state.race.winner = null; state.race.endReason = null;
+  state.race.myPct = 0; state.race.opponentPct = 0; state.race.opponentMistakes = 0;
+  state.race.ffa = false; state.race.opponents = []; state.race.winnerName = '';
+  state.race.rematchPending = false;
+  state.isRaceGame = false;
+}
+
+// ─── SPIELER-IDENTITÄT (Namen & Farben) ────────────────────────────────────────
+// Nur der Host führt die maßgebliche Spielerliste — er löst Farbkonflikte auf und
+// verteilt das Ergebnis per ROSTER an alle. Eigene Wunschfarbe bleibt dabei in den
+// Einstellungen unangetastet; reassignte Farben gelten nur für die laufende Session.
+function normHex(h) { return (h || '').toLowerCase(); }
+function activeCoopPalette() { return state.settings.colorBlindMode ? COOP_COLORS_CB : COOP_COLORS; }
+function pickAvailableColor(requested, others) {
+  const used = new Set(others.map(p => normHex(p.color)));
+  if (requested && !used.has(normHex(requested))) return requested;
+  const free = activeCoopPalette().find(c => !used.has(normHex(c.hex)));
+  if (free) return free.hex;
+  // Palette erschöpft (mehr Spieler als vordefinierte Farben): per Goldwinkel-
+  // Rotation eine weitere, praktisch garantiert eindeutige Farbe erzeugen.
+  const hue = Math.round((others.length * 137.508) % 360);
+  return `hsl(${hue} 75% 55%)`;
+}
+function upsertPlayer(id, name, requestedColor, username, badge) {
+  queueMicrotask(applyMarkSafeRegionColors);   // neue Spielerfarbe → Cage-Sichtbarkeit neu prüfen
+  const others = state.coop.players.filter(p => p.id !== id);
+  const color = pickAvailableColor(requestedColor, others);
+  const existing = state.coop.players.find(p => p.id === id);
+  state.coop.players = [...others, { id, name: (name || '').trim() || t('common.defaultPlayerName'), color, username: (username || existing?.username || '').trim(), badge: badge ?? existing?.badge ?? null, team: existing?.team ?? null, ready: existing?.ready ?? false }];
+  updateConnectedFlag();
+}
+// Ausgerüstetes Profil-Abzeichen als kodierte Prestige-ID "sym-tier" (z.B.
+// "drache-3") oder null. Wird mit IDENTITY/Präsenz/Bestzeit mitgesendet;
+// Fremd-Clients dekodieren (decodeBadge akzeptiert auch das alte Nur-Symbol-
+// Format aus der gekauften Ära → als Stufe 1). Prestige-System: nicht mehr
+// gekauft, sondern verdient (s. prestige.js / Prestige-Screen).
+function myBadge() { const id = state.settings.profileBadge; if (isMasterBadge(id)) return id; return id && id !== 'none' && decodeBadge(id) ? id : null; }
+// Abzeichen für eine Bestenlisten-Zeile: der EIGENE Eintrag zeigt IMMER das aktuell
+// ausgerüstete Abzeichen (live, auch bevor der Cloud-Eintrag aktualisiert ist), alle
+// anderen ihren zuletzt veröffentlichten Stand.
+function lbBadge(e) { return e && e.uid === state.account.uid ? myBadge() : (e && e.badge); }
+// Prestige-Kontext für alle Kategorie-Berechnungen (aus den lokalen Statistiken).
+function prestigeCtx() {
+  return { stats: state.stats, streak: state.streak, race: state.raceStats,
+    difficulties: DIFFICULTIES.map(d => d.id) };
+}
+// Selbstgezeichnete Abzeichen-Medaille (SVG-String) für eine kodierte Badge-ID
+// ("sym-tier"). Überall gerendert (Home-Chip, Coop-Roster, Freunde, Bestenliste,
+// Prestige-Screen). ribbon=true = große Medaille am Halsband. Unbekannt ⇒ ''.
+function badgeSvg(id, ribbon = false) {
+  if (isMasterBadge(id)) return masterMedalMarkup({ size: ribbon ? 96 : 40 });
+  const b = decodeBadge(id);
+  return b ? badgeMedalMarkup(b.sym, { tier: b.tier, ribbon, size: ribbon ? 96 : 40 }) : '';
+}
+// Ist die (kodierte) Badge-ID darstellbar? (für v-if in Templates)
+function badgeShown(id) { return isMasterBadge(id) || !!decodeBadge(id); }
+function badgeDefs() { return badgeDefsMarkup(); }
+
+// ─── Prestige-Screen (verdiente Abzeichen) ────────────────────────────────────
+function openPrestige() { state.prestigeOpen = true; log('app', 'Prestige geöffnet'); }
+function closePrestige() { state.prestigeOpen = false; }
+// Fortschritt aller Kategorien inkl. i18n-Name/Metrik-Label für die Anzeige.
+function prestigeList() {
+  return allPrestige(prestigeCtx()).map(p => ({
+    ...p,
+    name: t('prestige.cat.' + p.key),
+    metricLabel: t('prestige.metric.' + p.key),
+  }));
+}
+// Ist genau diese (Symbol, Stufe) aktuell ausgerüstet?
+function isBadgeEquipped(sym, tier) { return state.settings.profileBadge === encodeBadge(sym, tier); }
+// Höchste freigeschaltete Stufe einer Kategorie (0 = keine).
+function earnedTier(sym) { const c = categoryProgress(prestigeBySym(sym), prestigeCtx()); return c.tier; }
+// Eine freigeschaltete Stufe als Profil-Abzeichen ausrüsten (oder abnehmen).
+function equipBadge(sym, tier) {
+  if (!isUnlocked(sym, tier, prestigeCtx())) return;
+  setSetting('profileBadge', encodeBadge(sym, tier));
+  log('app', 'Abzeichen ausgerüstet', { sym, tier });
+  afterBadgeChange();
+}
+function unequipBadge() { setSetting('profileBadge', 'none'); afterBadgeChange(); }
+// Nach einer Abzeichen-Änderung: Coop-Identität/Präsenz mit neuem Badge auffrischen.
+function afterBadgeChange() {
+  if (state.coop.active && state.coop.myId) {
+    Coop.send({ type: Coop.MSG.IDENTITY, name: state.settings.coopName, color: state.settings.coopMyColor, username: myUsername(), badge: myBadge() });
+  }
+  if (state.account.status === 'in') {
+    Account.publishPresence(currentGameInfo(), myBadge());
+    Account.scheduleSyncUp();
+    // Auch die eigenen Bestenlisten-Einträge auf das neue Abzeichen bringen, damit
+    // andere dort stets das aktuell ausgerüstete Icon vor dem Namen sehen.
+    Account.updateLeaderboardBadge(myLeaderboardDiffs(), myBadge());
+  }
+}
+// Schwierigkeiten, in denen der Nutzer eine (perfekte) Bestzeit hat → dort existiert
+// ein Bestenlisten-Eintrag, dessen Abzeichen aktualisiert werden kann.
+function myLeaderboardDiffs() {
+  const by = state.stats?.byDifficulty || {};
+  return Object.keys(by).filter((id) => (by[id]?.bestTimeMs || 0) > 0);
+}
+function prestigeTierName(tier) { return tier ? t('prestige.tier.t' + tier) : t('prestige.locked'); }
+// ── Master-Badge „Großmeister" ────────────────────────────────────────────────
+function masterInfo() { return masterProgress(prestigeCtx()); }
+function isMasterEquipped() { return isMasterBadge(state.settings.profileBadge); }
+function equipMaster() {
+  if (!hasMasterBadge(prestigeCtx())) return;
+  setSetting('profileBadge', MASTER_BADGE);
+  log('app', 'Großmeister ausgerüstet');
+  afterBadgeChange();
+}
+// Einmalige Feier, sobald ALLE 12 Kategorien auf Legendär stehen. masterCelebrated
+// (Settings, cloud-synct) verhindert Wiederholung; Alt-Spieler, die schon alles
+// gemeistert haben, bekommen die Feier beim ersten Start nach dem Update EINMAL.
+function checkMasterUnlock() {
+  if (state.settings.masterCelebrated) return;
+  if (!hasMasterBadge(prestigeCtx())) return;
+  setSetting('masterCelebrated', true);
+  state.masterUnlock = true;
+  log('app', 'Großmeister freigeschaltet — alle 12 Kategorien auf Legendär');
+  try { launchWinFx(true); } catch (_) {}   // große Feier-Animation (inkl. Fanfare)
+}
+function dismissMasterUnlock() {
+  state.masterUnlock = false;
+  // Direkt ausrüsten, damit der Nutzer sein neues Abzeichen sofort trägt.
+  if (!isMasterEquipped()) equipMaster();
+}
+// ── Prestige-Stufen-Feier ──────────────────────────────────────────────────────
+// Nach jedem (Nicht-Trainings-)Spiel prüfen, ob eine Prestige-KATEGORIE eine neue
+// Stufe erreicht hat, und das groß ankündigen — Intensität skaliert mit der Stufe
+// (Bronze/Silber dezent … Legendär spektakulär mit Feier-Animation). Gefeierte
+// (Symbol,Stufe)-Codes stehen in settings.prestigeCelebrated (cloud-synct) →
+// keine Doppel-Feier über Geräte. Alt-Spieler/Neu-Login: bereits verdiente Stufen
+// werden beim ERSTEN Lauf still als gefeiert markiert (kein Nachhol-Feuerwerk).
+function checkPrestigeUnlocks() {
+  const ctx = prestigeCtx();
+  const celebrated = state.settings.prestigeCelebrated;
+  if (!Array.isArray(celebrated)) { setSetting('prestigeCelebrated', unlockedTierCodes(ctx)); return; }
+  const fresh = newlyUnlockedTiers(ctx, celebrated);
+  if (!fresh.length) return;
+  setSetting('prestigeCelebrated', [...celebrated, ...fresh.map(f => f.code)]);
+  // Großmeister-Feier (alle 12 auf Legendär) hat Vorrang — dann keine zusätzliche
+  // Stufen-Feier für dieselbe Runde (die Tier-4s sind oben aber schon als
+  // gefeiert markiert, poppen also später nicht nach).
+  if (state.masterUnlock) return;
+  const head = headlineUnlock(fresh);
+  state.prestigeUnlock = { sym: head.sym, tier: head.tier, key: head.key, more: fresh.length - 1 };
+  log('app', 'Prestige-Stufe freigeschaltet', { sym: head.sym, tier: head.tier, more: fresh.length - 1 });
+  // Ab Gold (Stufe 3) die große Feier-Animation dazuschalten.
+  if (head.tier >= 3) { try { launchWinFx(true); } catch (_) {} }
+}
+function dismissPrestigeUnlock() {
+  const p = state.prestigeUnlock;
+  state.prestigeUnlock = null;
+  // Frisch erreichte Stufe direkt ausrüsten, wenn noch gar kein Abzeichen getragen wird.
+  if (p && (!state.settings.profileBadge || state.settings.profileBadge === 'none')) equipBadge(p.sym, p.tier);
+}
+function prestigeUnlockName() { return state.prestigeUnlock ? t('prestige.cat.' + state.prestigeUnlock.key) : ''; }
+// Custom-Icon (SVG-String) für ein UI-Glyph — Emoji-Ersatz, per v-html gerendert.
+// Unbekannte Namen ⇒ '' (nie rohen Fremdtext rendern). Größe/Farbe via CSS (.ico).
+function ic(name) { return customIcon(name); }
+// Eigener eindeutiger Account-Username (nur eingeloggt) — wird im Coop mitgesendet.
+function myUsername() { return state.account.status === 'in' && state.account.username ? state.account.username : ''; }
+// Anzeige „Anzeigename (username)" – nur wenn ein (abweichender) Account-Username bekannt ist.
+function playerLabel(p) {
+  if (!p) return '';
+  const u = (p.username || '').trim();
+  const n = (p.name || '').trim() || t('common.defaultPlayerName');
+  return u && u.toLowerCase() !== n.toLowerCase() ? `${n} (${u})` : n;
+}
+// Nur der Host weist Teams zu (Formations-Lobby), per direkter Zielangabe
+// statt zyklischem Tippen auf den Spieler -- die Lobby zeigt dafür eine
+// Tabelle mit Team A links / Team B rechts, dazwischen pro Person ein
+// Tausch-/Zuweisungs-Pfeil, der genau hierher zielt. team fließt einfach als
+// zusätzliches Feld über den bestehenden ROSTER-Broadcast mit, kein eigener
+// MSG-Typ nötig.
+function assignTeam(id, team) {
+  if (state.coop.role !== 'host') return;
+  const p = state.coop.players.find(pl => pl.id === id);
+  if (!p) return;
+  p.team = team;
+  broadcastRoster();
+}
+// Host-only "Zufall"-Button: mischt alle Spieler (Fisher-Yates) und verteilt
+// sie danach abwechselnd auf A/B -- bei einer geraden Spielerzahl (insb. dem
+// namensgebenden 2v2-Fall mit 4 Spielern) ergibt das automatisch ein exaktes
+// 2-gegen-2; bei ungerader Anzahl wird ein Team um genau einen Spieler größer.
+function randomizeTeams() {
+  if (state.coop.role !== 'host') return;
+  const shuffled = [...state.coop.players];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  shuffled.forEach((p, i) => { p.team = i % 2 === 0 ? 'A' : 'B'; });
+  broadcastRoster();
+}
+function removePlayer(id) {
+  state.coop.players = state.coop.players.filter(p => p.id !== id);
+  updateConnectedFlag();
+}
+// "Verbunden" heißt hier "mindestens ein anderer Spieler ist aktuell im Raum" —
+// generalisiert das frühere binäre Host/Gast-Partner-Flag auf bis zu
+// COOP_MAX_PLAYERS Mitspieler.
+function updateConnectedFlag() {
+  const was = state.coop.connected;
+  state.coop.connected = state.coop.players.some(p => p.id !== state.coop.myId);
+  // Mitspieler wieder da → während der Lücke gepufferte eigene Züge nachsenden.
+  if (!was && state.coop.connected) flushCoopOutbox();
+}
+// Roster-Broadcast läuft unabhängig vom "Spiel aktiv"-Status (auch schon in der
+// Lobby vor dem Start nötig) — bewusst über Coop.send direkt statt coopSend(),
+// dessen Guard `state.coop.active` voraussetzt.
+function broadcastRoster() {
+  Coop.send({ type: Coop.MSG.ROSTER, players: state.coop.players, hostId: state.coop.hostId, teamMode: state.coop.teamMode });
+}
+// Sendet den AKTUELLEN, LAUFENDEN Rundenstand als INIT(running:true)+START in den
+// Raum. Damit landet JEDER Beitretende sofort im laufenden Spiel — ohne Umweg über
+// die Bereit-Lobby, unabhängig von Event-Reihenfolge/-Verlust. Genutzt bei der
+// Solo→Coop-Umwandlung UND wenn mitten in einer laufenden Coop-Runde jemand
+// dazukommt (hostRegisterPlayer). Bereits aktive Spieler ignorieren dieses INIT
+// (gleiche gameId + schon am Spielen, s. INIT-Handler) — es lädt niemandem das
+// Brett neu, holt aber Nachzügler zuverlässig ins Spiel.
+function broadcastRunningInit() {
+  log('coop', 'Sende laufenden Rundenstand (INIT running:true + START)', { gameId: state.gameId });
+  // Ist es ein (zu Coop umgewandelter) Endlos-Lauf, die Endlos-Marker mitschicken,
+  // damit der Beitretende als Coop-Endlos-Spieler landet (Level-Chip, geteilte
+  // Leben, Herz-Verlust-Farben) statt in einer normalen Coop-Runde.
+  const e = state.endless;
+  const endlessExtra = e.active ? { endless: true, endlessLevel: e.level, lifeLossBy: (state.coop.lifeLossBy || []).map(x => x || '') } : {};
+  Coop.send({
+    type: Coop.MSG.INIT, gameId: state.gameId, running: true,
+    puzzle: state.puzzle, marks: state.marks, markedBy: wireMarkedBy(), startTime: state.startTime,
+    lives: state.lives, maxLives: state.maxLives, hintsLeft: state.hintsLeft, hintsUsed: state.hintsUsed, mistakes: state.mistakes,
+    ...endlessExtra,
+  });
+  Coop.send({ type: Coop.MSG.START, startTime: state.startTime });
+}
+// Host-Pfad: Spieler in den Roster aufnehmen + an alle verteilen. Wird sowohl
+// von IDENTITY-Nachrichten als auch direkt vom players/-onChildAdded gespeist —
+// Letzteres heilt den Fall, dass ein Mitspieler nach stillem Verbindungsabriss
+// (Hintergrund/Standby) wieder auftaucht, ohne erneut IDENTITY zu senden (ältere
+// App-Version): ohne Aufnahme bliebe connected=false und unsere Züge würden nie
+// mehr gesendet. Toast nur beim ERSTEN Auftauchen; mitten im Spiel als
+// „ist wieder da" statt „ist der Lobby beigetreten".
+function hostRegisterPlayer(id, name, color, username, badge) {
+  if (state.coop.role !== 'host' || !id || id === state.coop.myId) return;
+  const known = state.coop.players.some(p => p.id === id);
+  upsertPlayer(id, name, color, username, badge);
+  broadcastRoster();
+  // Kommt jemand mitten in eine LAUFENDE Runde (Solo→Coop-Umwandlung oder
+  // Nachzügler in einer normalen Coop-Runde), schickt der Host ihm den aktuellen
+  // Rundenstand aktiv nach → er landet garantiert direkt im Spiel statt in der
+  // Bereit-Lobby (bereits Aktive ignorieren das INIT, s. broadcastRunningInit).
+  // In der Vor-Start-Lobby (awaitingStart) NICHT — dort ist die Bereit-Lobby gewollt.
+  if (state.coop.active && state.status === 'playing' && !state.coop.awaitingStart) {
+    log('coop', 'Neuer Spieler mitten im Spiel – sende laufenden Rundenstand nach', { id });
+    broadcastRunningInit();
+  }
+  if (!known) {
+    const label = playerLabel({ name, username }) || t('common.defaultPlayerName');
+    const midGame = state.coop.active && state.status === 'playing';
+    showToast(t(midGame ? 'coop.partnerReconnected' : 'coop.playerJoinedLobby', { name: label }), midGame ? 'success' : 'info', 3000);
+  }
+}
+// ─── BEREIT-SYSTEM (vor Mehrspieler-Start) ─────────────────────────────────────
+// Alle Mitspieler außer dem Host müssen "Bereit" bestätigen, bevor der Host das
+// Match final starten kann (siehe startCoopRound()/.coop-lobby-overlay) — der
+// Host selbst zählt dabei nie als "Mitspieler", der bereit sein muss.
+function nonHostPlayers() {
+  return state.coop.players.filter(p => p.id !== state.coop.hostId);
+}
+function readyCount() {
+  return nonHostPlayers().filter(p => p.ready).length;
+}
+function allGuestsReady() {
+  const others = nonHostPlayers();
+  return others.length > 0 && others.every(p => p.ready);
+}
+function myReady() {
+  return !!state.coop.players.find(p => p.id === state.coop.myId)?.ready;
+}
+// Vom Host bei jedem neuen Rätsel/Match aufgerufen, damit sich alle erneut
+// bereit melden müssen (siehe startCoopMatch()/startTeamMatch()/startRaceMatch()/
+// newGame()) -- Bereit-Status gilt immer nur für die laufende Runde.
+function resetReadyFlags() {
+  state.coop.players.forEach(p => { p.ready = false; });
+  broadcastRoster();
+}
+// Von einem Mitspieler (nie vom Host) ausgelöst -- bewusst über Coop.send()
+// direkt statt coopSend(), damit der Host die Meldung auch dann sieht, wenn der
+// Mitspieler im Team-vs-Team-Modus im gegnerischen Team sitzt (siehe IDENTITY).
+function markReady() {
+  if (state.coop.role === 'host') return;
+  const me = state.coop.players.find(p => p.id === state.coop.myId);
+  if (me) me.ready = true;
+  Coop.send({ type: Coop.MSG.READY });
+}
+// Gegenstück zu markReady() -- erlaubt das Zurücknehmen einer versehentlichen
+// Bereit-Meldung, solange der Host die Runde noch nicht gestartet hat.
+function unmarkReady() {
+  if (state.coop.role === 'host') return;
+  const me = state.coop.players.find(p => p.id === state.coop.myId);
+  if (me) me.ready = false;
+  Coop.send({ type: Coop.MSG.UNREADY });
+}
+function playerColor(id) { return state.coop.players.find(p => p.id === id)?.color || null; }
+function chipTextColor(hex) {
+  if (!hex || !hex.startsWith('#') || hex.length < 7) return '#fff';
+  const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return lum > 0.6 ? '#1a1304' : '#ffffff';
+}
+function confirmCoopIdentity() {
+  const name = (state.coop.nameDraft || '').trim();
+  if (!name) return;
+  state.settings.coopName = name;
+  // Angenommene Einladung: der Raumcode steht bereits fest, es gibt also keine
+  // Rollenwahl mehr — nach dem Namen geht es DIREKT in den Raum.
+  if (state.coop.pendingJoin) {
+    state.coop.pendingJoin = false;
+    state.coop.identityConfirmed = true;
+    startJoining();
+    return;
+  }
+  // Schritt vorwärts (Name → Rollenwahl): Zurück öffnet wieder das Namens-Gate.
+  pushNav(() => { state.coop.identityConfirmed = false; });
+  state.coop.identityConfirmed = true;
+}
+// Rollenwahl → Host- bzw. Gast-Einrichtung. Zurück führt zur Rollenwahl.
+function coopChooseHost() {
+  pushNav(() => { state.coop.role = null; state.coop.error = null; });
+  state.coop.role = 'host';
+}
+function coopChooseGuest() {
+  pushNav(() => { state.coop.role = null; state.coop.error = null; });
+  state.coop.role = 'guest';
+}
+// Verbindungsabbau beim Zurückgehen aus der Warte-Ansicht, ohne Rolle/Code zu
+// verlieren -- so landet man wieder bei der Host-Einrichtung bzw. Code-Eingabe
+// statt einen Schritt zu weit (Rollenwahl) zurückzuspringen. teamMode/raceMode
+// bleiben absichtlich erhalten (anders als bei coopReset()), damit der Modus
+// beim Zurückblättern durch die Lobby-Schritte gewahrt bleibt.
+function coopTeardownWaiting() {
+  coopIntentionalLeave = true;
+  Coop.leave();
+  state.coop.waitingForGuest = false;
+  state.coop.connected = false;
+  state.coop.players = [];
+  state.coop.myId = null;
+  state.coop.hostId = null;
+  state.coop.error = null;
+  state.race.rematchPending = false;
+}
+// Beim Einstieg ins Coop-Menü erscheint das Namens-Gate jedes Mal erneut (man
+// kann den Namen also immer ändern), wird aber mit dem zuletzt gespeicherten
+// Namen vorbefüllt, damit man ihn im Normalfall nur bestätigen muss.
+function goCoop() {
+  if (!isOnline()) { showToast(t('offline.unavailable'), 'error', 2600); return; }
+  coopReset();
+  state.coop.nameDraft = state.settings.coopName;
+  state.coop.identityConfirmed = false;
+  pushNav(() => { coopReset(); navigate('home'); });
+  navigate('coop');
+}
+// Einstieg über den Race-/Duell-Home-Button -- identisches Namens-Gate, aber
+// mit gesetztem raceMode- oder teamMode-Flag je gewähltem Modus (1v1 oder
+// 2v2), das die Spielerzahl der Lobby entsprechend begrenzt (siehe startJoining()).
+function goRace(mode) {
+  if (!isOnline()) { showToast(t('offline.unavailable'), 'error', 2600); return; }
+  coopReset();
+  state.coop.nameDraft = state.settings.coopName;
+  state.coop.identityConfirmed = false;
+  // Race-Familie (eigenes Gitter, geteilter Seed): 1v1 UND ffa. teamMode ist die
+  // separate 2v2-Variante (geteiltes Gitter je Team). ffaMode unterscheidet das
+  // FFA (≥3 Spieler) vom strikten 1v1 (Spielerzahl-Cap, Start-Gate, N Gegner).
+  state.coop.teamMode = mode === '2v2';
+  state.coop.ffaMode = mode === 'ffa';
+  state.coop.raceMode = mode === '1v1' || mode === 'ffa';
+  state.modal = null;
+  pushNav(() => { coopReset(); navigate('home'); });
+  navigate('coop');
+}
+
+// Bei bis zu COOP_MAX_PLAYERS Spielern könnten mehrere Gäste gleichzeitig den
+// Host-Verlust bemerken — damit nicht mehrere sich parallel selbst befördern,
+// wird deterministisch (ohne weitere Netzwerk-Roundtrips) der nach uid kleinste
+// verbleibende Spieler zum neuen Host: jeder Client berechnet dasselbe Ergebnis
+// lokal aus seiner aktuellen Roster-Kopie.
+function pickNewHostId() {
+  const ids = state.coop.players.map(p => p.id).filter(Boolean).sort();
+  return ids[0] || null;
+}
+// Wird aufgerufen, wenn ein Spieler bemerkt, dass der bisherige Host die
+// Verbindung unerwartet verloren hat (Tab eingeschlafen, Netzwerkausfall)
+// während die Runde noch läuft: der per pickNewHostId() bestimmte Spieler
+// übernimmt lokal die Host-Rolle (Identitäts-Arbitrierung für künftige
+// Mitspieler) — die Raumdaten in der RTDB leben unabhängig vom "Host", ein
+// Transport-Neuaufbau ist anders als bei PeerJS nicht nötig.
+function promoteToHost() {
+  state.coop.role = 'host';
+  state.coop.hostId = state.coop.myId;
+  Coop.updateHostId(state.coop.myId);
+  broadcastRoster();
+  showToast(t('coop.becameHost'), 'info', 4000);
+}
+
+// Gemeinsamer Handler für den EIGENEN RTDB-Verbindungsstatus (Coop.watchConnection).
+// Fällt die eigene Socket-Verbindung (z.B. nach 1–3 Min. Inaktivität) aus, sieht
+// das bisher nur der Host (der Gast verschwindet aus seiner players-Liste); der
+// abgehängte Client selbst zeigte weiter "online". Jetzt spiegelt state.coop.online
+// den echten eigenen Verbindungszustand → der Coop-Chip zeigt auch beim Client
+// "offline", und bei Wiederverbindung kommt eine Bestätigung.
+function handleCoopConnection(online, isReconnect, currentHostId) {
+  state.coop.online = online;
+  if (!online) {
+    log('coop', 'Eigene Verbindung verloren – zeige Offline-Status');
+    showToast(t('coop.connectionLost'), 'info', 4000);
+    return;
+  }
+  if (!isReconnect) return;
+  log('coop', 'Eigene Verbindung wiederhergestellt');
+  showToast(t('coop.reconnected'), 'success', 2000);
+  // Warmer Reconnect: die eigene Anwesenheit hat coop.js schon neu gesetzt —
+  // aber die MITSPIELER haben uns beim Abriss aus ihrem Roster entfernt
+  // (onChildRemoved) und ihr connected-Flag steht auf false. Ohne erneute
+  // Anmeldung entstand die „halbe Lobby": ihre Züge wurden nie mehr gesendet
+  // (coopSend blockt bei connected=false), unsere kamen weiter an. Daher wie
+  // beim kalten rejoin(): Rolle ggf. abgeben + IDENTITY neu melden, damit der
+  // Host uns wieder aufnimmt und den Roster an alle verteilt.
+  if (!state.coop.myId) return; // kein Raum aktiv (z.B. Verbindungs-Watch überlebt Teardown-Race)
+  if (currentHostId && currentHostId !== state.coop.myId && state.coop.role === 'host') {
+    state.coop.role = 'guest';
+    state.coop.hostId = currentHostId;
+    log('coop', 'Host-Rolle wurde während Abwesenheit übernommen – jetzt Gast', { newHost: currentHostId });
+  }
+  Coop.send({ type: Coop.MSG.IDENTITY, name: state.settings.coopName, color: state.settings.coopMyColor, username: myUsername(), badge: myBadge() });
+  if (state.coop.role === 'host') broadcastRoster();
+}
+
+function startHosting() {
+  if (!Coop.isAvailable()) { state.coop.error = t('coop.errorWebrtcUnavailable'); return; }
+  if (!CODE_RE.test(state.coop.code)) { state.coop.error = t('coop.errorInvalidCode'); return; }
+  coopIntentionalLeave = false;
+  // Schritt vorwärts (Host-Einrichtung → Warten auf Gast): Zurück baut die
+  // Verbindung ab und kehrt zur Host-Einrichtung zurück (Code/Schwierigkeit bleiben).
+  pushNav(coopTeardownWaiting);
+  state.coop.role = 'host';
+  state.coop.waitingForGuest = true;
+  state.coop.error = null;
+  state.coop.myId = null;
+  state.coop.players = [];
+  state.coop.online = true;
+  state.race.rematchPending = false;
+  Coop.hostGame({
+    code: state.coop.code,
+    name: state.settings.coopName,
+    color: state.settings.coopMyColor,
+    onOpen(id) {
+      state.coop.myId = id;
+      state.coop.hostId = id;
+      upsertPlayer(id, state.settings.coopName, state.settings.coopMyColor, myUsername(), myBadge());
+    },
+    onError(e) {
+      state.coop.waitingForGuest = false;
+      state.coop.error = e.type === 'code-taken'
+        ? t('coop.errorCodeTaken') : t('coop.errorConnection');
+    },
+    // Spieler direkt aus dem players-Snapshot aufnehmen (name/color stehen im
+    // Präsenz-Eintrag) — die kurz darauf eintreffende IDENTITY-Nachricht ergänzt
+    // nur noch den Account-Username. So heilt auch ein still abgerissener und
+    // wieder auftauchender Mitspieler den Roster sofort (siehe hostRegisterPlayer).
+    onJoin(id, data) {
+      log('game', `Mitspieler (wieder) im Raum (Coop)`, { id });
+      if (data && data.name) hostRegisterPlayer(id, data.name, data.color);
+    },
+    onLeave(id) {
+      const leavingName = playerLabel(state.coop.players.find(p => p.id === id)) || t('common.defaultPlayerName');
+      removePlayer(id);
+      broadcastRoster();
+      if (!coopIntentionalLeave) showToast(t('coop.partnerDisconnected', { name: leavingName }), 'info', 3000);
+    },
+    onMessage: handleCoopMsg,
+    onConnection: handleCoopConnection,
+  });
+}
+
+// Vom Host per Button ausgelöst, sobald mindestens ein weiterer Spieler in der
+// Lobby ist — ersetzt das frühere automatische Spielstart-Verhalten beim
+// ersten Beitritt, da bei bis zu COOP_MAX_PLAYERS Spielern Zeit zum Beitreten
+// für Spieler 3/4 bleiben muss.
+function canStartCoopMatch() {
+  return state.coop.role === 'host' && state.coop.players.length >= 2;
+}
+function startCoopMatch() {
+  if (!canStartCoopMatch()) return;
+  // Coop-Endlos-Aufstieg: eigener Pfad (host-autoritativ, geteilte Leben, kein Refill).
+  if (state.coop.lobbyEndless) { startCoopEndless(); return; }
+  const difficulty = state.coop.lobbyDiffId;
+  const bigNumbers = !!state.coop.lobbyBigNumbers && bigNumbersAllowed(difficulty);
+  // Sofort in die "Bereit?"-Lobby wechseln und die Generierung im Hintergrund-
+  // Thread starten (kein eingefrorener Haupt-Thread bei großen Feldern). Bis das
+  // Rätsel fertig ist, zeigt die Lobby einen laufenden Ladebalken; erst danach
+  // verschickt der Host das fertige Rätsel per INIT an die Gäste.
+  state.coop.active = true;
+  state.coop.waitingForGuest = false;
+  state.coop.awaitingStart = true;
+  state.coop.generating = true;
+  resetReadyFlags();
+  navigate('game');
+  // Off-thread generieren; bis dahin zeigt die Lobby den laufenden Ladebalken.
+  log('game', `Puzzle-Generierung gestartet (Coop)`, { difficulty, bigNumbers, players: state.coop.players.length });
+  generateAsync({ difficulty, bigNumbers }).then(puzzle => {
+    if (!state.coop.awaitingStart) return; // Lobby zwischenzeitlich verlassen
+    log('game', `Puzzle generiert (Coop)`, { difficulty, rows: puzzle.rows, cols: puzzle.cols });
+    loadPuzzleIntoState(puzzle, null);
+    state.coop.generating = false;
+    // gameId mitsenden, damit Gäste sie übernehmen und ein späteres Wiederhol-
+    // INIT (Nachzügler-Nachversand, s. broadcastRunningInit) als Duplikat erkennen.
+    Coop.send({ type: Coop.MSG.INIT, gameId: state.gameId, puzzle: state.puzzle, marks: state.marks, markedBy: wireMarkedBy(), startTime: state.startTime });
+  }).catch(e => onLobbyGenFailed(e, 'Coop'));
+}
+// Gemeinsamer Fehlerpfad, falls die Lobby-Generierung (Coop-Host/Race/Team)
+// fehlschlägt -- selten (Worker-Ausfall o.Ä.). Statt in einer leeren Lobby
+// hängenzubleiben, wird die Session sauber beendet und zur Startseite zurück-
+// gekehrt, mit kurzer Fehlermeldung.
+function onLobbyGenFailed(e, mode) {
+  log('game', `Puzzle-Generierung fehlgeschlagen (${mode})`, e);
+  state.coop.generating = false;
+  showToast(t('coop.genFailed'));
+  quitToHome();
+}
+
+// ─── TEAM-VS-TEAM (Feature 12b) ───────────────────────────────────────────────
+// Mindestens ein Spieler pro Team -- die Formations-Lobby ist dieselbe
+// COOP_MAX_PLAYERS-Lobby aus F12a, nur mit einer zusätzlichen Team-Zuweisung
+// pro Spieler (state.coop.players[].team, per cycleTeam() gesetzt).
+function canStartTeamMatch() {
+  if (state.coop.role !== 'host') return false;
+  const a = state.coop.players.filter(p => p.team === 'A').length;
+  const b = state.coop.players.filter(p => p.team === 'B').length;
+  return a >= 1 && b >= 1;
+}
+// Statt das fertige Puzzle zu verschicken (wie INIT es für normalen Coop tut),
+// wandert hier nur Seed+Schwierigkeit raumweit (beide Teams empfangen es) --
+// jeder Client generiert sein (für beide Teams identisches) Rätsel lokal über
+// generatePuzzle({difficulty, seed}), kein Antwort-Leak. Innerhalb eines Teams
+// laufen Züge danach wie gewohnt über coopSend()/MOVE usw., das jetzt automatisch
+// auf den team-skopierten Kanal umleitet (siehe coopSend()).
+function startTeamMatch() {
+  if (!canStartTeamMatch()) return;
+  resetReadyFlags();
+  const seed = Math.floor(Math.random() * 2 ** 31);
+  const difficulty = state.coop.lobbyDiffId;
+  const bigNumbers = !!state.coop.lobbyBigNumbers && bigNumbersAllowed(difficulty);
+  applyTeamStart(seed, difficulty, bigNumbers);
+  Coop.send({ type: Coop.MSG.TEAM_START, seed, difficulty, bigNumbers });
+}
+// bigNumbers wird mit dem Seed raumweit gesendet, damit BEIDE Teams dasselbe
+// 10–19-Rätsel generieren (rückwärtskompatibel: fehlt das Feld ⇒ klassisch 1–9).
+function applyTeamStart(seed, difficulty, bigNumbers = false) {
+  const me = state.coop.players.find(p => p.id === state.coop.myId);
+  state.team.myTeam = me?.team || 'A';
+  state.team.active = true;
+  state.team.matchOver = false;
+  state.team.winningTeam = null;
+  state.team.endReason = null;
+  state.team.opponentPct = 0;
+  state.team.opponentMistakes = 0;
+  state.team.opponentMistakesByPlayer = {};
+  state.team.myPct = 0;
+  // Beide Teams generieren ihr (per Seed identisches) Rätsel lokal im Hintergrund-
+  // Thread. Bis es fertig ist, läuft in der Lobby der Ladebalken; ein Gast kann
+  // sich erst danach "bereit" melden, der Host erst danach final starten -- so ist
+  // garantiert, dass bei allen Clients ein fertiges Rätsel vorliegt (siehe
+  // startCoopRound()/Lobby-Overlay).
+  state.coop.active = true;
+  state.coop.waitingForGuest = false;
+  state.coop.awaitingStart = true;
+  state.coop.generating = true;
+  Coop.listenTeamEvents(state.team.myTeam, handleCoopMsg);
+  Coop.listenTeamProgress(onTeamProgressUpdate);
+  navigate('game');
+  log('game', `Puzzle-Generierung gestartet (Team-Match)`, { difficulty, seed, bigNumbers, team: state.team.myTeam });
+  generateAsync({ difficulty, seed, bigNumbers }).then(puzzle => {
+    if (!state.coop.awaitingStart) return;
+    log('game', `Puzzle generiert (Team-Match)`, { difficulty, rows: puzzle.rows, cols: puzzle.cols });
+    loadPuzzleIntoState(puzzle, null);
+    state.coop.generating = false;
+  }).catch(e => onLobbyGenFailed(e, 'Team-Match'));
+}
+
+// ─── RACE-/DUELL-MODUS (Feature 11) ───────────────────────────────────────────
+// Strikt 1v1 -- die Lobby ist dieselbe coop-Lobby, aber state.coop.raceMode
+// begrenzt sie auf genau 2 Spieler (siehe startJoining()/joinGame()).
+function canStartRaceMatch() {
+  if (state.coop.role !== 'host') return false;
+  // FFA (jeder gegen jeden): mind. 3 Spieler; strikt 1v1: genau 2.
+  return state.coop.ffaMode ? state.coop.players.length >= 3 : state.coop.players.length === 2;
+}
+// Wie startTeamMatch(): nur Seed+Schwierigkeit wandern raumweit, jeder Client
+// generiert sein (identisches) Rätsel lokal über generatePuzzle({difficulty,
+// seed}) -- kein Antwort-Leak, da nie das fertige Puzzle verschickt wird.
+function startRaceMatch() {
+  if (!canStartRaceMatch()) return;
+  resetReadyFlags();
+  const seed = Math.floor(Math.random() * 2 ** 31);
+  const difficulty = state.coop.lobbyDiffId;
+  const bigNumbers = !!state.coop.lobbyBigNumbers && bigNumbersAllowed(difficulty);
+  applyRaceStart(seed, difficulty, bigNumbers);
+  Coop.send({ type: Coop.MSG.RACE_START, seed, difficulty, bigNumbers });
+}
+// state.coop.active bleibt hier BEWUSST false (im Gegensatz zu
+// applyTeamStart()) -- siehe state.race-Kommentar: dadurch sendet coopSend()
+// während des Rennens niemals Zug-/Markierungs-Events, Antwort-Leak ist damit
+// baulich ausgeschlossen statt nur durch Konvention vermieden. Leben/Fehler-
+// anzeige werden über state.isRaceGame separat erzwungen (siehe setMark()/
+// registerMistake()/doCheck()).
+// bigNumbers wird mit dem Seed raumweit gesendet, damit alle Renn-Teilnehmer
+// dasselbe 10–19-Rätsel generieren (rückwärtskompatibel: fehlt es ⇒ 1–9).
+function applyRaceStart(seed, difficulty, bigNumbers = false) {
+  const others = state.coop.players.filter(p => p.id !== state.coop.myId);
+  state.race.ffa = !!state.coop.ffaMode;
+  // Alle Gegner (im 1v1 genau einer). Der per-uid-Fortschritt (raceProgress/{uid})
+  // wird pro Eintrag gepflegt (onRaceProgressUpdate); `out` markiert Ausgeschiedene
+  // (Leben verloren/aufgegeben) im FFA — das Match läuft dann für die Übrigen weiter.
+  state.race.opponents = others.map(p => ({ id: p.id, name: playerLabel(p) || '', color: p.color || '#888', pct: 0, mistakes: 0, out: false }));
+  const opponent = others[0];
+  state.race.opponentId = opponent?.id || null;
+  state.race.opponentName = playerLabel(opponent) || '';
+  state.race.opponentColor = opponent?.color || '#888';
+  state.race.active = true;
+  state.race.matchOver = false;
+  state.race.winner = null;
+  state.race.winnerName = '';
+  state.race.endReason = null;
+  state.race.myPct = 0;
+  state.race.opponentPct = 0;
+  state.race.opponentMistakes = 0;
+  state.isRaceGame = true;
+  state.coop.waitingForGuest = false;
+  state.coop.awaitingStart = true;
+  state.coop.generating = true;
+  // Der geteilte Renn-Fortschritt (raceProgress/{uid} in der RTDB) überlebt das
+  // vorige Match -- ohne Reset läse der Listener beim Rematch den alten Stand
+  // wieder ein und beide Balken hingen auf dem Endstand des letzten Spiels fest.
+  // Jede Seite setzt darum ihren EIGENEN Eintrag frisch auf 0 (Gegner-Eintrag
+  // bleibt der jeweils anderen Seite überlassen) und nullt das Sende-Throttle,
+  // damit der erste Zug den neuen Stand sofort publiziert.
+  raceProgressThrottle = 0;
+  if (raceProgressTimer) { clearTimeout(raceProgressTimer); raceProgressTimer = null; }
+  Coop.setRaceProgress(state.coop.myId, { pct: 0, mistakes: 0 });
+  Coop.listenRaceProgress(onRaceProgressUpdate);
+  navigate('game');
+  // Beide Clients generieren ihr (per Seed identisches) Rätsel lokal im
+  // Hintergrund-Thread; Start/Bereit ist bis zur Fertigstellung gesperrt (siehe
+  // Team-Match oben).
+  log('game', `Puzzle-Generierung gestartet (Race-Match)`, { difficulty, seed, bigNumbers });
+  generateAsync({ difficulty, seed, bigNumbers }).then(puzzle => {
+    if (!state.coop.awaitingStart) return;
+    log('game', `Puzzle generiert (Race-Match)`, { difficulty, rows: puzzle.rows, cols: puzzle.cols });
+    loadPuzzleIntoState(puzzle, null);
+    state.coop.generating = false;
+  }).catch(e => onLobbyGenFailed(e, 'Race-Match'));
+}
+// "Nochmal spielen" nach einem beendeten Race-Match: nur der Host darf das
+// auslösen (er wählt die Schwierigkeit und startet per RACE_START). Raum/
+// Spieler-Verbindung bleiben dabei erhalten -- es wird nur in die bestehende
+// Lobby zurückgekehrt (waitingForGuest), nicht erneut gehostet/beigetreten.
+function rematchRace() {
+  if (state.coop.role !== 'host') return;
+  state.race.active = false;
+  state.race.matchOver = false;
+  state.race.winner = null;
+  state.race.endReason = null;
+  state.race.myPct = 0;
+  state.race.opponentPct = 0;
+  state.race.opponentMistakes = 0;
+  state.race.rematchPending = true;
+  state.isRaceGame = false;
+  state.coop.awaitingStart = false;
+  state.coop.waitingForGuest = true;
+  navigate('coop');
+}
+
+function startJoining() {
+  if (!CODE_RE.test(state.coop.code)) { state.coop.error = t('coop.errorInvalidCode'); return; }
+  coopIntentionalLeave = false;
+  // Schritt vorwärts (Code-Eingabe → Warten auf Hoststart): Zurück baut die
+  // Verbindung ab und kehrt zur Code-Eingabe zurück (Code bleibt erhalten).
+  pushNav(coopTeardownWaiting);
+  state.coop.role = 'guest';
+  state.coop.waitingForGuest = true;
+  state.coop.error = null;
+  state.coop.players = [];
+  state.coop.online = true;
+  Coop.joinGame({
+    code: state.coop.code,
+    name: state.settings.coopName,
+    color: state.settings.coopMyColor,
+    maxPlayers: (state.coop.raceMode && !state.coop.ffaMode) ? 2 : COOP_MAX_PLAYERS,
+    onOpen(id) {
+      // Eigene ID dieser Session sichern und sofort dem Host die eigene Identität
+      // melden — coopSend() blockt hier noch (state.coop.connected wird erst nach
+      // der ersten ROSTER-Antwort true), daher direkt über die Transportschicht senden.
+      state.coop.myId = id;
+      upsertPlayer(id, state.settings.coopName, state.settings.coopMyColor, myUsername(), myBadge());
+      Coop.send({ type: Coop.MSG.IDENTITY, name: state.settings.coopName, color: state.settings.coopMyColor, username: myUsername(), badge: myBadge() });
+    },
+    onError(e) {
+      state.coop.waitingForGuest = false;
+      state.coop.error =
+        e.type === 'code-not-found' ? t('coop.errorCodeNotFound') :
+        e.type === 'room-full'      ? t('coop.errorConnection') :
+        e.type === 'timeout'        ? t('coop.errorTimeout') : t('coop.errorConnection');
+    },
+    onMessage: handleCoopMsg,
+    onClose(id) {
+      if (coopIntentionalLeave) return;
+      // Nur reagieren, wenn der Host (oder, bei noch unbekannter hostId, der
+      // einzig bekannte Stand) gegangen ist — ein abreisender Mitspieler, der
+      // nicht der Host war, betrifft die eigene Verbindung nicht. Greift sowohl
+      // in der Lobby (vor Spielstart) als auch in der laufenden Runde, damit bei
+      // bis zu COOP_MAX_PLAYERS Spielern auch ein Host-Wechsel mitten in der
+      // Warte-Lobby den Raum nicht verwaisen lässt.
+      const wasHost = !state.coop.hostId || id === state.coop.hostId;
+      const leavingName = playerLabel(state.coop.players.find(p => p.id === id)) || t('common.defaultPlayerName');
+      removePlayer(id);
+      if (!wasHost) {
+        showToast(t('coop.partnerDisconnected', { name: leavingName }), 'info', 3000);
+        return;
+      }
+      // Auch wenn nur ich selbst übrig bin, Host-Rolle übernehmen — so kann
+      // der ursprüngliche Host (oder ein neuer Mitspieler) wieder beitreten.
+      const newHostId = pickNewHostId();
+      if (newHostId === state.coop.myId) {
+        showToast(t('coop.hostDisconnectedPromoting', { name: leavingName }), 'info', 3000);
+        promoteToHost();
+      } else if (newHostId) {
+        state.coop.hostId = newHostId;
+      } else {
+        showToast(t('coop.hostDisconnected', { name: leavingName }), 'info', 3000);
+      }
+    },
+    onConnection: handleCoopConnection,
+  });
+}
+
+// remote: vom Coop-Partner empfangene, maßgebliche Werte (überschreibt lokal ggf.
+// abweichende Zeit/Fehler/Hinweise, damit beide Seiten exakt denselben Endstand zeigen).
+// Die Coop-Lobby/Verbindung bleibt nach Rundenende bestehen — sie schließt erst,
+// wenn ein Spieler aktiv "Zum Menü" klickt (siehe quitToHome).
+// Nach jeder abgeschlossenen Partie aufgerufen (win/lose) -- baut einen
+// Kontext-Snapshot aus dem aktuellen state und prüft ihn gegen achievements.js.
+function checkAchievements() {
+  const ctx = {
+    outcome: state.status,
+    perfect: (state.mistakes || 0) === 0 && (state.hintsUsed || 0) === 0,
+    mistakes: state.mistakes || 0,
+    hintsUsedGame: state.hintsUsed || 0,
+    difficulty: state.puzzle?.difficulty,
+    bigNumbers: !!state.puzzle?.bigNumbers,
+    coop: state.coop.active,
+    isRace: state.isRaceGame,
+    isTeam: state.team.active,
+    timeMs: state.elapsed,
+    hour: new Date().getHours(),
+    totalWon: (state.stats.won || 0) + (state.stats.coopWon || 0),
+    totalPlayed: (state.stats.played || 0) + (state.stats.coopPlayed || 0),
+    perfectWins: state.coop.active ? state.stats.coopPerfectWins : state.stats.perfectWins,
+    currentStreak: state.coop.active ? state.stats.coopCurrentStreak : state.stats.currentStreak,
+    coopWon: state.stats.coopWon || 0,
+    // Duell-Achievements zaehlen KI-Duelle mit (eigene Statistik-Kategorie,
+    // aber gemeinsame Wertung — s. duelWins in js/prestige.js).
+    raceWon1v1: duelWins(state.raceStats),
+    raceWon2v2: state.raceStats['2v2']?.racesWon || 0,
+    streak: state.streak.currentStreak,
+    endlessBest: state.stats.endlessBest || 0,
+    endlessCoopBest: state.stats.endlessCoopBest || 0,
+    missionsAllDone: allMissionsComplete(state.missions.list, state.missions.progress),
+    historyLength: state.puzzleHistory.length,
+    wonAllDifficulties: DIFFICULTIES.every(d => (state.stats.byDifficulty[d.id]?.won || 0) > 0 || (state.stats.byDifficulty[d.id]?.coopWon || 0) > 0),
+  };
+  const newly = evaluateAchievements(ctx, Object.keys(state.achievements));
+  if (!newly.length) return;
+  state.achievements = unlockAchievements(newly);
+  const name = t('achievements.' + newly[0] + '.title');
+  showToast(t('achievements.unlockedToast', { name }) + (newly.length > 1 ? ` (+${newly.length - 1})` : ''), 'success', 3500);
+}
+
+// Meldet das eigene Team als fertig (Sieg ODER Niederlage/Aufgabe) raumweit --
+// bewusst über Coop.send direkt statt coopSend(), da die Nachricht BEIDE Teams
+// erreichen muss, nicht nur das eigene. "won" entscheidet den Sieg selbst; bei
+// "lost" gewinnt automatisch das andere Team (kein Zu-Ende-Spielen
+// für eigene Stats, siehe Plan).
+function broadcastTeamDone(outcome) {
+  state.team.matchOver = true;
+  state.team.winningTeam = outcome === 'won' ? state.team.myTeam : (state.team.myTeam === 'A' ? 'B' : 'A');
+  state.team.endReason = outcome;
+  state.team.myPct = progressPct();
+  // Sofortiger, ungedrosselter Progress-Push, damit die Gegenseite die finale
+  // Einzel-Fehlerverteilung (mistakesByPlayer) sicher noch vor Match-Ende erhält
+  // -- der reguläre pushTeamProgress()-Throttle könnte den letzten Stand sonst
+  // verpassen, wenn das Match genau zwischen zwei Throttle-Fenstern endet.
+  Coop.setTeamProgress(state.team.myTeam, { pct: state.team.myPct, mistakes: state.mistakes, mistakesByPlayer: { ...state.coop.mistakesByPlayer } });
+  Coop.send({ type: Coop.MSG.TEAM_DONE, team: state.team.myTeam, outcome });
+}
+
+// Meldet das eigene Ergebnis im Race-Match raumweit -- bewusst über Coop.send
+// direkt statt coopSend(), da state.coop.active während des Rennens absichtlich
+// false bleibt (siehe state.race-Kommentar) und die Nachricht trotzdem den
+// Gegner erreichen muss. "won" entscheidet den Sieg selbst; bei "lost"
+// gewinnt automatisch der Gegner (kein Zu-Ende-Spielen für eigene Stats, analog
+// Team-vs-Team).
+function broadcastRaceDone(outcome) {
+  state.race.matchOver = true;
+  if (state.race.ai) {
+    // KI-Duell: Ergebnis nur lokal festhalten, kein Coop.send (kein Raum).
+    state.race.winner = outcome === 'won' ? 'me' : 'opponent';
+    if (outcome === 'won') state.race.winnerName = myUsername() || t('common.you');
+    state.race.endReason = outcome;
+    state.race.myPct = progressPct();
+    stopBot();
+    return;
+  }
+  if (state.race.ffa && outcome === 'lost') {
+    // FFA: selbst ausgeschieden (Leben verloren/aufgegeben) -- das Match läuft für
+    // die Übrigen weiter, deshalb 'out' statt eines Gegner-Siegs anzeigen.
+    state.race.winner = 'out';
+  } else {
+    state.race.winner = outcome === 'won' ? 'me' : 'opponent';
+    if (outcome === 'won') state.race.winnerName = myUsername() || t('common.you');
+  }
+  state.race.endReason = outcome;
+  state.race.myPct = progressPct();
+  Coop.send({ type: Coop.MSG.RACE_DONE, from: state.coop.myId, outcome, finalPct: state.race.myPct, finalMistakes: state.mistakes });
+}
+
+// Streak nach einer abgeschlossenen Partie fortschreiben und – wenn dies der
+// erste Abschluss des Tages war (justCounted) – den "Streak verlängert/gestartet"-
+// Screen auslösen. Zählt für JEDES abgeschlossene Spiel des Tages (Sieg ODER
+// Niederlage zählt als Aktivität), aber nur einmal täglich; Trainingsrätsel sind
+// an den Aufrufstellen bereits ausgeschlossen.
+function applyStreakAfterGame() {
+  const r = recordStreakResult();
+  state.streak = r;
+  // Diagnose (niederfrequent, 1× je Partie-Ende): macht im Diagnoseprotokoll
+  // sichtbar, OB und WARUM der heutige Spieltag gezählt/übersprungen wurde —
+  // Kernwerkzeug für „meine Serie verlängert sich nicht mehr"-Meldungen.
+  log('game', 'Streak nach Partie', { current: r.currentStreak, last: r.lastCompletedDate, justCounted: r.justCounted, continued: r.continued });
+  if (r.justCounted) {
+    state.streakExtended = { current: r.currentStreak, best: r.bestStreak, continued: r.continued, isNewRecord: r.isNewRecord };
+  }
+}
+
+// Führt cb NACH dem nächsten gepainteten Frame aus (zwei rAF = ein sicher
+// gerenderter Frame dazwischen). So kann der Browser erst die Sieganimation +
+// den Dialog painten, bevor schwere, den Main-Thread blockierende Arbeit läuft.
+// Fallback (kein rAF, z.B. Tests): kurzer Timeout.
+function afterPaint(cb) {
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(() => requestAnimationFrame(cb));
+  } else {
+    setTimeout(cb, 32);
+  }
+}
+function win(remote) {
+  // Endlos-Aufstieg: Level geschafft → NORMALER Gewinn-Screen (mit „Fortsetzen"),
+  // keine normale Sieg-Buchhaltung. Für Solo UND Coop derselbe Pfad; Coop ist
+  // remote-agnostisch (beide erkennen das Lösen übers synchrone Brett) + idempotent
+  // (Guard auf status==='won').
+  if (state.endless.active) { endlessLevelSolved(remote); return; }
+  if (state.status === 'won') return;
+  cancelSoloInvite(); // unbeantwortete Solo-Einladung? Raum abbauen (no-op sonst)
+  // Exakte Endzeit stempeln: der Timer schreibt elapsed nur noch sekundenweise
+  // (s. startTimer) — für Bestzeiten zählt aber die Millisekunde des Siegzugs.
+  if (!remote && !state.paused && state.startTime) state.elapsed = Math.max(0, gameNow() - state.startTime);
+  state.status = 'won';
+  log('game', `Gewonnen`, { remote: !!remote, coop: state.coop.active });
+  stopTimer();
+  updateMusic();
+  if (remote) {
+    state.elapsed = remote.timeMs;
+    state.mistakes = remote.mistakes;
+    state.hintsUsed = remote.hintsUsed;
+  }
+  // Sieganimation + Sieg-Sound SOFORT starten (Sound läuft in launchWinFx, an die
+  // Animation/Stufe gekoppelt). Der Ergebnis-Dialog erscheint ebenfalls sofort —
+  // KEIN Vorlauf mehr; die Animation liegt per z-index ohnehin ÜBER dem Dialog.
+  launchWinFx((state.mistakes || 0) === 0 && (state.hintsUsed || 0) === 0);
+  // Anzeige-Werte auf sichere Defaults, damit der sofort sichtbare Dialog keine
+  // Werte des Vorspiels zeigt — die echten folgen unten (Münzen zählen von 0 hoch).
+  state.lastCoinReward = 0;
+  state.newHighscore = false;
+  state.wouldHaveBeenBest = false;
+  // Die gesamte (teils schwere) Buchhaltung — Streak, Statistik/Bestzeit, Münzen,
+  // Verlauf, Achievements, Speichern, Cloud-Sync und Coop/Team/Race-Broadcasts —
+  // läuft ERST NACH dem ersten gepainteten Frame. Vorher blockierte sie den
+  // Main-Thread, BEVOR der Browser Animation + Dialog painten konnte → der
+  // Auftakt ruckelte und „verschluckte" die erste Sekunde der Animation.
+  afterPaint(() => {
+    // Streak ZUERST buchen (vor der Münz-Belohnung), damit der heutige Sieg bereits
+    // in der Streak steckt und der Streak-Münz-Multiplikator (+10% je Streak-Tag)
+    // ihn mitzählt — z.B. 5er-Streak ⇒ +50%.
+    recordPlaySample();   // Spielstil dieser Partie auswerten (nur echte Solo-Partien)
+    if (!state.isTrainingGame) applyStreakAfterGame();
+    // Trainingsrätsel (geführter Lernmodus, keine echte eigene Leistung)
+    // fließen bewusst nicht in die nach Schwierigkeit gebucketeten Streaks/
+    // Bestzeiten ein.
+    if (state.isTrainingGame || state.isRaceGame) {
+      state.wouldHaveBeenBest = false;
+      state.newHighscore = false;
+      state.lastCoinReward = 0;  // Training/Race geben keine Münzen (keine gebucketete Leistung)
+    } else {
+      // Vergleich VOR recordResult() einfangen, da der Aufruf bestTimeMs/coopBestTimeMs
+      // bei einem tatsächlichen Highscore sofort überschreibt.
+      const prevBest = state.coop.active
+        ? state.stats.byDifficulty[state.puzzle.difficulty]?.coopBestTimeMs
+        : state.stats.byDifficulty[state.puzzle.difficulty]?.bestTimeMs;
+      const disqualified = state.mistakes > 0 || state.hintsUsed > 0;
+      state.wouldHaveBeenBest = disqualified && (prevBest == null || state.elapsed < prevBest);
+      const { stats, newHighscore } = recordResult({
+        difficulty: state.puzzle.difficulty, outcome: 'won',
+        timeMs: state.elapsed, hintsUsed: state.hintsUsed, mistakes: state.mistakes,
+        coop: state.coop.active,
+      });
+      state.stats = stats;
+      state.newHighscore = newHighscore;
+      // Münzen pro Sieg, abhängig von der Schwierigkeit — In-Game-Währung fürs
+      // Shop-/Marktplatz-System; erscheint als „+X 💰" auf dem Sieg-Screen. Drei
+      // Boni stapeln multiplikativ (kein Cap): Coop/Wettkampf ×2, makelloser Sieg
+      // ×2, neue Bestzeit ×2 → bis ×8.
+      const dIdx = DIFFICULTIES.findIndex(d => d.id === state.puzzle.difficulty);
+      const perfect = state.mistakes === 0 && state.hintsUsed === 0;
+      const isCoopish = state.coop.active || state.isRaceGame || state.team.active;
+      // Streak-Bonus (+10% je Streak-Tag, additiv) fließt in den Gesamt-Multiplikator
+      // ein — applyStreakAfterGame() lief oben bereits, state.streak ist aktuell.
+      const streakDays = state.streak.currentStreak || 0;
+      const bonus = { coop: isCoopish, perfect, bestTime: newHighscore, streak: streakDays };
+      // Belohnungs-Idempotenz: dieselbe Partie (gameId) darf über alle Geräte
+      // hinweg NUR EINMAL Münzen geben — sonst zählt ein Sieg doppelt, wenn er
+      // (offline) auf zwei Geräten beendet wird. Online verhindert der Reconnect-
+      // Reconcile das ohnehin (die Partie ist dann schon „defunct").
+      const alreadyRewarded = !isCoopish && state.gameId && isGameCompleted(state.gameId);
+      const coins = alreadyRewarded ? 0 : coinReward(dIdx, bonus);
+      const mult = Math.round(coinMultiplier(bonus) * 100) / 100;
+      // Herkunfts-Details in den Geldverlauf: WOFÜR gab es das Geld (Schwierigkeit,
+      // Modus, Basis, Multiplikator inkl. Gründen, Partie-ID) — geräteübergreifend
+      // nachvollziehbar, da der Verlauf jetzt mitsynct.
+      if (coins) state.wallet = grantCurrency(coins, 'win', {
+        difficulty: state.puzzle.difficulty,
+        mode: state.isRaceGame ? 'race' : state.team.active ? 'team' : state.coop.active ? 'coop' : 'solo',
+        base: coinBaseForIndex(dIdx), mult,
+        coopMult: isCoopish, perfect, bestTime: newHighscore,
+        streakDays: streakDays || 0,
+        streakPct: streakDays ? Math.round(coinStreakBonus(streakDays) * 100) : 0,
+        gameId: state.gameId || null,
+      });
+      if (!isCoopish && state.gameId) markGameCompleted(state.gameId);
+      state.lastCoinReward = coins;
+      state.lastCoinMult = mult;
+      state.lastStreakUsed = streakDays;
+      log('game', 'Münz-Belohnung', { coins, mult: state.lastCoinMult, streakDays, coop: isCoopish, perfect, bestTime: newHighscore, alreadyRewarded });
+      // (Cloud-Sync erfolgt gebündelt am Ende als sofortiges syncCloudNow.)
+      // Neue Solo-Bestzeit (nur perfekte Solo-Siege) in die globale Bestenliste
+      // schreiben — Coop/Wettkampf/Training zählen dort bewusst nicht mit.
+      if (newHighscore && !isCoopish && state.account.status === 'in') {
+        Account.publishBestTime(state.puzzle.difficulty, state.elapsed, state.account.username, myBadge());
+      }
+    }
+    if (!state.isTrainingGame) applyStreakAfterGame();
+    if (state.isRaceGame) state.raceStats = recordRaceWin(state.race.ai ? 'ai' : state.race.ffa ? 'ffa' : '1v1', state.elapsed);
+    if (state.team.active) state.raceStats = recordRaceWin('2v2', state.elapsed);
+    // Trainingsrätsel landen bewusst nicht im Verlauf/in den Achievements (siehe
+    // oben) -- sie werden beliebig oft wiederholt und sollen den Ringpuffer bzw.
+    // "perfektes Spiel"-artige Erfolge nicht verwässern.
+    if (!state.isTrainingGame) {
+      state.puzzleHistory = recordHistory({
+        difficulty: state.puzzle.difficulty, dim: { r: state.puzzle.rows, c: state.puzzle.cols },
+        seed: state.puzzle.seed, marks: state.marks.map(row => row.slice()),
+        timeMs: state.elapsed, outcome: 'won', coop: state.coop.active,
+      });
+      recordMissionEvent({
+        won: true, played: true,
+        perfect: (state.mistakes || 0) === 0 && (state.hintsUsed || 0) === 0,
+        coop: state.coop.active, race: state.isRaceGame || state.team.active,
+        bigNumbers: !!state.puzzle?.bigNumbers, difficulty: state.puzzle?.difficulty,
+        diffIndex: DIFFICULTIES.findIndex(d => d.id === state.puzzle?.difficulty),
+        streak: state.streak.currentStreak || 0,
+      });
+      checkAchievements();
+      checkMasterUnlock();   // ggf. „Großmeister" freischalten (alle 12 auf Legendär)
+      checkPrestigeUnlocks(); // ggf. neue Prestige-Stufe(n) feiern
+    }
+    persistGame();
+    // SOFORTIGE Cloud-Sicherung bei Spielende (nicht entprellt): so ist der Sieg
+    // inkl. Belohnung/gelöschtem Fortsetzen-Stand sofort in der Cloud, auch wenn
+    // die App direkt danach geschlossen wird.
+    syncCloudNow('win');
+    if (state.coop.active && !remote) {
+      coopSend({ type: Coop.MSG.STATUS, status: 'won', timeMs: state.elapsed, mistakes: state.mistakes, hintsUsed: state.hintsUsed });
+    }
+    if (state.team.active && !remote) broadcastTeamDone('won');
+    if (state.race.active && !remote) broadcastRaceDone('won');
+  });
+}
+
+function lose(remote) {
+  // Endlos-Aufstieg: Leben aufgebraucht → Lauf endet mit Ergebnis-Screen.
+  // Coop-Endlos remote-agnostisch (beide Clients erreichen 0 Leben via MISTAKE-Sync)
+  // + idempotent (endlessCoopGameOver guardet auf endlessSummary).
+  if (state.endless.active) {
+    if (state.endless.coop) { endlessCoopGameOver(); return; }
+    if (!remote) { endlessGameOver(); return; }
+  }
+  if (!remote && !state.paused && state.startTime && state.status === 'playing') state.elapsed = Math.max(0, gameNow() - state.startTime);
+  if (state.status === 'lost') return;
+  cancelSoloInvite(); // unbeantwortete Solo-Einladung? Raum abbauen (no-op sonst)
+  state.status = 'lost';
+  log('game', `Verloren`, { remote: !!remote, coop: state.coop.active });
+  stopTimer();
+  updateMusic();
+  if (state.settings.sfxLose) Music.sfxLose();
+  if (remote) {
+    state.elapsed = remote.timeMs;
+    state.mistakes = remote.mistakes;
+    state.hintsUsed = remote.hintsUsed;
+  }
+  if (!state.isTrainingGame && !state.isRaceGame) {
+    const { stats } = recordResult({
+      difficulty: state.puzzle.difficulty, outcome: 'lost',
+      timeMs: state.elapsed, hintsUsed: state.hintsUsed, mistakes: state.mistakes,
+      coop: state.coop.active,
+    });
+    state.stats = stats;
+  }
+  // Auch eine verlorene Partie ist gueltiges Trainingsmaterial fuer den eigenen
+  // Klon — der Spieler hat bis zum Aus normal gespielt.
+  recordPlaySample();
+  if (!state.isTrainingGame) applyStreakAfterGame();
+  if (state.isRaceGame) state.raceStats = recordRaceLoss(state.race.ai ? 'ai' : state.race.ffa ? 'ffa' : '1v1');
+  if (state.team.active) state.raceStats = recordRaceLoss('2v2');
+  if (!state.isTrainingGame) {
+    state.puzzleHistory = recordHistory({
+      difficulty: state.puzzle.difficulty, dim: { r: state.puzzle.rows, c: state.puzzle.cols },
+      seed: state.puzzle.seed, marks: state.marks.map(row => row.slice()),
+      timeMs: state.elapsed, outcome: 'lost', coop: state.coop.active,
+    });
+    recordMissionEvent({
+      played: true, won: false, difficulty: state.puzzle?.difficulty,
+      diffIndex: DIFFICULTIES.findIndex(d => d.id === state.puzzle?.difficulty),
+    });
+    checkAchievements();
+    checkMasterUnlock();   // z.B. „Ausdauer" kann auch durch eine Niederlage voll werden
+    checkPrestigeUnlocks();
+  }
+  persistGame();
+  syncCloudNow('lose');  // sofortige Sicherung bei Spielende (auch Niederlage)
+  if (state.coop.active && !remote) {
+    coopSend({ type: Coop.MSG.STATUS, status: 'lost', timeMs: state.elapsed, mistakes: state.mistakes, hintsUsed: state.hintsUsed });
+  }
+  if (state.team.active && !remote) broadcastTeamDone('lost');
+  if (state.race.active && !remote) broadcastRaceDone('lost');
+}
+
+// Verlässt man die Coop-Lobby selbst (auch mitten in der laufenden Runde), bekommt
+// das NICHT automatisch das Spiel für den Partner – der eigene players/$uid-Eintrag
+// verschwindet aus der RTDB (siehe Coop.leave()/coopReset()) und der Partner reagiert
+// darauf genauso wie auf einen unerwarteten Verbindungsabbruch: er übernimmt bei
+// laufender Runde selbst die Host-Rolle und spielt weiter (siehe promoteToHost()/
+// onClose() bzw. onLeave() in startHosting/startJoining).
+function quitToHome() {
+  // COOP-OFFLINE-RETTUNG: Verlässt man eine reine Coop-Partie, deren Verbindung
+  // tot ist, wird sie ZUERST automatisch in ein eigenständiges Solo-Spiel
+  // umgewandelt (continueSoloAlone) — der Stand landet im Solo-/Endlos-Slot und
+  // ist als „Fortsetzen" wieder da, statt mit der kaputten Lobby unterzugehen.
+  // Danach läuft der normale Quit-Fluss (saveSlot ist dann 'solo'/'endless').
+  if (canContinueSolo()) continueSoloAlone(true);
+  // Endlos-Aufstieg mitten im Lauf verlassen:
+  //  • SOLO-Endlos bleibt FORTSETZBAR — Lauf-Snapshot im eigenen Slot behalten,
+  //    nur den State sauber deaktivieren (kein Abbruch/keine Wertung; die kommt
+  //    erst am echten Lauf-Ende oder wenn der Lauf verworfen wird).
+  //  • COOP-Endlos ist eine Live-Session (nicht fortsetzbar) → werten & beenden.
+  if (state.endless.active) {
+    if (state.endless.coop) { endlessAbort(); }
+    else {
+      if (state.status === 'playing' && state.puzzle) saveActiveGameEndless(endlessSnapshot());
+      state.endless = { active: false, coop: false, advancing: false, level: 0, lives: 0, hints: 0, score: 0, coins: 0, best: 0, lifeLossBy: [], accumMs: 0 };
+    }
+  }
+  // Noch unbeantwortete Solo-Einladung? Raum abbauen (nach der Umwandlung ist
+  // die Partie normales Coop und läuft über den coopReset-Pfad darunter).
+  cancelSoloInvite();
+  // state.coop.active bleibt während eines Race-Matches absichtlich false
+  // (siehe state.race-Kommentar) -- ohne state.race.active hier würde
+  // quitToHome() ein verlassenes Rennen fälschlich als Solo-Spielstand
+  // speichern und später zum Fortsetzen anbieten.
+  // Slot über die STABILE state.saveSlot (nicht coop.active) — sonst würde ein
+  // Coop-/Team-Spiel, dessen coop.active gerade flackert, hier als Solo gesichert
+  // und der echte Solo-Stand überschrieben.
+  const slot = state.saveSlot;
+  const wasPlaying = state.status === 'playing' && !state.isTrainingGame;
+  // Coop-Spielstand und Session sichern BEVOR coopReset()/clearCoopSession()
+  // sie wegräumt — nur wenn das Spiel noch lief (Race wird nie persistiert).
+  const coopSnap = slot === 'coop' && wasPlaying ? activeSnapshot() : null;
+  // lastEventKey VOR coopReset() abgreifen — Coop.leave() setzt ihn zurück.
+  const coopSess = coopSnap ? { code: state.coop.code, role: state.coop.role, name: state.settings.coopName, color: state.settings.coopMyColor, hostId: state.coop.hostId, lastEventKey: Coop.getLastEventKey() } : null;
+  // keepRoom: Wird eine fortsetzbare Session gesichert, darf leave() den Raum
+  // NICHT aufräumen — sonst zeigt „Coop fortsetzen" später ins Leere („Raum
+  // existiert nicht mehr"), z.B. wenn der Partner beim Verlassen zufällig
+  // gerade still abgerissen war und der Raum dadurch leer aussah.
+  if (state.coop.role) coopReset({ keepRoom: !!coopSess });
+  // Solo- und Coop-Spielstände leben in getrennten Storage-Slots (siehe
+  // persistGame()) -- ein Verlassen des einen Modus darf den gespeicherten
+  // Stand des anderen nicht überschreiben/löschen. Der Solo-Slot wird NUR bei
+  // slot==='solo' angefasst.
+  if (slot === 'coop') {
+    if (coopSnap) { saveActiveGameCoop(coopSnap); saveCoopSession(coopSess); }
+    else saveActiveGameCoop(null);
+  } else if (slot === 'solo') {
+    saveActiveGame(wasPlaying ? activeSnapshot() : null);
+  }
+  // 'race'/unbekannt → nichts speichern/löschen (Solo-Slot bleibt unberührt)
+  refreshResume();
+  navigate('home');
+}
+
+// ── COOP-OFFLINE-RETTUNG: allein als eigenständiges Solo-Spiel weiterspielen ──
+// Ist die Coop-Verbindung tot (Offline-Chip), war das Brett früher praktisch
+// verloren: Weiterspielen sendete ins Leere, Verlassen zerstörte ggf. die Lobby
+// und es gab keinen Spielstand. Jetzt wird die laufende REINE Coop-Partie (nicht
+// Race/Team/FFA) in ein vollwertiges Solo-Spiel umgewandelt: eigener Slot,
+// eigene gameId, lokale Uhr, alle Markierungen in der eigenen Farbe — und beim
+// Verlassen im Offline-Zustand passiert das AUTOMATISCH (quitToHome), sodass
+// immer ein gespeicherter Solo-Stand übrig bleibt. Der Raum wird dabei bewusst
+// NICHT abgerissen (keepRoom) — der Partner könnte selbst nur still offline sein.
+function canContinueSolo() {
+  return state.coop.active && state.coop.online === false && state.status === 'playing' && !!state.puzzle
+    && !state.race.active && !state.team.active && !state.coop.raceMode && !state.coop.ffaMode && !state.isTrainingGame;
+}
+function continueSoloAlone(silent = false) {
+  if (!canContinueSolo()) return false;
+  const wasEndless = state.endless.active && state.endless.coop;
+  log('coop', 'Coop offline → Umwandlung in eigenständiges Solo-Spiel', { code: state.coop.code, endless: wasEndless });
+  // Exakte Zeit auf der ALTEN (Server-)Uhr ablesen, bevor gameNow() auf die
+  // lokale Uhr wechselt (sonst springt der Timer um den Server-Offset).
+  const elapsedNow = state.paused ? state.elapsed : Math.max(0, gameNow() - state.startTime);
+  // Coop-Endlos wird zum SOLO-Endlos-Lauf (Slot 'endless', fortsetzbar) — Flag
+  // VOR coopReset umlegen, sonst beendet dessen Endlos-Guard den Lauf.
+  if (wasEndless) { state.endless.coop = false; state.endless.best = state.stats.endlessBest || 0; }
+  coopReset({ keepRoom: true });
+  clearCoopSession();
+  saveActiveGameCoop(null);   // kein paralleles „Coop fortsetzen" desselben Bretts
+  // Alle Markierungen gehören jetzt „mir" (einheitlich eigene Farbe/Skin).
+  for (let r = 0; r < state.markedBy.length; r++)
+    for (let c = 0; c < state.markedBy[r].length; c++)
+      if (state.markedBy[r][c]) state.markedBy[r][c] = LOCAL_PLAYER_ID;
+  state.saveSlot = wasEndless ? 'endless' : 'solo';
+  state.gameId = generateId();   // eigenständige Partie-Identität (Session/Belohnung)
+  state.sessionRev = 0;
+  state.startTime = Date.now() - elapsedNow;   // lokale Uhr neu verankern
+  state.elapsed = elapsedNow;
+  applyMarkSafeRegionColors();
+  persistGame();
+  refreshResume();
+  if (!silent) showToast(t('coop.continueSoloDone'), 'success', 3200);
+  return true;
+}
+
+// ─── SOLO → COOP: Freund in die LAUFENDE Solo-Partie einladen ─────────────────
+// Aus dem Pausenmenü heraus wird ein Coop-Raum geöffnet (Code teilbar / Freunde
+// einladbar), das Spiel läuft dabei zunächst UNVERÄNDERT als Solo weiter — erst
+// wenn tatsächlich jemand beitritt, wird die Partie live zu Coop umgewandelt
+// (completeSoloConversion): der komplette Rundenstand (Puzzle, Züge, Leben,
+// Fehler, Hinweise, Zeit, Pausenstand) wird als INIT+START(+PAUSE) in den Raum
+// gelegt, sodass der Beitretende dank Direkteinstieg (computeJoinAnchor,
+// coop.js) sofort im laufenden Spiel landet und mitspielen kann. Tritt niemand
+// bei, bleibt alles Solo (Statistik/Bestzeiten/Münzen unverändert — kein
+// „Coop-Bonus ohne Partner").
+let soloInviteMyId = null;
+function canInviteToSolo() {
+  // Klassische Solo-Partie ODER ein Solo-Endlos-Lauf (noch nicht coop). Beide
+  // lassen sich mitten im Spiel live zu Coop umwandeln.
+  const soloClassic = state.saveSlot === 'solo';
+  const soloEndless = state.endless.active && !state.endless.coop;
+  return (soloClassic || soloEndless) && !state.isTrainingGame && !state.coop.active
+    && !state.race.active && !state.team.active && state.status === 'playing';
+}
+// Nach der Umwandlung (ODER in einer direkt als Coop gestarteten Runde) kann der
+// HOST JEDERZEIT weitere Mitspieler holen, solange der Raum nicht voll ist — nur
+// reines Coop (Race/Team/FFA haben eigene Lobby-Semantik). So verschwindet der
+// „Mitspieler einladen"-Knopf nicht mehr, sobald der erste Gast beigetreten ist.
+function canInviteMore() {
+  return state.coop.active && state.coop.role === 'host' && state.status === 'playing'
+    && !state.race.active && !state.team.active && !state.coop.raceMode && !state.coop.ffaMode
+    && !state.coop.awaitingStart && state.coop.players.length < COOP_MAX_PLAYERS;
+}
+// Der im Einladungs-Dialog angezeigte Raumcode: pre-join steckt er in soloInvite,
+// nach der Umwandlung/als Coop-Host im coop-Raum.
+function inviteCode() { return state.soloInvite.code || state.coop.code || ''; }
+// Einladungs-Knopf im Pausenmenü: eine noch-Solo-Partie wird beim Beitritt live zu
+// Coop umgewandelt (inviteToSoloGame); ist die Partie schon Coop, einfach den
+// Dialog mit dem laufenden Raumcode öffnen — „Mitspieler einladen" bleibt so
+// jederzeit erreichbar (Nutzerwunsch: der Dialog darf nach dem 1. Beitritt nicht
+// verschwinden).
+function openInvite() {
+  if (state.coop.active && state.coop.role === 'host') {
+    log('coop', 'Einladungs-Dialog in laufender Coop-Runde geöffnet', { code: state.coop.code, players: state.coop.players.length });
+    state.modal = 'soloInvite';
+    return;
+  }
+  inviteToSoloGame();
+}
+function randomRoomCode() { return String(Math.floor(100000 + Math.random() * 900000)); }
+function inviteToSoloGame(attempt = 0) {
+  if (state.soloInvite.status === 'hosting' || state.soloInvite.status === 'connecting') { state.modal = 'soloInvite'; return; }
+  if (!canInviteToSolo()) return;
+  if (!isOnline()) { showToast(t('offline.unavailable'), 'error', 2600); return; }
+  // Coop-Name sicherstellen (das Namens-Gate des Coop-Menüs wird hier übersprungen).
+  if (!(state.settings.coopName || '').trim()) state.settings.coopName = myUsername() || t('common.defaultPlayerName');
+  const code = randomRoomCode();
+  state.soloInvite = { status: 'connecting', code };
+  state.modal = 'soloInvite';
+  coopIntentionalLeave = false;
+  log('coop', 'Solo-Einladung: erstelle Raum', { code, attempt });
+  Coop.hostGame({
+    code,
+    name: state.settings.coopName,
+    color: state.settings.coopMyColor,
+    onOpen(id) { onSoloInviteRoomOpen(id, code); },
+    onError(e) {
+      if (e && e.type === 'code-taken' && attempt < 3) {
+        // Zufallscode kollidierte — mit frischem Code erneut versuchen.
+        state.soloInvite = { status: 'idle', code: '' };
+        inviteToSoloGame(attempt + 1);
+        return;
+      }
+      log('coop', 'Solo-Einladung: Raum erstellen fehlgeschlagen', e);
+      state.soloInvite = { status: 'idle', code: '' };
+      if (state.modal === 'soloInvite') state.modal = null;
+      showToast(t('coop.errorConnection'), 'error', 3000);
+    },
+    onJoin: onSoloInviteJoin,
+    onLeave(id) {
+      if (state.soloInvite.status !== 'converted') return;
+      const leavingName = playerLabel(state.coop.players.find(p => p.id === id)) || t('common.defaultPlayerName');
+      removePlayer(id);
+      broadcastRoster();
+      if (!coopIntentionalLeave) showToast(t('coop.partnerDisconnected', { name: leavingName }), 'info', 3000);
+    },
+    onMessage: handleCoopMsg,
+    onConnection: handleCoopConnection,
+  });
+}
+// Raum steht (hostGame onOpen): eigene uid merken, Code für Freunde-Einladung
+// spiegeln, ggf. einen extrem schnellen Beitritt nachholen (onJoin feuerte
+// schon, während die eigene uid noch unbekannt war).
+function onSoloInviteRoomOpen(id, code) {
+  soloInviteMyId = id;
+  // Code schon jetzt in coop.code spiegeln: die Freunde-Einladung
+  // (inviteFriendToLobby) und der Beitritts-Link arbeiten darüber.
+  state.coop.code = code;
+  state.soloInvite.status = 'hosting';
+  log('coop', 'Solo-Einladung: Raum offen', { code });
+  if (pendingSoloJoin) { const p = pendingSoloJoin; pendingSoloJoin = null; onSoloInviteJoin(p.id, p.data); }
+}
+// Beitritt in den Einladungs-Raum: erster Beitritt wandelt die Partie um,
+// weitere Beitritte (bis COOP_MAX_PLAYERS) laufen danach wie im normalen Coop.
+let pendingSoloJoin = null;
+function onSoloInviteJoin(id, data) {
+  if (state.soloInvite.status === 'connecting') { pendingSoloJoin = { id, data }; return; }
+  if (state.soloInvite.status !== 'converted' && !completeSoloConversion()) return;
+  if (data && data.name) {
+    const known = state.coop.players.some(p => p.id === id);
+    upsertPlayer(id, data.name, data.color);
+    broadcastRoster();
+    if (!known) showToast(t('soloInvite.joined', { name: data.name }), 'success', 3500);
+  }
+}
+// Vollzieht die eigentliche Umwandlung, sobald der erste Mitspieler beitritt.
+function completeSoloConversion() {
+  if (state.soloInvite.status !== 'hosting' || !soloInviteMyId) return false;
+  const isSoloEndless = state.endless.active && !state.endless.coop;
+  // Partie inzwischen beendet/gewechselt → Einladung stattdessen abräumen.
+  if (state.status !== 'playing' || !state.puzzle || (state.saveSlot !== 'solo' && !isSoloEndless)) { cancelSoloInvite(); return false; }
+  // Solo-Cloud-Session VOR dem Slot-Umzug beenden (pushSession prüft saveSlot).
+  // Der Endlos-Lauf ist ephemer (kein Solo-Slot/keine Session) → nur klassisch.
+  if (!isSoloEndless) pushSession(SESSION_STATUS.DONE);
+  const myId = soloInviteMyId;
+  // Exakte bisherige Spielzeit auf der ALTEN (lokalen) Uhr ablesen …
+  const elapsedNow = state.paused ? state.elapsed : Math.max(0, Date.now() - state.startTime);
+  state.coop.active = true;
+  state.coop.role = 'host';
+  state.coop.myId = myId;
+  state.coop.hostId = myId;
+  state.coop.awaitingStart = false;
+  state.coop.waitingForGuest = false;
+  state.coop.online = true;
+  state.coop.players = [];
+  upsertPlayer(myId, state.settings.coopName, state.settings.coopMyColor, myUsername(), myBadge());
+  // Bisherige eigene Züge der eigenen Coop-Identität zuordnen (Farbe/Skin der
+  // Markierungen bleiben nach der Umwandlung die eigenen).
+  for (let r = 0; r < state.markedBy.length; r++)
+    for (let c = 0; c < state.markedBy[r].length; c++)
+      if (state.markedBy[r][c] === LOCAL_PLAYER_ID) state.markedBy[r][c] = myId;
+  // … und als serverkorrigierten Startzeitpunkt neu stempeln (gameNow nutzt ab
+  // coop.active die Firebase-Server-Uhr — sonst zeigte der Gast eine falsche Zeit).
+  const startTime = gameNow() - elapsedNow;
+  if (!state.paused) { state.startTime = startTime; state.elapsed = elapsedNow; }
+  // Endlos-Lauf → Coop-Endlos: coop-Flag setzen, Herz-Verlust-Farben ab jetzt
+  // führen, Bestwert auf den Coop-Endlos-Wert umstellen. Slot bleibt 'endless'
+  // (ephemer). Sonst (klassisch): Slot-Umzug in den Coop-Slot + Solo-Slot räumen.
+  if (isSoloEndless) {
+    state.endless.coop = true;
+    state.endless.best = state.stats.endlessCoopBest || 0;
+    state.coop.lifeLossBy = state.coop.lifeLossBy || [];
+    state.endless.lifeLossBy = state.coop.lifeLossBy.slice();
+  } else {
+    state.saveSlot = 'coop';
+    saveActiveGame(null);
+    // Auch aus der Bibliothek nehmen: die Partie ist nicht weg, sie lebt ab jetzt
+    // im COOP-Slot weiter. Bliebe sie stehen, boete der Fortsetzen-Knopf sie
+    // parallel als Solo-Stand an (der Rueckfall in refreshResume greift sonst).
+    if (state.gameId) state.saves = removeSave(state.gameId);
+  }
+  state.soloInvite.status = 'converted';
+  if (state.modal === 'soloInvite') state.modal = null;
+  // Der Host steht beim Einladen praktisch immer im Pausenmenü — der Beitritt
+  // ist das Signal „es geht los": Pause ZUERST beenden (damit state.startTime
+  // final ist und der Gast in ein LAUFENDES, nicht pausiertes Spiel einsteigt).
+  if (state.paused) resumeFromPause(true);
+  // Laufenden Rundenstand in den Raum legen (INIT running:true + START) → der
+  // Beitretende landet sofort im Spiel, kein Bereit-Lobby-Umweg (s.
+  // broadcastRunningInit). Der Host holt neue Spieler zusätzlich in
+  // hostRegisterPlayer aktiv nach — doppelt hält besser gegen Timing/Verlust.
+  broadcastRunningInit();
+  persistGame();
+  refreshResume();
+  log('coop', 'Solo-Partie live zu Coop umgewandelt', { code: state.coop.code, elapsed: elapsedNow, gameId: state.gameId });
+  return true;
+}
+// Einladung zurückziehen/abräumen, solange noch niemand beigetreten ist (nach
+// der Umwandlung ist die Partie normales Coop — Aufräumen übernimmt quitToHome).
+function cancelSoloInvite() {
+  if (state.soloInvite.status !== 'hosting' && state.soloInvite.status !== 'connecting') return;
+  coopIntentionalLeave = true;
+  Coop.leave();
+  soloInviteMyId = null;
+  state.coop.code = '';
+  state.coop.invitedUids = [];
+  state.coop.invitePickerOpen = false;
+  state.soloInvite = { status: 'idle', code: '' };
+  if (state.modal === 'soloInvite') state.modal = null;
+  log('coop', 'Solo-Einladung zurückgezogen/abgeräumt');
+}
+
+// ─── PERSISTENZ DES LAUFENDEN SPIELS ──────────────────────────────────────────
+function collectHintMarks() {
+  const out = [];
+  for (let r = 0; r < state.cellMeta.length; r++)
+    for (let c = 0; c < state.cellMeta[r].length; c++)
+      if (state.cellMeta[r][c].hintMark) out.push([r, c]);
+  return out;
+}
+function activeSnapshot() {
+  return {
+    puzzle: state.puzzle, marks: state.marks, markedBy: wireMarkedBy(), lives: state.lives, maxLives: state.maxLives,
+    hintsLeft: state.hintsLeft, hintsUsed: state.hintsUsed, mistakes: state.mistakes,
+    elapsed: state.elapsed, difficulty: state.puzzle.difficulty,
+    hintMarks: collectHintMarks(),
+    gameId: state.gameId,   // Partie-Identität mitsichern (Multi-Device-Session/Fortsetzen)
+    ts: Date.now(),
+  };
+}
+// Snapshot eines laufenden SOLO-Endlos-Levels: Brett + Lauf-Metadaten (Level,
+// Leben, Hinweise, Score, Große Zahlen). `pending:true` (ohne Brett) markiert den
+// Zustand ZWISCHEN Leveln → beim Fortsetzen wird das nächste Level frisch geladen.
+function endlessSnapshot() {
+  const e = state.endless;
+  return {
+    ...activeSnapshot(),
+    endless: { runId: e.runId || null, level: e.level, lives: state.lives, hints: Math.max(0, state.hintsLeft || 0), score: e.score, bigNumbers: !!e.bigNumbers, accumMs: e.accumMs || 0, coins: e.coins || 0 },
+  };
+}
+function persistGame() {
+  // Slot-Entscheidung über die STABILE state.saveSlot (beim Laden gesetzt), NICHT
+  // über state.coop.active — dessen kurzes Flackern bei Rejoin/Rollenwechsel führte
+  // sonst dazu, dass ein Coop-/Team-Spiel in den SOLO-Slot geschrieben und der
+  // Solo-Stand überschrieben wurde. Solo-Slot wird AUSSCHLIESSLICH bei saveSlot==='solo'
+  // angefasst.
+  // Race-Matches sind strikt live/Wettkampf -- ein Fortsetzen nach Verbindungs-
+  // abbruch wäre unfair/sinnlos (siehe state.race-Kommentar), daher nie persistiert.
+  if (state.saveSlot === 'race' || state.race.active) return;
+  // Endlos-Aufstieg: den echten Solo-/Coop-Slot NIE anfassen. Ein SOLO-Endlos-Lauf
+  // ist aber fortsetzbar (eigener Slot) — mitten im Level den Rundenstand + die
+  // Lauf-Metadaten sichern; zwischen den Leveln wird stattdessen ein „nächstes
+  // Level"-Marker gespeichert (s. endlessLevelSolved). Coop-Endlos ist eine
+  // Live-Session (kein Fortsetzen hier).
+  if (state.saveSlot === 'endless' || state.endless.active) {
+    if (state.endless.active && !state.endless.coop && state.status === 'playing' && state.puzzle) {
+      const now = Date.now();
+      if (now - saveThrottle >= 400) {
+        saveThrottle = now;
+        const snap = endlessSnapshot();
+        saveActiveGameEndless(snap);
+        rememberSave(snap, 'endless', endlessSaveId());
+      }
+    }
+    return;
+  }
+  // Solo- und Coop-Spielstände leben in getrennten Storage-Slots, sonst
+  // überschreibt ein 400ms-Autosave aus dem jeweils anderen Modus den
+  // gespeicherten Stand des anderen.
+  // Trainingsrätsel werden nie persistiert/fortgesetzt -- sie sind als
+  // wiederholbarer Lerndurchlauf gedacht, kein "Spielstand".
+  // Training fasst gespeicherte Spielstände NIE an: ein Trainingsrätsel läuft
+  // parallel zu einem evtl. unterbrochenen Solo-Spiel — vorher löschte jeder
+  // Trainings-Zug (und jedes Ausblenden während des Trainings) den Solo-Slot.
+  if (state.isTrainingGame) return;
+  // 'idle' = in dieser Sitzung wurde (noch) nichts geladen (frischer App-Start).
+  // Früher lief das in den Lösch-Zweig: App öffnen → ohne zu spielen wieder
+  // schließen/hintergrund → pagehide/persistGame löschte den gespeicherten
+  // Solo-Stand („Fortsetzen" verschwand scheinbar grundlos). Nur ein wirklich
+  // BEENDETES Spiel ('won'/'lost') räumt den Slot auf.
+  if (state.status === 'idle') return;
+  if (state.status !== 'playing') {
+    if (state.saveSlot === 'coop') { saveActiveGameCoop(null); clearCoopSession(); }
+    else if (state.saveSlot === 'solo') {
+      saveActiveGame(null);
+      // Eine BEENDETE Partie gehoert auch aus der Bibliothek raus. Der letzte
+      // Autosave liegt 400 ms VOR dem Siegzug, der Eintrag sieht dort also noch
+      // ungeloest aus — ohne dieses Aufraeumen wuerde der Fortsetzen-Knopf das
+      // fertige Spiel wieder anbieten (genau das faengt home.spec.js ab).
+      if (state.gameId) state.saves = removeSave(state.gameId);
+    }
+    // unbekannter/kein Slot → nichts anfassen (Solo-Slot bleibt unberührt)
+    // Der Fortsetzen-Knopf haengt an ABGELEITETEM Zustand (state.resumeAvailable).
+    // Wird der Slot hier geraeumt, muss der auch neu berechnet werden — sonst
+    // zeigt der Knopf das gerade beendete Spiel weiter an, bis zufaellig etwas
+    // anderes refreshResume() ausloest (gemeldet: „geht erst nach Neustart weg").
+    refreshResume();
+    return;
+  }
+  const now = Date.now();
+  if (now - saveThrottle < 400) return;
+  saveThrottle = now;
+  if (state.saveSlot === 'coop') {
+    saveActiveGameCoop(activeSnapshot());
+    // lastEventKey = Wiederaufsetzpunkt: der spätere rejoin() hängt den Event-
+    // Listener HINTER diesem Key an, statt die komplette Historie (inkl. INIT/
+    // START/STATUS) erneut abzuspielen — Snapshot und Key werden im selben
+    // Moment gesichert und sind damit konsistent zueinander.
+    saveCoopSession({ code: state.coop.code, role: state.coop.role, name: state.settings.coopName, color: state.settings.coopMyColor, hostId: state.coop.hostId, lastEventKey: Coop.getLastEventKey() });
+  } else if (state.saveSlot === 'solo') {
+    const snap = activeSnapshot();
+    saveActiveGame(snap);
+    // ZUSAETZLICH in die Bibliothek, geschluesselt ueber die gameId. Dadurch
+    // ueberschreibt ein neues Spiel keinen alten Stand mehr — es bekommt einfach
+    // einen eigenen Eintrag. Der Aktivspiel-Slot bleibt daneben bestehen, an ihm
+    // haengt die geraeteuebergreifende Cloud-Session.
+    rememberSave(snap, 'solo');
+  }
+  // unbekannter Slot → NICHTS schreiben (Solo-Slot bleibt garantiert unberührt)
+}
+// ─── Bibliothek gespeicherter Partien ────────────────────────────────────────
+// Jede Partie hat ihren EIGENEN Eintrag (Schluessel = gameId). Ein neues Spiel
+// ueberschreibt damit nie einen alten Stand — genau der Punkt, an dem frueher
+// Fortschritt verloren ging. Der Aktivspiel-Slot bleibt daneben bestehen: an ihm
+// haengen Cloud-Session und der prominente „Fortsetzen"-Knopf.
+// Bibliotheks-Schluessel eines SOLO-Endlos-Laufs: die ueber den ganzen Lauf
+// stabile runId (Fallback fuer Alt-Staende: die gameId des aktuellen Levels).
+function endlessSaveId() { return state.endless.runId || state.gameId; }
+function rememberSave(snap, kind, id) {
+  const key = id || state.gameId;
+  if (!snap || !key) return;
+  state.saves = upsertSave({ ...snap, id: key, kind, ts: snap.ts || Date.now() });
+}
+function openSaves() { state.saves = loadSaves(); state.savesOpen = true; }
+function closeSaves() { state.savesOpen = false; }
+
+// Anzeige-Helfer fuer die Liste. Bewusst hier und nicht im Template, damit das
+// Template lesbar bleibt.
+// Der EINE Solo-Fortsetzen-Knopf auf Home. Klassischer Solo-Stand und Endlos-Lauf
+// teilen sich einen Platz — es gewinnt der ZULETZT gespielte. Der jeweils andere
+// ist nicht verloren, sondern haengt (wie alle weiteren Staende) am
+// Erweiterungs-Knopf darunter. Zwei bis drei gleichrangige Fortsetzen-Knoepfe
+// nebeneinander waren weder lesbar noch beantworteten sie die eigentliche Frage
+// „womit mache ich weiter?".
+const soloResume = computed(() => {
+  const a = state.resumeAvailable, b = state.resumeAvailableEndless;
+  if (a && b) return (Number(b.ts) || 0) > (Number(a.ts) || 0) ? { g: b, endless: true } : { g: a, endless: false };
+  if (b) return { g: b, endless: true };
+  if (a) return { g: a, endless: false };
+  return null;
+});
+function resumeSolo() {
+  const s = soloResume.value;
+  if (!s) return;
+  if (s.endless) resumeEndlessGame(); else resumeGame();
+}
+// Wie viele Staende liegen NEBEN dem, der schon auf dem Knopf steht? Genau diese
+// Zahl steht am Erweiterungs-Knopf — „Weitere Spielstaende (2)" ist ehrlicher als
+// die Gesamtzahl, die den angebotenen Stand mitzaehlte.
+const otherSavesCount = computed(() => {
+  const cur = soloResume.value && soloResume.value.g;
+  const id = cur && (cur.id || cur.gameId);
+  return state.saves.filter((x) => (x.id || x.gameId) !== id).length;
+});
+// Beschriftung des Erweiterungs-Knopfs — und zugleich das Signal, ob er ueberhaupt
+// erscheint. Er MUSS auftauchen, sobald ueberhaupt ein Stand existiert:
+// • steht der einzige Stand schon auf dem Knopf, war die Liste frueher gar nicht
+//   erreichbar — und damit liess sich dieser eine Stand NICHT loeschen (gemeldet:
+//   „ich muss erst ein zweites Spiel anlegen, um das eine loeschen zu koennen").
+// • gibt es gar keinen Solo-Knopf (nur ein Coop-Spiel, oder direkt nach einem
+//   verlorenen Endlos-Lauf), hing der Zugang frueher am Solo-Knopf und verschwand
+//   mit ihm — obwohl die Bibliothek voll war.
+const savesLabel = computed(() => {
+  if (!state.saves.length) return '';
+  const n = otherSavesCount.value;
+  return n > 0 ? t('saves.moreN', { n }) : t('saves.manage');
+});
+// Unterzeile des Solo-Knopfs: beim Endlos-Lauf Level (+ Grosse Zahlen), sonst
+// Schwierigkeit · Brettgroesse · bisherige Spielzeit.
+function resumeSubline(s) {
+  const g = s && s.g;
+  if (!g) return '';
+  if (s.endless) {
+    const lv = t('endless.levelShort', { n: (g.endless && g.endless.level) || 1 });
+    return (g.endless && g.endless.bigNumbers) ? `${lv} · ${t('setup.bigNumbers')}` : lv;
+  }
+  return `${t('difficulty.' + saveDifficulty(g))} · ${saveDim(g)} · ${fmtTime(g.elapsed || 0)}`;
+}
+
+function saveProgress(g) { return g && g.pending ? 100 : snapshotProgress(g); }
+// Verbleibende LEBEN eines Stands als Herz-Array (true = noch da). Bewusst die
+// Leben und nicht die Fehlerzahl: „noch 2 von 3 Herzen" beantwortet die Frage
+// „wie brenzlig steht es?" direkt, waehrend eine nackte Fehlerzahl erst gegen die
+// Lebenszahl verrechnet werden musste. Der Endlos-Zwischenmarker traegt seine
+// Leben unter `endless` (kein Brett), daher beide Quellen.
+function saveLivesArr(g) {
+  const max = Math.max(1, Number(g && g.maxLives) || LIVES);
+  const raw = (g && g.endless && g.endless.lives != null) ? g.endless.lives : (g && g.lives);
+  const left = Math.max(0, Math.min(max, Number(raw ?? max)));
+  return Array.from({ length: max }, (_, i) => i < left);
+}
+function saveLivesLeft(g) { return saveLivesArr(g).filter(Boolean).length; }
+function saveIsEndless(g) { return !!(g && (g.kind === 'endless' || g.endless)); }
+function saveDifficulty(g) { return (g && (g.difficulty || (g.puzzle && g.puzzle.difficulty))) || 'mittel'; }
+function saveDim(g) {
+  const p = g && g.puzzle;
+  if (p && p.rows) return `${p.rows}×${p.cols}`;
+  const d = DIFF_BY_ID[saveDifficulty(g)];
+  return d ? `${d.dim.r}×${d.dim.c}` : '';
+}
+// Laeuft genau dieser Stand gerade? Dann wird er als solcher markiert statt als
+// „fortsetzbar" angeboten.
+function saveIsCurrent(g) {
+  // Ein Endlos-Lauf liegt unter seiner runId in der Bibliothek, nicht unter der
+  // gameId des gerade laufenden Levels.
+  const id = state.endless.active ? endlessSaveId() : state.gameId;
+  return !!(g && id && g.id === id && state.status === 'playing');
+}
+// Relative Zeit — beim Auswaehlen ist „vor 5 Minuten" nuetzlicher als ein Datum.
+function saveWhen(g) {
+  const ts = Number(g && g.ts) || 0;
+  if (!ts) return '';
+  const min = Math.floor((Date.now() - ts) / 60000);
+  if (min < 1) return t('saves.justNow');
+  if (min < 60) return t('saves.minsAgo', { n: min });
+  const h = Math.floor(min / 60);
+  if (h < 24) return t('saves.hoursAgo', { n: h });
+  const d = Math.floor(h / 24);
+  return d === 1 ? t('saves.yesterday') : t('saves.daysAgo', { n: d });
+}
+
+// Einen bestimmten Stand fortsetzen. Er wird dafuer zum aktiven Slot gemacht,
+// damit der bestehende Fortsetzen-Pfad (inkl. Cloud-Session) unveraendert greift.
+function resumeSave(g) {
+  if (!g) return;
+  closeSaves();
+  if (saveIsCurrent(g)) { navigate('game'); return; }
+  log('game', 'Spielstand aus der Bibliothek fortgesetzt', { kind: g.kind || null, endless: saveIsEndless(g), progress: saveProgress(g) });
+  if (saveIsEndless(g)) {
+    saveActiveGameEndless(g);
+    state.resumeAvailableEndless = g;
+    resumeEndlessGame();
+  } else {
+    saveActiveGame(g);
+    state.resumeAvailable = g;
+    resumeGame();
+  }
+}
+
+// Einen Stand endgueltig loeschen. Ist es der gerade aktive Slot, wird auch der
+// geraeumt — sonst taucht er ueber „Fortsetzen" sofort wieder auf.
+function deleteSave(g) {
+  if (!g) return;
+  ask(t('saves.deleteTitle'), t('saves.deleteMsg'), () => {
+    state.saves = removeSave(g.id);
+    const act = loadActiveGame();
+    if (act && act.gameId === g.id) saveActiveGame(null);
+    const end = loadActiveGameEndless();
+    if (end && ((end.endless && end.endless.runId) === g.id || end.gameId === g.id)) saveActiveGameEndless(null);
+    log('game', 'Spielstand geloescht', { kind: g.kind || null });
+    refreshResume();
+    showToast(t('saves.deleted'), 'info', 2000);
+  });
+}
+
+function refreshResume() {
+  let g = loadActiveGame();
+  // Ein bereits VOLLSTÄNDIG gelöstes Brett ist faktisch abgeschlossen und darf
+  // nie als „Fortsetzen" erscheinen (sonst lädt man ein 100%-Brett, das keine
+  // Interaktion mehr zulässt und keinen Sieg mehr auslöst). Slot aufräumen.
+  if (g && g.puzzle && snapshotSolved(g)) { log('storage', 'Gelösten Solo-Stand als abgeschlossen verworfen'); saveActiveGame(null); g = null; }
+  state.resumeAvailable = (g && g.puzzle) ? g : null;
+  let gc = loadActiveGameCoop();
+  if (gc && gc.puzzle && snapshotSolved(gc)) { log('storage', 'Gelösten Coop-Stand als abgeschlossen verworfen'); saveActiveGameCoop(null); clearCoopSession(); gc = null; }
+  // Coop-Fortsetzen nur anbieten, solange auch das Wiederverbindungs-Token
+  // (Coop-Session mit Raumcode/Rolle) noch gültig ist — vorher zeigte der
+  // Button ins Leere: der Spielstand-Snapshot hat keine TTL, die Session schon;
+  // ein Klick nach Ablauf tat schlicht nichts. Verwaiste Snapshots aufräumen.
+  const sess = (gc && gc.puzzle) ? loadCoopSession() : null;
+  state.resumeAvailableCoop = (gc && gc.puzzle && sess) ? gc : null;
+  if (gc && gc.puzzle && !sess) saveActiveGameCoop(null);
+  // Solo-Endlos-Lauf: gültig, wenn ein „nächstes Level"-Marker vorliegt ODER ein
+  // noch nicht gelöstes Brett. Ein (theoretisch) gelöst gespeichertes Brett wird
+  // verworfen (sonst 100%-Brett ohne Interaktion, wie im Solo-Slot).
+  let ge = loadActiveGameEndless();
+  if (ge && ge.endless && !ge.pending && ge.puzzle && snapshotSolved(ge)) { log('storage', 'Gelösten Endlos-Stand verworfen'); saveActiveGameEndless(null); ge = null; }
+  const geValid = ge && ge.endless && (ge.pending || (ge.puzzle && ge.marks));
+  state.resumeAvailableEndless = geValid ? ge : null;
+  // Bibliothek mitziehen: pruneSaves wirft dabei geloeste/leere Staende raus,
+  // die Liste bleibt also von selbst sauber.
+  state.saves = loadSaves();
+  if (ge && !geValid) saveActiveGameEndless(null);
+  // RUECKFALL auf die Bibliothek. Der Aktivspiel-Slot haelt nur die zuletzt
+  // gespielte Partie; loescht man ausgerechnet die (und das ist der naheliegendste
+  // Fall, weil der Fortsetzen-Knopf genau sie anbietet), war der Knopf komplett
+  // weg — obwohl weitere Staende in der Bibliothek lagen. Der Knopf bietet
+  // deshalb IMMER den juengsten fortsetzbaren Stand an, egal woher er kommt.
+  if (!state.resumeAvailable) {
+    const next = state.saves.find((x) => !saveIsEndless(x) && x.puzzle && x.marks);
+    if (next) { saveActiveGame(next); state.resumeAvailable = next; }
+  }
+  if (!state.resumeAvailableEndless) {
+    const nextE = state.saves.find((x) => saveIsEndless(x) && (x.pending || (x.puzzle && x.marks)));
+    if (nextE) { saveActiveGameEndless(nextE); state.resumeAvailableEndless = nextE; }
+  }
+}
+function resumeGame() {
+  const g = state.resumeAvailable;
+  if (!g) return;
+  // Alt-Spielstände (vor der Eigene-Farbe-Markierung) haben kein oder lücken-
+  // haftes markedBy. Ohne Besitzer bekommt eine wiederhergestellte Markierung
+  // weder die eigene Farbe noch den dynamischen Skin (Symptom: „bereits
+  // eingekreiste Zahlen sind nach dem Fortsetzen nicht animiert"). Eigene
+  // Solo-Züge daher nachträglich als eigene ausweisen.
+  if (g.marks) {
+    if (!Array.isArray(g.markedBy)) g.markedBy = g.marks.map((row) => row.map(() => null));
+    for (let r = 0; r < g.marks.length; r++) {
+      if (!Array.isArray(g.markedBy[r])) g.markedBy[r] = g.marks[r].map(() => null);
+      for (let c = 0; c < g.marks[r].length; c++) {
+        if (g.marks[r][c] !== 'none' && !g.markedBy[r][c]) g.markedBy[r][c] = LOCAL_PLAYER_ID;
+      }
+    }
+  }
+  navigate('game');
+  loadPuzzleIntoState(g.puzzle, g);
+  startTimer();
+}
+// Fortsetzen eines unterbrochenen SOLO-Endlos-Laufs (eigener Slot). Der Lauf-
+// Zustand (Level/Leben/Hinweise/Score/Große Zahlen) wird wiederhergestellt; je
+// nachdem, ob man mitten im Level oder zwischen zwei Leveln verlassen hat, wird
+// das exakte Brett geladen bzw. das nächste Level frisch generiert.
+function resumeEndlessGame() {
+  const g = state.resumeAvailableEndless;
+  if (!g || !g.endless) return;
+  coopReset();
+  const em = g.endless;
+  state.endlessSummary = null;
+  state.endless = {
+    active: true, coop: false, advancing: false, level: em.level,
+    // Alt-Staende (vor der Lauf-Kennung) erben den Bibliotheks-Schluessel, unter
+    // dem sie liegen — so bleibt ihr Eintrag beim Weiterspielen derselbe.
+    runId: em.runId || g.id || g.gameId || generateId(),
+    lives: em.lives, hints: em.hints, score: em.score,
+    coins: em.coins || 0,       // bisher im Lauf verdiente Münzen (Summary am Laufende)
+    best: state.stats.endlessBest || 0, bigNumbers: !!em.bigNumbers,
+    accumMs: em.accumMs || 0,   // Gesamt-Timer nahtlos fortsetzen
+  };
+  navStack = [() => { navigate('home'); }];
+  log('game', 'Endlos-Lauf fortgesetzt', { level: em.level, pending: !!g.pending });
+  if (g.pending || !g.puzzle) { loadEndlessLevel(); return; }  // zwischen Leveln → nächstes Level frisch
+  // Mitten im Level verlassen: exaktes Brett wiederherstellen (markedBy wie bei resumeGame auffüllen).
+  if (g.marks) {
+    if (!Array.isArray(g.markedBy)) g.markedBy = g.marks.map((row) => row.map(() => null));
+    for (let r = 0; r < g.marks.length; r++) {
+      if (!Array.isArray(g.markedBy[r])) g.markedBy[r] = g.marks[r].map(() => null);
+      for (let c = 0; c < g.marks[r].length; c++) if (g.marks[r][c] !== 'none' && !g.markedBy[r][c]) g.markedBy[r][c] = LOCAL_PLAYER_ID;
+    }
+  }
+  state.isTrainingGame = false;
+  state.screen = 'game';
+  navigate('game');
+  loadPuzzleIntoState(g.puzzle, g);
+  startTimer();
+  requestWakeLock();
+}
+// Fortsetzen eines unterbrochenen Coop-Spiels (kalter Wiederverbindungsfall,
+// siehe Coop.rejoin()) -- state.coop.active/code/role/hostId müssen schon VOR
+// loadPuzzleIntoState() gesetzt sein, da dessen abschließender persistGame()-
+// Aufruf sonst fälschlich den Solo-Slot statt des Coop-Slots beschreibt.
+function resumeCoopGame() {
+  const g = state.resumeAvailableCoop;
+  const sess = loadCoopSession();
+  if (!g || !sess) { state.resumeAvailableCoop = null; saveActiveGameCoop(null); clearCoopSession(); return; }
+  state.coop.active = true;
+  state.coop.code = sess.code;
+  state.coop.role = sess.role;
+  state.coop.hostId = sess.hostId;
+  state.coop.players = [];
+  navigate('game');
+  loadPuzzleIntoState(g.puzzle, g);
+  startTimer();
+  attemptCoopRejoin(sess);
+}
+function attemptCoopRejoin(sess) {
+  coopIntentionalLeave = false;
+  state.coop.waitingForGuest = true;
+  state.coop.online = true;
+  Coop.rejoin({
+    code: sess.code, name: sess.name, color: sess.color, role: sess.role,
+    // Nur die während der Abwesenheit verpassten Events nachziehen — ohne den
+    // Anker würde die komplette Historie replayed (INIT überschreibt den
+    // wiederhergestellten Spielstand und reaktiviert die Bereit-Lobby).
+    afterEventKey: sess.lastEventKey || null,
+    onOpen(id, actualRole) {
+      state.coop.myId = id;
+      state.coop.waitingForGuest = false;
+      // actualRole kommt von Coop.rejoin(): falls inzwischen ein anderer Host
+      // gewählt wurde, wird die eigene Rolle auf 'guest' korrigiert.
+      if (actualRole && actualRole !== state.coop.role) {
+        state.coop.role = actualRole;
+      }
+      upsertPlayer(id, sess.name, sess.color, myUsername());
+      // Informiert einen ggf. noch aktiven Host über die eigene Rückkehr --
+      // identisch zum normalen Beitritts-Pfad (confirmCoopIdentity()), löst
+      // beim Host upsertPlayer()+broadcastRoster() aus (handleCoopMsg/IDENTITY).
+      Coop.send({ type: Coop.MSG.IDENTITY, name: sess.name, color: sess.color, username: myUsername(), badge: myBadge() });
+      showToast(t('coop.reconnected'), 'success', 2000);
+    },
+    onError() {
+      state.coop.waitingForGuest = false;
+      clearCoopSession();
+      showToast(t('coop.errorRoomGone'), 'error', 3000);
+    },
+    // Bereits vorhandene Mitspieler feuern beim erneuten Anhängen der Listener
+    // sofort ein onChildAdded -- so lernt z.B. ein wiederverbundener Host die
+    // während seiner Abwesenheit unveränderte Mitspielerliste erneut.
+    onJoin(id, data) {
+      upsertPlayer(id, data?.name, data?.color);
+      if (state.coop.role === 'host') broadcastRoster();
+    },
+    onLeave(id) {
+      const leavingName = playerLabel(state.coop.players.find(p => p.id === id)) || t('common.defaultPlayerName');
+      removePlayer(id);
+      if (state.coop.role === 'host') broadcastRoster();
+      if (!coopIntentionalLeave) showToast(t('coop.partnerDisconnected', { name: leavingName }), 'info', 3000);
+    },
+    onMessage: handleCoopMsg,
+    onConnection: handleCoopConnection,
+  });
+}
+
+// ─── SIEGANIMATIONEN (Confetti + kaufbare Shop-Effekte) ───────────────────────
+// Bei einem makellosen Sieg (keine Fehler, keine Hinweise) fällt jede Animation
+// dichter/länger aus -- abgestufte Belohnung statt eines festen Effekts.
+//
+// Architektur: js/wineffects.js hält den Katalog (ids/Preise/Besitzlogik), hier
+// erzeugt PIECE_GENERATORS pro Effekt einmalig ein Partikel-Array; gerendert
+// wird alles in EINEM fixed Overlay (.winfx.fx-<id>), dessen Optik komplett in
+// css/styles.css lebt (nur transform/opacity-Animationen — GPU-Kompositor,
+// keine Repaints; Lehre aus dem iOS-Skin-Crash). markRaw: die Teilchen ändern
+// sich nach dem Erzeugen nie wieder -- ohne markRaw würde Vue für jedes der bis
+// zu ~180 Objekte einen reaktiven Proxy anlegen (Initial-Ruckler).
+const R = (a, b) => a + Math.random() * (b - a);
+// Standard-Faller (Confetti/Sterne/Blüten/Schnee/Münzen …): von oben herab.
+function fallPieces(n, make) {
+  const out = [];
+  for (let i = 0; i < n; i++) out.push({ id: i, left: R(0, 100), delay: R(0, 0.9), dur: R(1.8, 3.4), rot: R(0, 360), ...make(i) });
+  return out;
+}
+// Aufsteiger (Ballons/Blasen/Flammen): von unten nach oben.
+function risePieces(n, make) {
+  const out = [];
+  for (let i = 0; i < n; i++) out.push({ id: i, left: R(0, 100), delay: R(0, 1.4), dur: R(2.2, 4), rot: R(-20, 20), ...make(i) });
+  return out;
+}
+const PIECE_GENERATORS = {
+  confetti(perfect) {
+    // 2.0: Fall-Regen + Seiten-Kanonen (k1, diagonal geschossen) + Luftschlangen (k2).
+    const colors = REGION_COLORS.map(c => `hsl(${c.h} ${c.s}% ${c.l}%)`);
+    const out = fallPieces(perfect ? 170 : 90, (i) => ({
+      color: colors[i % colors.length], size: perfect ? R(8, 18) : R(6, 14), delay: R(0, 0.5), dur: R(1.6, 3),
+    }));
+    for (let i = 0; i < (perfect ? 44 : 26); i++) {
+      const left = i % 2 === 0;
+      out.push({ id: 600 + i, left: left ? -2 : 102, top: R(70, 100), delay: R(0, 0.5) + (i % 2) * 0.15, dur: R(1, 1.6), size: R(7, 13),
+        color: colors[i % colors.length], dx: (left ? 1 : -1) * R(120, 420), dy: -R(220, 560), kind: 1 });
+    }
+    for (let i = 0; i < (perfect ? 16 : 9); i++) out.push({ id: 800 + i, left: R(0, 100), delay: R(0.2, 1.4), dur: R(2.2, 3.6), size: R(30, 60), hue: Math.floor(R(0, 360)), kind: 2 });
+    return out;
+  },
+  balloons(perfect) {
+    // 2.0: Ballons steigen UND platzen (k1 = Knall-Ring mittig oben), danach
+    // regnen bunte Schnipsel (k2) aus den Platz-Höhen.
+    const out = risePieces(perfect ? 30 : 18, () => ({ shape: 'balloon', size: R(26, 48), hue: Math.floor(R(0, 360)) }));
+    for (let i = 0; i < (perfect ? 12 : 7); i++) {
+      const delay = R(1.2, 2.8), left = R(10, 90), top = R(8, 42);
+      out.push({ id: 500 + i, left, top, delay, dur: 0.55, size: R(52, 84), hue: Math.floor(R(0, 360)), kind: 1 });
+      for (let k = 0; k < 6; k++) out.push({ id: 600 + i * 6 + k, left: left + R(-4, 4), top, delay: delay + 0.1, dur: R(1, 1.8), size: R(5, 9), hue: Math.floor(R(0, 360)), kind: 2 });
+    }
+    return out;
+  },
+  stars(perfect) {
+    // 2.0: Sternenregen + Starburst-Strahlen aus der Mitte (k1) + Kometen mit
+    // Glitzerschweif (k2), die diagonal übers Bild ziehen.
+    const chs = ['star', 'star', 'sparkle'];
+    const out = fallPieces(perfect ? 100 : 56, (i) => ({ shape: chs[i % 3], size: R(12, 30) }));
+    for (let i = 0; i < 12; i++) out.push({ id: 500 + i, left: 50, top: 42, delay: R(0, 0.2), dur: R(0.9, 1.3), size: R(4, 7), ang: i * 30 + R(-8, 8), rad: R(180, 380), kind: 1 });
+    for (let i = 0; i < (perfect ? 6 : 3); i++) out.push({ id: 600 + i, left: R(-10, 40), top: R(5, 35), delay: R(0.4, 2.6), dur: R(1, 1.5), size: R(14, 22), kind: 2 });
+    return out;
+  },
+  bubbles(perfect) {
+    // 2.0: Blasen steigen, ein Teil PLATZT oben in Tröpfchen (k1); große
+    // verschwommene Vordergrund-Blasen (k2) geben Tiefe.
+    const out = risePieces(perfect ? 66 : 40, () => ({ size: R(10, 44), dx: R(-30, 30) }));
+    for (let i = 0; i < (perfect ? 30 : 16); i++) { const ang = R(0, Math.PI * 2); out.push({ id: 500 + i, left: R(15, 85), top: R(6, 34), delay: R(1, 2.8), dur: 0.7, size: R(3, 6), dx: Math.cos(ang) * R(20, 60), dy: Math.sin(ang) * R(20, 60), kind: 1 }); }
+    for (let i = 0; i < 6; i++) out.push({ id: 600 + i, left: R(0, 100), delay: R(0, 1.6), dur: R(3, 4.5), size: R(70, 130), kind: 2 });
+    return out;
+  },
+  petals(perfect) {
+    // 2.0: Blütenregen + Windböen-Schleier (k1) + rosa Blüten-Wirbel um die
+    // Mitte (k2, Spiralarm wie Galaxie).
+    const chs = ['petal', 'petal'];
+    const out = fallPieces(perfect ? 66 : 40, (i) => ({ shape: chs[i % 2], size: R(14, 28), dx: R(30, 120), dur: R(3, 5) }));
+    for (let i = 0; i < 4; i++) out.push({ id: 500 + i, top: R(10, 80), delay: i * 0.8 + R(0, 0.3), dur: 1.6, size: R(60, 110), kind: 1 });
+    for (let i = 0; i < (perfect ? 26 : 14); i++) out.push({ id: 600 + i, left: 50, top: 45, ang: R(0, 360), rad: R(60, 220), delay: R(0.4, 2), dur: R(1.8, 2.8), size: R(10, 18), kind: 2, shape: 'petal' });
+    return out;
+  },
+  snow(perfect) {
+    // 2.0: Schneefall in zwei Tiefen (nah = groß/verschwommen) + Sturm-Böen
+    // (k1, horizontale Schleier) + anwachsende Schneedecke am Boden (k2).
+    const chs = ['snowflake', 'snowflake', 'snowflake'];
+    const out = fallPieces(perfect ? 100 : 56, (i) => ({ shape: chs[i % 3], size: i % 5 === 0 ? R(28, 44) : R(10, 26), dx: R(-40, 40), dur: R(2.6, 4.6) }));
+    for (let i = 0; i < 4; i++) out.push({ id: 500 + i, top: R(15, 75), delay: i * 0.9 + R(0, 0.3), dur: 1.4, size: R(70, 120), kind: 1 });
+    out.push({ id: 900, left: 0, delay: 0.4, dur: 3.6, size: 0, kind: 2 });
+    return out;
+  },
+  sparklers(perfect) {
+    // 2.0: Ecken-Fontänen + rotierendes Funkenrad in der Mitte (k1) +
+    // niederprasselnde Glutfunken (k2).
+    const n = perfect ? 130 : 80, out = [];
+    for (let i = 0; i < n; i++) {
+      const corner = i % 4;
+      out.push({ id: i, corner, delay: R(0, 1.6), dur: R(0.9, 1.8), size: R(6, 14),
+        dx: R(18, 60) * (corner % 2 === 0 ? 1 : -1), dy: R(12, 45) * (corner < 2 ? 1 : -1) });
+    }
+    for (let i = 0; i < 18; i++) out.push({ id: 500 + i, left: 50, top: 45, ang: i * 20, rad: R(40, 90), delay: R(0, 0.4), dur: R(1.6, 2.4), size: R(4, 7), kind: 1 });
+    for (let i = 0; i < (perfect ? 30 : 16); i++) out.push({ id: 600 + i, left: R(30, 70), delay: R(0.8, 2.6), dur: R(1, 1.8), size: R(3, 6), kind: 2 });
+    return out;
+  },
+  fireworks(perfect) {
+    // 2.0: Raketen steigen sichtbar auf (k1) und ERST DANN platzt am Zielpunkt
+    // der Burst; dazu Doppel-Ringe (k2) und Glitzer-Nachregen (k3) je Explosion.
+    const bursts = perfect ? 8 : 5, out = []; let id = 0;
+    for (let b = 0; b < bursts; b++) {
+      const cx = R(15, 85), cy = R(10, 42), rise = R(0.5, 0.7), delay = b * 0.45 + R(0, 0.2), hue = Math.floor(R(0, 360));
+      out.push({ id: id++, left: cx + R(-3, 3), top: 104, delay, dur: rise, size: R(4, 6), hue, dy: -((104 - cy) / 100) * window.innerHeight, kind: 1 });
+      for (let k = 0; k < 16; k++) {
+        const ang = (k / 16) * Math.PI * 2, r = R(70, 150);
+        out.push({ id: id++, left: cx, top: cy, delay: delay + rise, dur: R(1, 1.6), size: R(5, 9), hue,
+          dx: Math.cos(ang) * r, dy: Math.sin(ang) * r });
+      }
+      out.push({ id: id++, left: cx, top: cy, delay: delay + rise, dur: 0.9, size: R(120, 190), hue, kind: 2 });
+      for (let k = 0; k < 8; k++) out.push({ id: id++, left: cx + R(-8, 8), top: cy + R(-4, 4), delay: delay + rise + 0.5, dur: R(1.2, 2), size: R(3, 5), hue, kind: 3 });
+    }
+    return out;
+  },
+  coins(perfect) {
+    // 2.0: Münzregen + Münz-VULKAN aus der Bodenmitte (k1, Parabelflug) +
+    // goldener Glanz-Sweep (k2) übers Bild.
+    const chs = ['coin', 'coin'];
+    const out = fallPieces(perfect ? 76 : 46, (i) => ({ shape: chs[i % 5 === 0 ? 1 : 0], size: R(16, 32), dur: R(1.4, 2.6) }));
+    for (let i = 0; i < (perfect ? 30 : 18); i++) out.push({ id: 500 + i, shape: 'coin', left: R(42, 58), top: 100, delay: R(0.2, 1.6), dur: R(1.2, 1.7), size: R(16, 30), dx: R(-220, 220), dy: -R(320, 620), kind: 1 });
+    out.push({ id: 900, top: 0, left: 0, delay: 0.8, dur: 1.4, size: 0, kind: 2 });
+    return out;
+  },
+  rainbow(perfect) {
+    // 2.0: DOPPEL-Regenbogen (zweite, versetzte Bahnen-Garnitur) + Glitzer +
+    // Regenbogen-Komet (k1) mit Schweif + bunter Tropfenregen (k2).
+    const out = [];
+    for (let i = 0; i < 7; i++) out.push({ id: i, band: i, delay: i * 0.12, dur: 1.8, hue: [0, 30, 55, 120, 200, 240, 280][i] });
+    for (let i = 0; i < 7; i++) out.push({ id: 50 + i, band: i, delay: 1.3 + i * 0.12, dur: 1.8, hue: [0, 30, 55, 120, 200, 240, 280][i] });
+    for (let i = 0; i < (perfect ? 50 : 28); i++) out.push({ id: 100 + i, shape: 'sparkle', left: R(0, 100), delay: R(0.6, 2.4), dur: R(1, 2), size: R(10, 20) });
+    for (let i = 0; i < 3; i++) out.push({ id: 200 + i, left: -8, top: R(8, 40), delay: 0.5 + i * 1.1, dur: 1.2, size: R(16, 24), kind: 1 });
+    for (let i = 0; i < (perfect ? 36 : 20); i++) out.push({ id: 300 + i, left: R(0, 100), delay: R(1, 2.4), dur: R(1, 1.6), size: R(5, 9), hue: Math.floor(R(0, 360)), kind: 2 });
+    return out;
+  },
+  wave(perfect) {
+    // 2.0: 5 Wellenkämme in zwei Tiefen + Gischt-Schaum (k1) + springende
+    // Delfine (k2, Parabelbogen) + Tropfen.
+    const out = [];
+    for (let i = 0; i < 5; i++) out.push({ id: i, band: i % 3, delay: i * 0.35, dur: 2.4 });
+    for (let i = 0; i < (perfect ? 50 : 30); i++) out.push({ id: 100 + i, shape: 'droplet', left: R(0, 100), delay: R(0.4, 2.2), dur: R(0.9, 1.6), size: R(10, 20), dy: R(-160, -60) });
+    for (let i = 0; i < (perfect ? 26 : 14); i++) out.push({ id: 200 + i, left: R(0, 100), top: R(52, 78), delay: R(0.5, 2.4), dur: R(0.7, 1.2), size: R(5, 10), kind: 1 });
+    for (let i = 0; i < 3; i++) out.push({ id: 300 + i, shape: 'dolphin', left: R(10, 70), top: 70, delay: 0.6 + i * 0.9, dur: 1.3, size: R(28, 40), kind: 2 });
+    return out;
+  },
+  matrix(perfect) {
+    // 2.0: Zahlenkolonnen in zwei Tempi + Glitch-Balken (k1, horizontale
+    // Blitze) + heller Scan-Streifen (k2), der einmal durchläuft.
+    const cols = perfect ? 30 : 18, out = [];
+    for (let i = 0; i < cols; i++) {
+      let txt = ''; const len = Math.floor(R(6, 14));
+      for (let k = 0; k < len; k++) txt += Math.floor(R(1, 10)) + '\n';
+      out.push({ id: i, left: (i + 0.5) * (100 / cols), delay: R(0, 1.2), dur: i % 4 === 0 ? R(1.2, 1.6) : R(1.8, 3.2), size: i % 4 === 0 ? R(18, 24) : R(12, 18), txt });
+    }
+    for (let i = 0; i < (perfect ? 10 : 6); i++) out.push({ id: 500 + i, left: 0, top: R(5, 95), delay: R(0.3, 3), dur: 0.28, size: R(2, 5), kind: 1 });
+    out.push({ id: 900, left: 0, top: 0, delay: 1, dur: 1.6, size: 0, kind: 2 });
+    return out;
+  },
+  disco(perfect) {
+    // 2.0: Lichtflecken + ROTIERENDE Lichtkegel von der Kugel (k1) +
+    // Strobo-Blitze (k2) + tanzende Noten (k3).
+    const n = perfect ? 28 : 16, out = [];
+    for (let i = 0; i < n; i++) out.push({ id: i, left: R(0, 100), top: R(10, 90), delay: R(0, 1.5), dur: R(1.2, 2.4), size: R(40, 110), hue: Math.floor(R(0, 360)), dx: R(-120, 120), dy: R(-80, 80) });
+    for (let i = 0; i < 4; i++) out.push({ id: 500 + i, left: 50, top: 27, delay: i * 0.1, dur: R(2.6, 3.4), size: 0, ang: -39 + i * 26, hue: Math.floor(R(0, 360)), kind: 1 });
+    for (let i = 0; i < 5; i++) out.push({ id: 600 + i, left: 0, top: 0, delay: 0.6 + i * 0.7, dur: 0.18, size: 0, kind: 2 });
+    for (let i = 0; i < (perfect ? 14 : 8); i++) out.push({ id: 700 + i, shape: 'note', left: R(5, 95), delay: R(0.3, 2.4), dur: R(1.4, 2.2), size: R(16, 28), kind: 3 });
+    out.push({ id: 'cr', creature: discoMarkup(), size: 96, delay: 0, dur: 3 }); // SVG-Discokugel (Emoji-Ersatz)
+    return out;
+  },
+  arcade(perfect) {
+    // 2.0: Pixel-Explosion + marschierende Invader-Reihe (k1, eckige steps-
+    // Bewegung) + hochzählende Score-Popups (k2) — Retro pur.
+    const n = perfect ? 100 : 56, colors = ['#ff004d', '#ffa300', '#ffec27', '#00e436', '#29adff', '#ff77a8'];
+    const out = fallPieces(n, (i) => ({ color: colors[i % colors.length], size: Math.floor(R(1, 4)) * 6, dur: R(1.2, 2.2), rot: 0 }));
+    for (let i = 0; i < 6; i++) out.push({ id: 500 + i, shape: 'invader', left: -10 - i * 9, top: 12 + (i % 2) * 7, delay: 0.3 + i * 0.05, dur: 2.8, size: R(22, 30), kind: 1 });
+    for (let i = 0; i < (perfect ? 8 : 5); i++) out.push({ id: 600 + i, txt: ['+100', '+250', '+500'][i % 3], left: R(12, 82), top: R(30, 75), delay: R(0.4, 2.4), dur: 1.1, size: R(16, 24), kind: 2 });
+    return out;
+  },
+  galaxy(perfect) {
+    // 2.0: Spiralsterne + rotierender Nebelarm (::before, CSS) + Komet mit
+    // Funkenschweif (k1) + Mini-Supernova-Puls im Zentrum (k2).
+    const n = perfect ? 90 : 54, out = [];
+    for (let i = 0; i < n; i++) out.push({ id: i, ang: R(0, 360), rad: R(30, 240), delay: R(0, 0.8), dur: R(2.4, 4), size: R(3, 7), hue: R(190, 300) });
+    for (let i = 0; i < (perfect ? 6 : 3); i++) out.push({ id: 500 + i, shape: 'sparkle', left: R(0, 70), top: R(5, 40), delay: R(0.4, 2.4), dur: 1.1, size: R(16, 26) });
+    for (let i = 0; i < 14; i++) { const p = i / 14; out.push({ id: 600 + i, left: p * 90, top: 12 + p * 42, delay: 1 + p * 0.9, dur: 0.9, size: R(3, 6), hue: R(190, 300), kind: 1 }); }
+    for (let i = 0; i < 3; i++) out.push({ id: 700 + i, left: 50, top: 45, delay: 0.8 + i * 1.1, dur: 0.9, size: R(60, 100), hue: 260, kind: 2 });
+    return out;
+  },
+  blackhole(perfect) {
+    // Phase im CSS: erst spiralig einwärts (Sog), dann Supernova-Burst (::after).
+    const n = perfect ? 90 : 54, out = [];
+    for (let i = 0; i < n; i++) out.push({ id: i, ang: R(0, 360), rad: R(120, 420), delay: R(0, 0.7), dur: R(1.2, 2), size: R(3, 8), hue: R(20, 60) });
+    return out;
+  },
+  chain(perfect) {
+    // 2.0: Ringwelle + große Ganzbild-Schockwellen (k1) + rotierende Trümmer-
+    // Brocken (k2), die aus jedem Explosionszentrum davonfliegen.
+    const cols = 6, rows = 4, out = []; let id = 0;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const left = (c + 0.5) * (100 / cols), top = (r + 0.5) * (100 / rows), delay = (c + r) * 0.16 + R(0, 0.06);
+      out.push({ id: id++, left, top, delay, dur: 0.9, size: perfect ? 130 : 100, hue: R(10, 50) });
+      if ((c + r) % 3 === 0) for (let k = 0; k < 4; k++) { const ang = R(0, Math.PI * 2); out.push({ id: id++, left, top, delay: delay + 0.1, dur: R(0.9, 1.4), size: R(6, 12), hue: R(10, 50), dx: Math.cos(ang) * R(80, 200), dy: Math.sin(ang) * R(80, 200), rot: R(180, 720), kind: 2 }); }
+    }
+    for (let i = 0; i < 3; i++) out.push({ id: 800 + i, left: 50, top: 50, delay: 0.5 + i * 0.55, dur: 1, size: R(200, 300), hue: 30, kind: 1 });
+    for (let i = 0; i < (perfect ? 40 : 24); i++) out.push({ id: 900 + i, shape: 'burst', left: R(0, 100), top: R(0, 100), delay: R(0.2, 1.8), dur: 0.8, size: R(16, 30) });
+    return out;
+  },
+  dragon(perfect) {
+    // 2.0: Funken-Spur + FEUERATEM: der Drache stößt entlang der Bahn Flammen-
+    // Kegel aus (k1, nach vorn geschleuderte Glut) + Rauchfahnen (k2).
+    const n = perfect ? 76 : 46, out = [];
+    for (let i = 0; i < n; i++) { const p = i / n; out.push({ id: i, left: p * 110 - 5, top: 26 + Math.sin(p * Math.PI * 2) * 14, delay: p * 2 + R(0, 0.12), dur: R(0.8, 1.6), size: R(5, 11), hue: R(10, 55) }); }
+    for (let b = 0; b < 3; b++) { const p = 0.25 + b * 0.25, left = p * 110 - 5, top = 26 + Math.sin(p * Math.PI * 2) * 14;
+      for (let k = 0; k < 10; k++) out.push({ id: 500 + b * 10 + k, left: left + 4, top: top + 2, delay: p * 2 + R(0, 0.15), dur: R(0.5, 0.9), size: R(6, 14), hue: R(10, 45), dx: R(60, 200), dy: R(20, 90), kind: 1 }); }
+    for (let i = 0; i < 8; i++) { const p = i / 8; out.push({ id: 700 + i, shape: 'puff', left: p * 100, top: 24 + Math.sin(p * Math.PI * 2) * 14, delay: p * 2 + 0.3, dur: R(1.2, 2), size: R(14, 26), kind: 2 }); }
+    // Gezeichneter Drache fliegt über die Bahn (SVG, Flügelschlag via CSS).
+    out.push({ id: 'cr', creature: dragonMarkup(), size: 150, delay: 0, dur: 4.4 });
+    return out;
+  },
+  rocket(perfect) {
+    // 2.0: Start + STUFENTRENNUNG (k3, abgesprengter Ring auf halber Höhe) +
+    // Satellit im Orbit (k4) + Warp-Sterne, die schneller werden.
+    const out = [];
+    for (let i = 0; i < (perfect ? 28 : 18); i++) out.push({ id: i, shape: 'puff', left: R(35, 65), delay: R(0, 1.4), dur: R(1.2, 2), size: R(18, 38), kind: 1 });
+    for (let i = 0; i < (perfect ? 56 : 34); i++) out.push({ id: 100 + i, shape: 'sparkle', left: R(0, 100), delay: R(0, 2), dur: R(0.5, 1.4), size: R(8, 16), kind: 2 });
+    out.push({ id: 800, left: 50, top: 45, delay: 1.15, dur: 0.9, size: 90, hue: 35, kind: 3 });
+    out.push({ id: 801, shape: 'satellite', left: 50, top: 24, delay: 1.6, dur: 2.4, size: 26, ang: 0, rad: 90, kind: 4 });
+    out.push({ id: 'cr', creature: rocketMarkup(), size: 70, delay: 0, dur: 2.6 }); // SVG-Rakete (Emoji-Ersatz)
+    return out;
+  },
+  shatter(perfect) {
+    // 2.0: Kristall WÄCHST erst in der Mitte (k2), Glanz läuft durch, DANN
+    // Blitz + radialer Scherbenflug + Diamanten + Funkel-Glints (k3).
+    const n = perfect ? 66 : 40, out = [];
+    out.push({ id: 990, shape: 'gem', left: 50, top: 42, delay: 0, dur: 0.85, size: 84, kind: 2 });
+    for (let i = 0; i < n; i++) { const ang = R(0, Math.PI * 2), r = R(140, 420); out.push({ id: i, dx: Math.cos(ang) * r, dy: Math.sin(ang) * r, delay: 0.85 + R(0, 0.2), dur: R(1, 1.8), size: R(10, 26), rot: R(0, 720) }); }
+    for (let i = 0; i < 8; i++) out.push({ id: 500 + i, shape: 'gem', left: R(10, 90), delay: R(1, 1.8), dur: R(1.4, 2.2), size: R(16, 28), kind: 1 });
+    for (let i = 0; i < (perfect ? 22 : 12); i++) out.push({ id: 600 + i, shape: 'sparkle', left: R(5, 95), top: R(10, 90), delay: R(1, 2.6), dur: 0.8, size: R(8, 16), kind: 3 });
+    return out;
+  },
+  phoenix(perfect) {
+    // 2.0: Wiedergeburts-Blitz (::after, CSS) + Flammenmeer + Glut-Spirale um
+    // die Aufstiegsbahn (k1) + herabsegelnde Glutfedern (k2).
+    const out = risePieces(perfect ? 86 : 50, () => ({ shape: 'flame', size: R(16, 40), dur: R(1.4, 2.6), delay: R(0, 1.8) }));
+    for (let i = 0; i < (perfect ? 30 : 18); i++) out.push({ id: 500 + i, left: 50, top: 100, ang: R(0, 360), rad: R(20, 90), delay: R(0.2, 1.6), dur: R(1.6, 2.4), size: R(4, 8), hue: R(12, 50), kind: 1 });
+    for (let i = 0; i < 10; i++) out.push({ id: 600 + i, shape: 'feather', left: R(20, 80), delay: R(1.4, 2.6), dur: R(1.6, 2.4), size: R(14, 24), kind: 2 });
+    // Gezeichneter Phönix steigt aus den Flammen auf (SVG, Schwingen via CSS).
+    out.push({ id: 'cr', creature: phoenixMarkup(), size: 140, delay: 0, dur: 3.6 });
+    return out;
+  },
+  jackpot(perfect) {
+    // 2.0: Lichterkranz + Münzschauer + 777 + Münz-ERUPTION aus der Bodenmitte
+    // (k2, Parabel) + blinkende Gewinn-Sterne (k3).
+    const out = fallPieces(perfect ? 76 : 46, (i) => ({ shape: 'coin', size: R(16, 32), dur: R(1.3, 2.4) }));
+    for (let i = 0; i < 3; i++) out.push({ id: 800 + i, shape: 'seven', left: 32 + i * 16, top: 30, delay: 0.3 + i * 0.35, dur: 1.6, size: 44, kind: 1 });
+    for (let i = 0; i < (perfect ? 26 : 16); i++) out.push({ id: 850 + i, shape: 'coin', left: R(44, 56), top: 100, delay: 1.4 + R(0, 0.5), dur: R(1.1, 1.6), size: R(16, 28), dx: R(-260, 260), dy: -R(300, 600), kind: 2 });
+    for (let i = 0; i < 10; i++) out.push({ id: 950 + i, shape: 'sparkle', left: R(5, 95), top: R(5, 60), delay: R(0.4, 2.6), dur: 0.7, size: R(12, 22), kind: 3 });
+    return out;
+  },
+  unicorn(perfect) {
+    // 2.0: Galopp + dichtere Regenbogenspur + Herz-Pops (k2) + Funkel-Regen-
+    // Finale (k3), wenn das Einhorn durch ist.
+    const n = perfect ? 70 : 44, out = [];
+    for (let i = 0; i < n; i++) { const p = i / n; out.push({ id: i, left: p * 110 - 5, top: 55 - Math.sin(p * Math.PI) * 18, delay: p * 2.2, dur: 1.6, size: R(10, 20), hue: Math.floor(p * 360) }); }
+    for (let i = 0; i < 14; i++) out.push({ id: 500 + i, shape: 'sparkle', left: R(0, 100), top: R(30, 75), delay: R(0.5, 2.4), dur: 1, size: R(10, 18), kind: 1 });
+    for (let i = 0; i < (perfect ? 12 : 7); i++) out.push({ id: 600 + i, shape: 'heart', left: R(10, 90), top: R(25, 70), delay: R(0.8, 2.6), dur: 0.9, size: R(14, 26), kind: 2 });
+    for (let i = 0; i < (perfect ? 30 : 16); i++) out.push({ id: 700 + i, shape: 'sparkle', left: R(0, 100), delay: R(2.4, 3.4), dur: R(1, 1.6), size: R(8, 16), kind: 3 });
+    // Gezeichnetes Einhorn galoppiert über die Bahn (SVG, Beine/Mähne via CSS).
+    out.push({ id: 'cr', creature: unicornMarkup(), size: 130, delay: 0, dur: 4.2 });
+    return out;
+  },
+  // ── Tier 4 (Legendär): mehrphasige Groß-Spektakel ──────────────────────────
+  meteor(perfect) {
+    // Feuerbälle mit Glühschweif stürzen diagonal herab; je Meteor ein
+    // Einschlags-Ring (k1) unten, danach glimmender Glut-Regen (k2).
+    const out = []; let id = 0;
+    for (let i = 0; i < (perfect ? 10 : 6); i++) {
+      const delay = i * 0.34 + R(0, 0.15);
+      out.push({ id: id++, left: R(25, 115), top: -8, delay, dur: R(0.7, 1), size: R(10, 18), hue: R(15, 45) });
+      out.push({ id: id++, left: R(5, 90), top: R(55, 92), delay: delay + 0.5, dur: 0.9, size: R(90, 160), hue: R(15, 45), kind: 1 });
+    }
+    for (let i = 0; i < (perfect ? 50 : 30); i++) out.push({ id: 500 + i, left: R(0, 100), delay: R(1.2, 3.2), dur: R(1.4, 2.4), size: R(3, 7), hue: R(15, 50), kind: 2 });
+    return out;
+  },
+  gewitter(perfect) {
+    // Zickzack-Blitze (clip-path, via scaleY gestreckt) schlagen versetzt ein;
+    // Ganzbild-Wetterleuchten + Wolkenbank sind ::before/::after, Regen = k2 (endlos).
+    const out = []; let id = 0;
+    for (let i = 0; i < (perfect ? 9 : 6); i++) out.push({ id: id++, left: R(8, 92), top: 0, delay: i * 0.42 + R(0, 0.2), dur: 0.5, size: R(40, 70), hue: R(200, 260) });
+    for (let i = 0; i < (perfect ? 80 : 50); i++) out.push({ id: 500 + i, left: R(0, 100), top: -12, delay: R(0, 1.2), dur: R(0.5, 0.9), size: R(60, 110), kind: 2 });
+    return out;
+  },
+  portal(perfect) {
+    // Wirbel-Portal (rotierendes Conic-Ring-::before) reißt in der Mitte auf;
+    // Sterne schießen daraus aufs Auge zu (Scale 0.15 → 3), am Ende kollabiert es.
+    const n = perfect ? 70 : 42, out = [];
+    for (let i = 0; i < n; i++) { const ang = R(0, Math.PI * 2), r = R(120, 480); out.push({ id: i, dx: Math.cos(ang) * r, dy: Math.sin(ang) * r, delay: R(0.5, 2.6), dur: R(0.9, 1.6), size: R(4, 9), hue: R(160, 320) }); }
+    for (let i = 0; i < 10; i++) out.push({ id: 500 + i, shape: 'sparkle', left: R(10, 90), top: R(10, 90), delay: R(0.8, 3), dur: 1, size: R(10, 20), kind: 1 });
+    return out;
+  },
+  feuertornado(perfect) {
+    // Flammenwirbel: Partikel kreisen um die Mittelachse (rotate+translateX) und
+    // steigen dabei vom Boden auf; 🔥-Funken (k1) sprühen aus dem Trichter.
+    const n = perfect ? 90 : 56, out = [];
+    for (let i = 0; i < n; i++) out.push({ id: i, ang: R(0, 360), rad: R(14, 110), delay: R(0, 1.6), dur: R(1.6, 2.6), size: R(4, 10), hue: R(12, 55) });
+    for (let i = 0; i < (perfect ? 24 : 14); i++) out.push({ id: 500 + i, shape: 'flame', left: R(20, 80), top: R(30, 95), delay: R(0.4, 2.4), dur: R(0.8, 1.4), size: R(14, 26), kind: 1 });
+    return out;
+  },
+  synthgrid(perfect) {
+    // Retro-Sonnenaufgang: scrollendes Perspektiv-Grid (::before) + aufgehende
+    // Neon-Sonne (::after); quer schießende Neon-Streifen + funkelnde Sterne (k1).
+    const out = [];
+    for (let i = 0; i < (perfect ? 22 : 14); i++) out.push({ id: i, left: -20, top: R(6, 58), delay: R(0, 2.2), dur: R(0.9, 1.6), size: R(50, 130), hue: [300, 190, 320, 210][i % 4] });
+    for (let i = 0; i < (perfect ? 40 : 24); i++) out.push({ id: 500 + i, shape: 'sparkle', left: R(0, 100), top: R(0, 55), delay: R(0, 2.6), dur: 1.1, size: R(8, 16), kind: 1 });
+    return out;
+  },
+};
+// Overlay-Lebensdauer je Effekt [normal, perfekt] — möglichst dicht an der
+// tatsächlich sichtbaren Animation, damit nach ihrem Ende nichts „nachhängt"
+// (Nutzerreport: Schwarzes Loch ließ 2-3 Pixel nachglühen und fühlte sich
+// blockierend an, obwohl das Overlay pointer-events: none hat).
+const WINFX_DURATION = {
+  confetti: [3500, 4800],
+  blackhole: [3500, 3600],   // Sog ~2,7s + Supernova endet bei ~3,3s
+  chain: [3200, 3400],       // Diagonalwelle (max delay ~1,7s) + Ringe 0,9s
+ shatter: [2600, 2800], // Scherbenflug ≤ 2,05s + -Fall
+  fireworks: [3400, 4600],   // letzte Burst-Welle je nach Anzahl
+  meteor: [4600, 5600], gewitter: [4400, 5200], portal: [4200, 5000],
+  feuertornado: [4200, 5000], synthgrid: [4600, 5600],
+};
+function launchWinFx(perfect, forceId) {
+  const id = forceId || resolveActiveEffect(state.settings.winEffect, state.inventory);
+  const gen = PIECE_GENERATORS[id] || PIECE_GENERATORS[CONFETTI_ID];
+  state.perfectWin = !!perfect;
+  const [durNormal, durPerfect] = WINFX_DURATION[id] || [4200, 5600];
+  state.winFx = { id, pieces: gen(!!perfect).map(p => markRaw(p)), seq: (state.winFx?.seq || 0) + 1 };
+  const mySeq = state.winFx.seq;
+  // Sound zur Animation: an den Effekt gekoppelt und mit dessen Stufe grandioser
+  // (perfekte Siege eine Stufe höher). Läuft damit auch in der Shop-Vorschau.
+  if (state.settings.sfxWin) Music.sfxWinFx(Math.min(4, (effectById(id)?.tier || 0) + (perfect ? 1 : 0)));
+  setTimeout(() => { if (state.winFx && state.winFx.seq === mySeq) state.winFx = null; }, perfect ? durPerfect : durNormal);
+}
+// Stil-Bindung eines Partikels (nur einmal beim Erzeugen ausgewertet; die
+// eigentliche Bewegung machen CSS-Keyframes über transform/opacity).
+function winFxStyle(p) {
+  const s = { animationDelay: p.delay + 's', animationDuration: p.dur + 's' };
+  if (p.left != null) s.left = p.left + '%';
+  if (p.top != null) s.top = p.top + '%';
+  if (p.txt) s.fontSize = p.size + 'px';
+  else { s.width = p.size + 'px'; s.height = p.size + 'px'; }
+  if (p.color) s.background = p.color;
+  if (p.hue != null) s['--hue'] = p.hue;
+  if (p.dx != null) s['--dx'] = p.dx + 'px';
+  if (p.dy != null) s['--dy'] = p.dy + 'px';
+  if (p.ang != null) s['--ang'] = p.ang + 'deg';
+  if (p.rad != null) s['--rad'] = p.rad + 'px';
+  if (p.rot) s['--rot'] = p.rot + 'deg';
+  return s;
+}
+
+// ─── EINSTELLUNGEN ────────────────────────────────────────────────────────────
+function toggleSetting(key) {
+  state.settings[key] = !state.settings[key];
+  if (key === 'colorBlindMode') applyTheme();
+  if (key.startsWith('music')) updateMusic();
+  // Aktions-Sound beim Einschalten kurz vorspielen (zum Anhören/Prüfen).
+  if (state.settings[key]) {
+    if (key === 'sfxComplete') Music.sfxComplete(1);
+    else if (key === 'sfxKeep') Music.sfxKeep();
+    else if (key === 'sfxRemove') Music.sfxRemove();
+    else if (key === 'sfxError') Music.sfxError();
+    else if (key === 'sfxHint') Music.sfxHint();
+    else if (key === 'sfxToolSwitch') Music.sfxToolSwitch();
+    else if (key === 'sfxWin') Music.sfxWin();
+    else if (key === 'sfxLose') Music.sfxLose();
+    else if (key === 'sfxUndo') Music.sfxUndo();
+  }
+}
+function setSetting(key, val) {
+  state.settings[key] = val;
+  if (key === 'language') applyLocale();
+  if (key === 'themeMode' || key === 'appTheme') applyTheme();
+  if (key === 'sfxPack') Music.setSfxPack(shopEquippedId('sfx'));
+  if (key === 'musicPack') { Music.setMusicPack(shopEquippedId('music')); updateMusic(); }
+  if (key === 'musicVolume') { Music.setVolume(val); updateMusic(); }
+}
+// Eigene Markierungsfarbe oder Brett-Palette geändert → Cage-Farben neu auf
+// Sichtbarkeit der Markierung prüfen. Als watch statt setSetting-Hook, weil der
+// Custom-Farbwähler per v-model DIREKT in state.settings schreibt (kein setSetting).
+watch(() => [state.settings.coopMyColor, state.settings.boardPalette], () => applyMarkSafeRegionColors());
+// Settings-Persist ENTPRELLT (Trailing 250 ms): der Werkzeug-Umschalter schreibt
+// bei JEDEM Wechsel state.settings.confirmTool — das synchrone JSON.stringify +
+// localStorage.setItem lag damit mitten im Tap-Pfad (Teil der gemeldeten
+// „Button reagiert nicht"-Latenz). Jetzt sammelt ein kurzer Timer die Writes;
+// flushSettingsSave() sichert bei App-Verstecken/pagehide sofort (nichts geht
+// verloren, wenn iOS die PWA direkt danach einfriert/killt).
+let settingsSaveTimer = null;
+function flushSettingsSave() {
+  if (!settingsSaveTimer) return;
+  clearTimeout(settingsSaveTimer); settingsSaveTimer = null;
+  saveSettings(state.settings);
+}
+watch(() => state.settings, () => {
+  if (settingsSaveTimer) clearTimeout(settingsSaveTimer);
+  settingsSaveTimer = setTimeout(() => {
+    settingsSaveTimer = null;
+    saveSettings(state.settings);
+    if (state.account.status === 'in') Account.scheduleSyncUp();
+  }, 250);
+}, { deep: true });
+window.addEventListener('pagehide', flushSettingsSave);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushSettingsSave(); });
+
+// ─── DATEN: EXPORT / IMPORT / BACKUPS ─────────────────────────────────────────
+function doExport() { exportToFile('manual').then(() => showToast(t('toast.backupExported'), 'success')).catch(() => {}); }
+// ─── Sicherheitskopien (automatische Backups) einsehen & einspielen ───────────
+// Die App legt an zwei Stellen automatisch Kopien an, statt still zu löschen:
+// cns_conflict_backup (beim Geräte-Merge/Konfliktdialog verdrängter Daten-Stand)
+// und cns_active_game_backup (verdrängter Solo-Spielstand). Beide sind GERÄTE-
+// LOKAL (nie in der Cloud) — deshalb gehört die Wiederherstellung hierher in
+// die Einstellungen des Nutzers und NICHT ins Admin-Panel (der Admin sieht
+// fremde localStorage-Inhalte prinzipbedingt nicht).
+function safetyBackups() {
+  const out = [];
+  const c = loadConflictBackup();
+  if (c && c.data && c.data.data) {
+    const sum = syncSummary(c.data.data);
+    out.push({
+      kind: 'data', ts: c.ts || 0,
+      label: t(c.data.side === 'cloud' ? 'backups.conflictCloud' : 'backups.conflictLocal'),
+      info: `${fmtRelative(c.ts)} · ${sum.coins} ${t('wallet.coins')} · ${sum.wins} ${t('backups.wins')}`,
+      snap: c.data.data,
+    });
+  }
+  const g = loadActiveGameBackup();
+  if (g && g.puzzle) {
+    out.push({
+      kind: 'game', ts: g.ts || 0,
+      label: t('backups.game'),
+      info: `${fmtRelative(g.ts)} · ${t('difficulty.' + g.difficulty)} · ${fmtTime(g.elapsed || 0)}`,
+      game: g,
+    });
+  }
+  return out;
+}
+// Einspielen TAUSCHT immer: der aktuelle Stand wird selbst zur Sicherheitskopie
+// (Prinzip „nie still gelöscht" auch in Rückrichtung) — man kann also gefahrlos
+// hin- und herwechseln. Daten-Kopie: nach dem Import sauber neu laden; der
+// Startup-Reconcile lädt den eingespielten Stand dann in die Cloud hoch (bzw.
+// merged ihn verlustfrei, falls die Cloud inzwischen weiter ist).
+function restoreSafetyBackup(b) {
+  if (b.kind === 'data') {
+    ask(t('backups.confirmTitle'), t('backups.confirmDataMsg'), () => {
+      const current = collectExportData('backup-swap');
+      importFromFile(JSON.stringify(b.snap));
+      saveConflictBackup({ side: 'local', data: current });
+      log('storage', 'Sicherheitskopie (Daten) eingespielt', { backupTs: b.ts });
+      showToast(t('backups.restored'), 'success');
+      safeReload('backup-restore');
+    });
+  } else {
+    ask(t('backups.confirmTitle'), t('backups.confirmGameMsg'), () => {
+      const cur = loadActiveGame();
+      saveActiveGame(b.game);
+      saveActiveGameBackup(cur && cur.puzzle ? cur : null);
+      refreshResume();
+      log('storage', 'Sicherheitskopie (Spielstand) eingespielt', { backupTs: b.ts });
+      showToast(t('backups.restored'), 'success');
+    });
+  }
+}
+function doExportLog() { exportLogToFile().catch(() => {}); }
+function doImport(ev) {
+  const file = ev.target.files && ev.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      importFromFile(reader.result);
+      state.settings = loadSettings(); state.stats = loadStats(); applyTheme(); applySfxPack(); applyMusicPack(); applyLocale(); refreshResume();
+      showToast(t('toast.importSuccess'), 'success');
+    } catch { showToast(t('toast.importFailed'), 'error'); }
+  };
+  reader.readAsText(file);
+  ev.target.value = '';
+}
+function resetStats() {
+  ask(t('stats.resetConfirmTitle'), t('stats.resetConfirmMsg'), () => {
+    localStorage.removeItem('cns_stats'); state.stats = loadStats(); showToast(t('stats.resetDone'), 'success');
+  });
+}
+function doDeleteAllData() {
+  ask(t('settings.deleteAllConfirmTitle'), t('settings.deleteAllConfirmMsg'), () => {
+    deleteAllData();
+    state.settings = loadSettings(); state.stats = loadStats(); state.streak = loadStreak(); state.puzzleHistory = loadHistory(); applyTheme(); applySfxPack(); applyMusicPack(); applyLocale(); refreshResume();
+    showToast(t('settings.deleteAllDone'), 'success');
+  });
+}
+
+// ─── VERLAUF GELÖSTER RÄTSEL ───────────────────────────────────────────────────
+// v1 = Snapshot abgeschlossener Rätsel (Endboard + Seed), kein zugweises
+// Playback — es gibt aktuell keinen vollständigen Zug-Log (nur Single-Level-
+// Undo, siehe state.history), siehe ROADMAP/Plan.
+function openHistoryDetail(entry) {
+  const puzzle = generatePuzzle({ difficulty: entry.difficulty, seed: entry.seed, dim: entry.dim });
+  state.historyDetail = { entry, puzzle, cellMeta: buildCellMeta(puzzle) };
+}
+function closeHistoryDetail() { state.historyDetail = null; }
+function historyGridStyle(puzzle) {
+  const avail = Math.min(window.innerWidth - 80, 420);
+  const cellPx = Math.max(20, Math.min(40, Math.floor(avail / (puzzle.cols + 1))));
+  return {
+    gridTemplateColumns: `var(--hdr) repeat(${puzzle.cols}, var(--cell))`,
+    gridTemplateRows: `var(--hdr) repeat(${puzzle.rows}, var(--cell))`,
+    '--cell': cellPx + 'px', '--hdr': cellPx + 'px',
+    '--fs': Math.max(9, Math.round(cellPx * 0.4)) + 'px',
+  };
+}
+function historyCellClasses(r, c) {
+  const m = state.historyDetail.cellMeta[r][c];
+  const mk = state.historyDetail.entry.marks?.[r]?.[c] || 'none';
+  return {
+    kept: mk === 'kept', removed: mk === 'removed', region: m.region >= 0,
+    strike: mk === 'removed' && state.settings.eraseStyle === 'strike',
+  };
+}
+function historyCellStyle(r, c) {
+  const m = state.historyDetail.cellMeta[r][c];
+  const st = { fontSize: 'var(--fs)' };
+  if (m.color) {
+    // Ausgerüstete Brett-Palette (Shop): reine HSL-Transformation der Cage-Farbe —
+    // Rotation/Skalierung erhält die optimierten Farb-Abstände (shopitems.js).
+    const col = applyPaletteFx(m.color, activePaletteFx());
+    st['--rc-h'] = col.h; st['--rc-s'] = col.s + '%'; st['--rc-l'] = col.l + '%'; st['--rc-ink'] = regionChipInk(col);
+  }
+  return st;
+}
+// Erzeugt per Seed exakt dasselbe Rätsel neu und startet eine frische,
+// spielbare Partie damit (kein zugweises Fortsetzen — ein neuer Versuch).
+function replayHistoryEntry(entry) {
+  state.historyDetail = null;
+  state.generating = true;
+  state.screen = 'game';
+  setTimeout(() => {
+    log('game', `Verlauf-Replay gestartet`, { difficulty: entry.difficulty, seed: entry.seed, dim: entry.dim });
+    const puzzle = generatePuzzle({ difficulty: entry.difficulty, seed: entry.seed, dim: entry.dim });
+    loadPuzzleIntoState(puzzle, null);
+    state.generating = false;
+    startTimer();
+  }, 30);
+}
+
+// ─── TEILEN (viraler Loop) ─────────────────────────────────────────────────────
+// ─── Lobby-Einladungen an Freunde ──────────────────────────────────────────────
+// Aktueller Lobby-Modus als kompakter String für die Einladung.
+function lobbyMode() { return state.coop.teamMode ? '2v2' : state.coop.ffaMode ? 'ffa' : state.coop.raceMode ? '1v1' : 'coop'; }
+function lobbyModeLabel(mode) {
+  return mode === '2v2' ? t('coop.modeTeam') : mode === 'ffa' ? t('coop.modeFfa') : mode === '1v1' ? t('coop.modeRace') : t('coop.modeCoop');
+}
+// „Freunde einladen" in der Lobby: öffnet die Auswahl (nur wenn eingeloggt).
+function openInvitePicker() {
+  if (state.account.status !== 'in') { showToast(t('friends.needLogin'), 'info', 2600); return; }
+  state.coop.invitePickerOpen = true;
+  startFriendsWatch();   // Freundesliste/Präsenz laden (falls noch nicht aktiv)
+}
+function closeInvitePicker() { state.coop.invitePickerOpen = false; }
+async function inviteFriendToLobby(fr) {
+  if (!fr || !state.coop.code) return;
+  if (!state.coop.invitedUids.includes(fr.uid)) state.coop.invitedUids.push(fr.uid);
+  const r = await Account.sendLobbyInvite(fr.uid, { code: state.coop.code, mode: lobbyMode(), username: myUsername() });
+  if (r && r.ok) showToast(t('coop.inviteSent', { name: fr.username || fr.uid }), 'success', 2400);
+  else { showToast(accErr((r && r.err) || 'generic'), 'error', 2600); state.coop.invitedUids = state.coop.invitedUids.filter(u => u !== fr.uid); }
+}
+// Offene (weder angenommene noch abgelehnte) Einladung zurückziehen: löscht sie
+// beim Freund (sein Banner verschwindet live via onValue) und gibt den Button
+// wieder als „Einladen" frei — erneutes Einladen sofort möglich.
+async function withdrawLobbyInvite(fr) {
+  if (!fr) return;
+  const r = await Account.cancelLobbyInvite(fr.uid);
+  if (r && r.ok) {
+    state.coop.invitedUids = state.coop.invitedUids.filter((u) => u !== fr.uid);
+    showToast(t('coop.inviteWithdrawn', { name: fr.username || fr.uid }), 'info', 2400);
+  } else {
+    showToast(accErr((r && r.err) || 'generic'), 'error', 2600);
+  }
+}
+
+// ─── Eingehende Einladungen (global, solange eingeloggt) ────────────────────────
+let lobbyInvitesUnwatch = null, lobbyResponsesUnwatch = null;
+async function startLobbyInviteWatch() {
+  if (lobbyInvitesUnwatch) return;
+  lobbyInvitesUnwatch = await Account.watchLobbyInvites((arr) => {
+    state.lobbyInvites = arr;
+    // Neueste offene Einladung als Banner zeigen — AUCH mitten im Spiel
+    // (Nutzerwunsch: Einladungen sollen immer ankommen; wer spielt, kann sie
+    // ablehnen oder ignorieren; Annahme sichert den Solo-Stand, s.u.). Wichtig:
+    // bedingungslos setzen — zieht der Einladende zurück (cancelLobbyInvite),
+    // fällt sie aus arr und das Banner verschwindet live (bzw. wechselt zur
+    // nächsten offenen), sonst nähme man eine Geister-Einladung an. Die alte
+    // Spiel-Sperre hatte zudem ein Loch: endete das Spiel, feuerte der
+    // onValue-Listener nicht erneut (Daten unverändert) — die Einladung blieb
+    // für immer unsichtbar.
+    state.pendingLobbyInvite = arr.length ? arr[arr.length - 1] : null;
+  });
+  lobbyResponsesUnwatch = await Account.watchLobbyInviteResponses((arr) => {
+    for (const resp of arr) {
+      if (resp.status === 'declined') {
+        showToast(t('coop.inviteDeclined', { name: resp.username || resp.targetUid }), 'info', 3200);
+        // Button wieder auf „Einladen" zurücksetzen, damit man es erneut versuchen kann.
+        state.coop.invitedUids = state.coop.invitedUids.filter((u) => u !== resp.targetUid);
+      } else if (resp.status === 'accepted') {
+        showToast(t('coop.inviteAccepted', { name: resp.username || resp.targetUid }), 'success', 3200);
+        // Auch bei Annahme zurücksetzen: sobald der Freund die Runde verlässt,
+        // soll man ihn erneut einladen können (sonst bliebe „Eingeladen" hängen).
+        state.coop.invitedUids = state.coop.invitedUids.filter((u) => u !== resp.targetUid);
+      }
+      Account.clearLobbyInviteResponse(resp.targetUid);
+    }
+  });
+}
+function stopLobbyInviteWatch() {
+  try { lobbyInvitesUnwatch && lobbyInvitesUnwatch(); } catch (_) {}
+  try { lobbyResponsesUnwatch && lobbyResponsesUnwatch(); } catch (_) {}
+  lobbyInvitesUnwatch = lobbyResponsesUnwatch = null;
+}
+// Einladung annehmen: eigene Einladung entfernen und der Lobby (Code+Modus) als Gast beitreten.
+function acceptLobbyInvite(inv) {
+  if (!inv) return;
+  // Einladungen erscheinen jetzt auch MITTEN im Spiel: läuft gerade eine
+  // Solo-Partie, wird sie vor dem Wechsel in die Lobby gesichert (Fortsetzen-
+  // Button wie bei „Zum Menü"), damit kein Fortschritt verloren geht.
+  if (state.status === 'playing' && !state.isTrainingGame && state.saveSlot === 'solo') {
+    saveActiveGame(activeSnapshot());
+  }
+  Account.acceptLobbyInvite(inv.fromUid, myUsername());
+  state.pendingLobbyInvite = null;
+  state.lobbyInvites = state.lobbyInvites.filter(i => i.fromUid !== inv.fromUid);
+  coopReset();
+  state.coop.teamMode = inv.mode === '2v2';
+  state.coop.ffaMode = inv.mode === 'ffa';
+  state.coop.raceMode = inv.mode === '1v1' || inv.mode === 'ffa';
+  // Namens-Gate ZUERST — auch bei einer Einladung. Vorher sprang der Beitritt
+  // direkt in den Raum und man landete mit dem zuletzt gespeicherten Namen darin,
+  // ohne ihn noch anpassen zu koennen (Nutzerwunsch). Der Code steht schon fest,
+  // deshalb merkt sich pendingJoin, dass nach dem Bestaetigen sofort beigetreten
+  // wird statt in die Rollenwahl zu gehen (s. confirmCoopIdentity).
+  state.coop.identityConfirmed = false;
+  state.coop.pendingJoin = true;
+  state.coop.nameDraft = state.settings.coopName;
+  state.coop.code = String(inv.code || '');
+  pushNav(() => { coopReset(); navigate('home'); });
+  navigate('coop');
+}
+function declineLobbyInviteUI(inv) {
+  if (!inv) return;
+  Account.declineLobbyInvite(inv.fromUid, myUsername());
+  state.pendingLobbyInvite = null;
+  state.lobbyInvites = state.lobbyInvites.filter(i => i.fromUid !== inv.fromUid);
+}
+
+function ask(title, msg, onYes) { state.confirm = { title, msg, onYes }; state.modal = 'confirm'; }
+function confirmYes() { const f = state.confirm?.onYes; state.modal = null; state.confirm = null; if (f) f(); }
+function confirmNo() { state.modal = null; state.confirm = null; }
+
+// ─── Manuelle Update-Prüfung (Klick auf die Version im Hauptmenü) ─────────────
+// Es gibt weiterhin KEINEN automatischen Laufzeit-Update-Flow (siehe SW-
+// Registrierung unten): geprüft wird NUR auf explizite Nutzeraktion. Findet
+// reg.update() einen neuen Worker, bleibt der in "waiting" (kein skipWaiting
+// beim install) — der Dialog bietet den Neustart an; SKIP_WAITING (sw.js)
+// aktiviert ihn dann gezielt und safeReload lädt die App neu (auf Home sofort,
+// nie mitten im Spiel).
+let updateReg = null;          // Registration mit wartendem neuen Worker
+async function checkForUpdate() {
+  if (state.updateCheck === 'busy') return;
+  const native = window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform();
+  if (native || !('serviceWorker' in navigator)) { showToast(t('update.unsupported'), 'info', 2800); return; }
+  if (!isOnline()) { showToast(t('update.offline'), 'error', 2800); return; }
+  state.updateCheck = 'busy';
+  const t0 = Date.now();
+  log('app', 'Manuelle Update-Prüfung gestartet', { build: BUILD });
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (!reg) { state.updateCheck = 'idle'; showToast(t('update.err'), 'error', 2800); return; }
+    if (reg.waiting) {
+      updateReg = reg; state.updateCheck = 'found';
+      log('app', 'Update-Prüfung: neue Version wartete bereits');
+      return;
+    }
+    const found = await waitForUpdateResult(reg);
+    log('app', 'Manuelle Update-Prüfung fertig', { found, tookMs: Date.now() - t0 });
+    if (found) { updateReg = reg; state.updateCheck = 'found'; }
+    else { state.updateCheck = 'idle'; showToast(t('update.latest', { v: BUILD }), 'success', 3200); }
+  } catch (e) {
+    log('error', 'Update-Prüfung fehlgeschlagen', e);
+    state.updateCheck = 'idle';
+    showToast(t('update.err'), 'error', 2800);
+  }
+}
+// reg.update() anstoßen und beobachten, ob ein NEUER Worker fertig installiert
+// wird. true = neue Version wartet; false = Stand ist aktuell. Timeout als
+// Fangnetz für hängende Downloads (langsames Netz) — dann zählt der Ist-Zustand.
+function waitForUpdateResult(reg) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; clearTimeout(timer); resolve(v); } };
+    const timer = setTimeout(() => finish(!!reg.waiting), 20000);
+    const watch = (sw) => {
+      if (!sw) return;
+      sw.addEventListener('statechange', () => {
+        if (sw.state === 'installed') finish(true);       // neuer Worker wartet jetzt
+        else if (sw.state === 'redundant') finish(false); // Installation verworfen
+      });
+    };
+    reg.addEventListener('updatefound', () => watch(reg.installing), { once: true });
+    reg.update().then(() => {
+      // update() ist durch: taucht kurz danach kein neuer Worker auf, sind wir aktuell.
+      setTimeout(() => { if (reg.waiting) finish(true); else if (!reg.installing) finish(false); }, 600);
+    }).catch((e) => { log('app', 'reg.update() fehlgeschlagen', e); finish(!!reg.waiting); });
+  });
+}
+// „Jetzt neu starten" aus dem Update-Dialog.
+async function restartForUpdate() {
+  state.updateCheck = 'idle';
+  const reg = updateReg || await navigator.serviceWorker.getRegistration();
+  const w = reg && reg.waiting;
+  log('app', 'Update-Neustart angefordert', { waiting: !!w });
+  if (!w) { safeReload('manual-update'); return; }
+  let reloaded = false;
+  const go = (why) => { if (!reloaded) { reloaded = true; safeReload(why); } };
+  w.addEventListener('statechange', () => { if (w.state === 'activated') go('manual-update'); });
+  w.postMessage({ type: 'SKIP_WAITING' });
+  setTimeout(() => go('manual-update-timeout'), 2500);  // Fangnetz, falls kein statechange kommt
+}
+function dismissUpdateDialog() { state.updateCheck = 'idle'; }
+
+// ─── Optionaler Account (E-Mail+Username+PW, Cloud-Sync) ──────────────────────
+// Spiegelt das lokale Profil ins UI; lädt Firebase NUR, wenn schon eine
+// Account-Session existiert (sonst bleibt die App rein lokal/anonym).
+function refreshAccountFromLocal() {
+  const p = loadProfile();
+  state.account.lastSyncAt = Account.lastSyncAt();
+  if (p.accountId) { state.account.status = 'in'; state.account.uid = p.accountId; state.account.username = p.displayName || ''; state.account.role = p.role || 'user'; }
+  else { state.account.status = 'anon'; state.account.uid = null; }
+}
+// Sofort ALLE Daten in die Cloud sichern (mit sichtbarem Status). No-op ohne Login.
+// Sofortige (NICHT entprellte) Cloud-Sicherung bei Hauptevents: Spielstart,
+// Pause, Sieg, Niederlage, App-Verstecken/Schließen — PLUS reason:'periodic'
+// alle 30s auch WÄHREND einer laufenden Partie (s. Aufrufer in init()). `scheduleSyncUp()`
+// wartet bis zu 30 s (SYNC_MIN_GAP) — wurde die App vorher geschlossen, ging der Upload
+// verloren und ein FERTIGES Spiel tauchte danach wieder als „Fortsetzen" auf
+// (Belohnung/Abschluss nicht in der Cloud). Kein Per-ZUG-Sync (kein Aufruf aus
+// setMark) → kein Speicher-/Socket-Churn wie beim früheren Dauer-Entpreller;
+// der damalige iOS-Absturz kam von den Animationen, nicht von der Sync-Rate.
+function syncCloudNow(reason) {
+  if (state.account.status !== 'in') return;
+  log('account', 'Getriggerte Cloud-Sync', { reason });
+  doSyncNow();
+  // Zusätzlich die autoritative Aktivspiel-Session aktualisieren (nur Solo-Slot;
+  // pushSession filtert selbst). Status aus dem Anlass ableiten.
+  const sessStatus = (reason === 'win' || reason === 'lose') ? SESSION_STATUS.DONE
+    : (reason === 'pause' || reason === 'hide' || reason === 'pagehide') ? SESSION_STATUS.PAUSED
+    : (reason === 'gameStart') ? SESSION_STATUS.PLAYING
+    : (state.status === 'playing' ? SESSION_STATUS.PLAYING : SESSION_STATUS.NONE);
+  if (sessStatus !== SESSION_STATUS.NONE || reason === 'win' || reason === 'lose') pushSession(sessStatus);
+}
+async function doSyncNow() {
+  if (state.account.status !== 'in') return;
+  state.account.syncState = 'syncing';
+  const r = await Account.syncNow();
+  if (r.ok) { state.account.syncState = 'ok'; state.account.lastSyncAt = r.ts; state.account.syncErrorMsg = ''; }
+  else if (r.skipped) { state.account.syncState = 'idle'; }
+  else { state.account.syncState = 'error'; state.account.syncErrorMsg = r.err ? accErr(r.err) : ''; }
+}
+// ─── Multi-Device: geräteübergreifende Konsistenz des AKTIVEN Solo-Spiels ──────
+// Nur für angemeldete Accounts (anonym/rein lokal = ein Gerät). Die Cloud-Session
+// (/users/{uid}/session) ist die autoritative Quelle der laufenden Partie; hier
+// wird sie geschrieben (Compare-and-Set) und beim Sichtbarwerden/Live-Event
+// abgeglichen — statt heute beim Zurückkehren blind hochzuladen und dabei einen
+// neueren Fremdstand zu überschreiben.
+
+// Aktive Solo-Partie in die Cloud-Session schreiben. status: 'playing'|'paused'|'done'.
+async function pushSession(status) {
+  if (state.account.status !== 'in') return;
+  if (state.saveSlot !== 'solo' || state.isTrainingGame || !state.gameId) return;
+  const active = status !== SESSION_STATUS.DONE && status !== SESSION_STATUS.NONE;
+  const payload = active && state.puzzle ? activeSnapshot() : null;
+  const r = await Account.writeSession({
+    gameId: state.gameId, status, payload,
+    appBuild: BUILD, schema: SESSION_SCHEMA, baseRev: state.sessionRev,
+  });
+  if (r && r.ok) { state.sessionRev = r.rev; }
+  else if (r && r.stale) { log('account', 'pushSession veraltet → reconcile'); reconcileSession(); }
+}
+
+// Solo-Slot leeren, weil die Partie woanders beendet/überholt wurde. Räumt eine
+// laufende In-Memory-Partie sauber ab (kein Rauswurf mitten im Zug: nur der Stand
+// ist weg, wir gehen bewusst ins Menü) und aktualisiert die Fortsetzen-Liste.
+function clearDefunctSolo(showNotice) {
+  saveActiveGame(null);
+  if (state.saveSlot === 'solo' && !state.isTrainingGame && (state.screen === 'game' || state.status === 'playing')) {
+    state.status = 'idle';
+    state.sessionReadonly = false;
+    stopTimer();
+    if (showNotice) state.deviceNotice = { kind: 'defunct' };
+    navigate('home');
+  }
+  refreshResume();
+}
+
+// Kurz nach einem Beitritt mitten ins Spiel: Skin-Rotation anhalten, damit das
+// frisch aufgebaute Brett erst einmal statisch stehen darf. Danach laeuft alles
+// normal weiter. Zusaetzlich wird EINMAL protokolliert, was tatsaechlich gerendert
+// wurde — Brettgroesse, Zellenzahl, markierte Zellen, aktiver Skin. Bei einem
+// erneuten Schwarzbild ist damit sofort unterscheidbar, ob das Brett gar nicht
+// aufgebaut wurde (Groesse 0) oder ob es steht und nur nicht gezeichnet wird.
+// Ist ein empfangenes/gespeichertes Raster vollstaendig (rows x cols, echte
+// Arrays)? Nur fuer die Diagnose — die Normalisierung laeuft ohnehin immer.
+function gridIsDense(g, rows, cols) {
+  if (!Array.isArray(g) || g.length !== rows) return false;
+  for (const row of g) if (!Array.isArray(row) || row.length !== cols) return false;
+  return true;
+}
+// markedBy fuer den Versand ueber Firebase RTDB dicht machen: RTDB speichert keine
+// null-Werte, ein Raster aus ueberwiegend null kaeme beim Empfaenger loechrig an
+// (fehlende Zeilen, Array → Objekt). Leere Zellen gehen deshalb als '' raus — der
+// Empfaenger macht daraus per normalizeGrid wieder null. Damit ist schon der
+// PAYLOAD wohlgeformt, unabhaengig davon, welchen Stand der Empfaenger hat.
+function wireMarkedBy() {
+  return (state.markedBy || []).map(row => (row || []).map(v => v || ''));
+}
+let joinFreezeTimer = null;
+function countMarked() {
+  let n = 0;
+  const m = state.marks || [];
+  for (const row of m) for (const v of (row || [])) if (v && v !== 'none') n++;
+  return n;
+}
+function startJoinFreeze(marked) {
+  state.joinFreeze = true;
+  if (joinFreezeTimer) clearTimeout(joinFreezeTimer);
+  joinFreezeTimer = setTimeout(() => { state.joinFreeze = false; joinFreezeTimer = null; }, 1800);
+  afterPaint(() => {
+    try {
+      const el = document.querySelector('.board');
+      const r = el && el.getBoundingClientRect();
+      log('coop', 'Beitritt gerendert', {
+        cells: el ? el.querySelectorAll('.cell').length : 0,
+        w: r ? Math.round(r.width) : 0, h: r ? Math.round(r.height) : 0,
+        marked, skin: state.settings.skinStyle || null,
+        winfx: !!state.winFx, paused: !!state.paused,
+      });
+    } catch (e) { log('error', 'Beitritts-Render-Protokoll fehlgeschlagen', e); }
+  });
+}
+
+// Eine TOTE Cloud-Session beenden, damit sie nie wieder jemanden erreicht.
+// Bewusst NICHT ueber pushSession: das steigt aus, sobald lokal kein Solo-Spiel
+// offen ist (`state.gameId` fehlt) — und genau dann tritt der Fall auf. Deshalb
+// direkt mit gameId und rev-Basis der CLOUD; das Compare-and-Set greift weiterhin,
+// ein Geraet mit aelterer Basis kann eine inzwischen frischere Session nicht kippen.
+async function retireCloudSession(cloud) {
+  try {
+    const r = await Account.writeSession({
+      gameId: cloud.gameId, status: SESSION_STATUS.DONE, payload: null,
+      appBuild: BUILD, schema: SESSION_SCHEMA, baseRev: cloud.rev || 0,
+    });
+    if (r && r.ok) state.sessionRev = r.rev;
+    log('account', 'Tote Cloud-Session beendet', { gameId: cloud.gameId || null, ok: !!(r && r.ok) });
+  } catch (e) { log('error', 'Tote Cloud-Session beenden fehlgeschlagen', e); }
+}
+
+// Cloud-Partie lokal übernehmen. readonly = ein anderes Gerät ist Besitzer → Brett
+// gesperrt bis „Hier weiterspielen". Ist der Spieler gerade in genau dieser Partie,
+// wird das Brett auf den Cloud-Stand nachgezogen; sonst als „Fortsetzen" abgelegt.
+function adoptCloudSession(cloud, readonly) {
+  if (!cloud) { state.sessionRev = 0; return; }
+  state.sessionRev = cloud.rev || 0;
+  const snap = cloud.payload;
+  // TOTE Session (kein Brett oder bereits vollstaendig geloest): NICHT uebernehmen,
+  // sondern in der Cloud BEENDEN. Vorher wurde sie hier in den Solo-Slot geschrieben,
+  // von refreshResume sofort wieder als geloest verworfen — und die Cloud blieb auf
+  // „playing". Damit zog sie jedes Geraet bei jedem Sichtbarwerden erneut: im
+  // Diagnoseprotokoll 14-mal in 90 Minuten, fuer den Nutzer „tote Spiele werden
+  // staendig wiederbelebt".
+  if (sessionIsDead(cloud, snap ? snapshotSolved(snap) : false)) {
+    retireCloudSession(cloud);
+    refreshResume();
+    return;
+  }
+  if (!snap) return;
+  saveActiveGame(snap);                 // in den Solo-Slot (Fortsetzen)
+  const inThisGame = state.screen === 'game' && state.saveSlot === 'solo' && state.gameId === cloud.gameId;
+  if (inThisGame && snap.puzzle) {
+    // Live nachziehen: dieselbe Partie ist auf einem anderen Gerät weitergelaufen.
+    loadPuzzleIntoState(snap.puzzle, snap);
+    state.status = 'playing';
+    state.sessionRev = cloud.rev || 0;
+    state.sessionReadonly = !!readonly;
+    if (readonly) { state.deviceNotice = { kind: 'takeover' }; stopTimer(); }
+  }
+  refreshResume();
+}
+
+// Entscheidet & handelt beim Sichtbarwerden/Live-Event: was tun mit der offenen Partie?
+function handleSessionDecision(d, cloud, local) {
+  switch (d.action) {
+    case 'inSync': break;
+    case 'uploadLocal': pushSession(state.paused ? SESSION_STATUS.PAUSED : SESSION_STATUS.PLAYING); break;
+    case 'reloadRequired':
+      // Cloud stammt aus neuerer App-Version → defunctes Spiel räumen, neu laden.
+      clearDefunctSolo(false);
+      state.deviceNotice = { kind: 'reload' };
+      safeReload('session-schema-ahead');
+      break;
+    case 'defunct':
+      if (d.backupLocal) { const g = loadActiveGame(); if (g) saveActiveGameBackup(g); }
+      clearDefunctSolo(true);
+      break;
+    case 'takeCloud': adoptCloudSession(cloud, false); break;
+    case 'takeCloudReadonly': adoptCloudSession(cloud, true); break;
+  }
+}
+
+// Abgleich der Session beim Sichtbarwerden/focus/online/Live-Event. ERSETZT das
+// frühere blinde doSyncNow() beim Zurückkehren (das den veralteten Stand hochlud).
+let reconcileSessionBusy = false;
+async function reconcileSession() {
+  if (state.account.status !== 'in' || reconcileSessionBusy) return;
+  reconcileSessionBusy = true;
+  try {
+    const cloud = await Account.readSession();
+    const inSolo = state.saveSlot === 'solo' && !state.isTrainingGame && !!state.puzzle
+      && (state.status === 'playing' || state.status === 'idle' && state.screen === 'game');
+    const savedTs = (() => { const g = loadActiveGame(); return g && g.ts || 0; })();
+    const local = inSolo
+      ? { gameId: state.gameId, rev: state.sessionRev, status: state.paused ? SESSION_STATUS.PAUSED : SESSION_STATUS.PLAYING, updatedAt: savedTs }
+      : null;
+    const d = decideSessionSync({ local, cloud, selfDevice: deviceId(), knownSchema: SESSION_SCHEMA });
+    log('account', 'reconcileSession', { action: d.action, reason: d.reason, hasLocal: !!local, hasCloud: !!cloud });
+    handleSessionDecision(d, cloud, local);
+  } catch (e) { log('account', 'reconcileSession fehlgeschlagen', e); }
+  finally { reconcileSessionBusy = false; }
+}
+
+// „Hier weiterspielen" aus dem Übernahme-Banner: Besitz zurückholen (rev bumpen),
+// Brett entsperren, Hinweis schließen und Timer wieder laufen lassen.
+function reclaimSession() {
+  state.sessionReadonly = false;
+  state.deviceNotice = null;
+  if (state.screen === 'game' && state.status === 'playing') startTimer();
+  pushSession(SESSION_STATUS.PLAYING);
+}
+function dismissDeviceNotice() { state.deviceNotice = null; }
+
+// Live-Invalidierung: der Watcher feuert, sobald ein anderes Gerät die Session
+// ändert → sofortiger Reconcile (Brett sperren/Stand nachziehen/defunct räumen).
+let sessionUnwatch = null;
+async function startSessionWatch() {
+  if (sessionUnwatch || state.account.status !== 'in') return;
+  sessionUnwatch = await Account.watchSession((cloudSession) => {
+    // Eigene Schreibvorgänge nicht gegen sich selbst reconcilen (deviceId-Filter):
+    if (cloudSession && cloudSession.deviceId === deviceId()) { state.sessionRev = cloudSession.rev || state.sessionRev; return; }
+    reconcileSession();
+  });
+}
+function stopSessionWatch() { if (sessionUnwatch) { try { sessionUnwatch(); } catch (_) {} sessionUnwatch = null; } }
+
+// ─── Versions-Mismatch-Dialog (offline gespielt UND woanders online) ──────────
+// Kurz-Zusammenfassung eines Datensnapshots für die Konflikt-Karten: Guthaben,
+// Gesamtsiege, letzter Änderungszeitpunkt. Rein zur Anzeige.
+function syncSummary(data) {
+  if (!data) return { coins: 0, wins: 0, ts: 0 };
+  const coins = (data.wallet && data.wallet.balance) || 0;
+  let wins = 0;
+  const by = data.stats && data.stats.byDifficulty;
+  if (by) for (const k in by) { wins += (by[k].won || 0) + (by[k].coopWon || 0); }
+  return { coins, wins, ts: data.ts || data.rev || 0 };
+}
+function openVersionMismatch(r) {
+  state.versionMismatch = {
+    local: syncSummary(r.localData),
+    cloud: syncSummary(r.cloud),
+    // 'wallet' = nur Guthaben, 'game' = zwei verschiedene offene Partien,
+    // 'both' = beides. Steuert nur den Erklärtext des Dialogs.
+    reason: r.reason || 'wallet',
+    busy: false,
+  };
+  log('account', 'Versions-Mismatch-Dialog geöffnet', { reason: r.reason, local: state.versionMismatch.local, cloud: state.versionMismatch.cloud });
+}
+// Erklärtext passend zum Konfliktgrund (nie „Guthaben", wenn es ums Spiel ging).
+function mismatchSubText() {
+  const why = state.versionMismatch && state.versionMismatch.reason;
+  if (why === 'game') return t('mismatch.subGame');
+  if (why === 'both') return t('mismatch.subBoth');
+  return t('mismatch.sub');
+}
+// Nutzerwahl anwenden: 'local' = dieses Gerät behalten, 'cloud' = Cloud behalten.
+// Die unterlegene Seite sichert resolveConflict als Backup. Danach sauber neu laden.
+function resolveVersionMismatch(choice) {
+  if (!state.versionMismatch || state.versionMismatch.busy) return;
+  state.versionMismatch.busy = true;
+  Account.resolveConflict(choice).then((res) => {
+    log('account', 'Versions-Mismatch beantwortet', { choice, ok: res && res.ok });
+    state.versionMismatch = null;
+    safeReload('version-mismatch-' + choice);
+  });
+}
+function fmtMismatchTime(ts) {
+  if (!ts) return '–';
+  try { return new Date(ts).toLocaleString(i18nState.locale || undefined, { dateStyle: 'short', timeStyle: 'short' }); }
+  catch (_) { return '–'; }
+}
+
+// Zeitpunkt der letzten Cloud-Sicherung als Uhrzeit (locale) — '–' wenn noch nie.
+function fmtSyncTime(ts) {
+  if (!ts) return '–';
+  try { return new Date(ts).toLocaleTimeString(i18nState.locale || undefined, { hour: '2-digit', minute: '2-digit' }); }
+  catch (_) { return '–'; }
+}
+// Gedrosseltes Nachladen der Rolle (Admin) beim Navigieren ins Hauptmenü — nicht
+// häufiger als alle 30 s, damit häufiges Hin- und Herwechseln keine Firebase-
+// Last erzeugt. refreshAccount() holt Rolle/E-Mail frisch und persistiert sie.
+let lastRoleRefresh = 0;
+function maybeRefreshRole() {
+  const now = Date.now();
+  if (now - lastRoleRefresh < 30000) return;
+  lastRoleRefresh = now;
+  refreshAccount();
+}
+// Live-Listener auf die eigene Rolle: der Admin-Status (Home-Badge, Admin-Bereich)
+// aktualisiert sich SOFORT, wenn er per Console/anderem Admin gesetzt/entfernt wird
+// — ohne App-Neustart oder Menü-Wechsel. Rolle wird zusätzlich lokal persistiert.
+let roleUnwatch = null;
+async function startRoleWatch() {
+  if (roleUnwatch) return;   // schon aktiv
+  roleUnwatch = await Account.watchRole((role) => {
+    if (state.account.status !== 'in') return;
+    if (state.account.role !== role) log('account', 'Rolle live aktualisiert', { role });
+    state.account.role = role;
+    saveProfile({ role });
+  });
+}
+async function refreshAccount() {
+  refreshAccountFromLocal();
+  // Genaueren Zustand (E-Mail/Rolle) nur holen, wenn lokal schon ein Account
+  // hinterlegt ist — sonst würde Firebase unnötig geladen.
+  if (loadProfile().accountId) {
+    try {
+      const s = await Account.authState();
+      if (s.signedIn) {
+        state.account.status = 'in'; state.account.uid = s.uid; state.account.email = s.email || ''; state.account.username = s.username || state.account.username; state.account.role = s.role || 'user';
+        // Rolle lokal persistieren, damit ein frisch (z.B. per Admin) gesetzter
+        // Status beim nächsten Start SOFORT sichtbar ist statt erst nach dem
+        // asynchronen Cloud-Abgleich (Ursache der gemeldeten Verzögerung).
+        saveProfile({ role: state.account.role });
+        pushPresence();          // Präsenz melden, sobald der Account bestätigt ist
+        startFriendsWatch();     // Freundes-/Anfragen-Listener (Badge) starten
+        startLobbyInviteWatch(); // eingehende Lobby-Einladungen + Ablehnungen beobachten
+        startNoticeWatch();      // Admin-Benachrichtigungen (Geschenk/Entzug/Guthaben) empfangen
+        startGiftWatch();        // Inventar/Wallet live: Geschenke ohne Neustart nutzbar
+        syncBestTimesToLeaderboard(); // vorhandene Bestzeiten in die Bestenliste heben
+        startRoleWatch();        // Admin-Status live halten (ohne Neustart/Navigation)
+      }
+      else state.account.status = 'anon';
+    } catch (e) { log('account', 'refreshAccount fehlgeschlagen', e); }
+  }
+}
+// ─── Admin-Benachrichtigungen (Empfängerseite) ────────────────────────────────
+// Persistente Notizen unter /users/{uid}/notices: onValue liefert alle offenen;
+// angezeigt wird eine nach der anderen (Modal), OK löscht sie in der RTDB und
+// der Listener rückt automatisch zur nächsten vor.
+let noticesUnwatch = null;
+async function startNoticeWatch() {
+  if (noticesUnwatch) return;
+  noticesUnwatch = await Account.watchNotices((arr) => {
+    arr.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    state.adminNotice = arr[0] || null;
+  });
+}
+// Vorhandene Solo-Bestzeiten in die globale Bestenliste heben. Nötig, weil
+// publishBestTime sonst nur bei einer NEUEN Bestzeit feuert — wer seine
+// Bestzeiten VOR Einführung der Bestenliste (oder vor dem Login) erzielt hat,
+// tauchte dort nie auf. Idempotent: publishBestTime schreibt nur, wenn der
+// Cloud-Eintrag fehlt oder langsamer ist.
+function syncBestTimesToLeaderboard() {
+  try {
+    const stats = loadStats();
+    let n = 0;
+    for (const [diff, d] of Object.entries(stats.byDifficulty || {})) {
+      if (d && d.bestTimeMs > 0) { Account.publishBestTime(diff, d.bestTimeMs, state.account.username, myBadge()); n++; }
+    }
+    if (n) log('account', 'Bestzeiten-Sync zur Bestenliste angestoßen', { count: n });
+  } catch (e) { log('account', 'Bestzeiten-Sync fehlgeschlagen', e); }
+}
+// Inventar + Wallet live aus der Cloud übernehmen: Admin-Geschenke/-Entzüge und
+// Guthaben-Änderungen sind damit SOFORT nutzbar (kein App-Neustart nötig) — auch
+// dann, wenn der Admin die Benachrichtigung abgewählt hat. Käufe auf einem
+// anderen eigenen Gerät erscheinen so ebenfalls live.
+let giftsUnwatch = null;
+async function startGiftWatch() {
+  if (giftsUnwatch) return;
+  giftsUnwatch = await Account.watchGifts((upd) => {
+    if (upd.inventory) {
+      const before = Object.keys(state.inventory || {}).length;
+      state.inventory = reconcileInventoryFromCloud(upd.inventory);
+      const after = Object.keys(state.inventory).length;
+      if (after !== before) log('account', 'Inventar live abgeglichen', { before, after });
+    }
+    if (upd.wallet && (upd.wallet.updatedAt || 0) > (loadWallet().updatedAt || 0)) {
+      state.wallet = applyCloudWallet(upd.wallet, upd.walletLog);
+      state.walletLog = loadWalletLog();   // offenes Verlauf-Modal live aktualisieren
+    }
+  });
+}
+function dismissAdminNotice() {
+  const n = state.adminNotice;
+  if (!n) return;
+  if (!n.self) Account.clearNotice(n.id); // lokale Selbst-Notiz hat keinen Cloud-Eintrag
+  state.adminNotice = null; // onValue liefert danach ggf. die nächste
+}
+function adminNoticeText(n) {
+  if (!n) return '';
+  const from = n.from || 'Admin';
+  // Guthaben: n.amount ist das DELTA (nicht der Zielwert) — der Text muss also
+  // „um {n} erhöht/verringert" sagen, nie „auf {n} gesetzt" (früherer Bug:
+  // +5000 geschenkt → „Guthaben auf 5000 gesetzt").
+  if (n.kind === 'currency') {
+    const amt = n.amount ?? 0;
+    const abs = Math.abs(amt);
+    if (n.self) return t(amt >= 0 ? 'notice.currencySelfPlus' : 'notice.currencySelfMinus', { n: abs });
+    return t(amt >= 0 ? 'notice.currencyPlus' : 'notice.currencyMinus', { from, n: abs });
+  }
+  if (n.self) {
+    const it = adminItemLabel(n.item || '');
+    return t(n.kind === 'revoke' ? 'notice.revokeSelf' : 'notice.giftSelf', { item: it });
+  }
+  const item = adminItemLabel(n.item || '');
+  return t(n.kind === 'revoke' ? 'notice.revoke' : 'notice.gift', { from, item });
+}
+
+function accErr(suffix) { return t('account.err.' + suffix); }
+async function doSignUp() {
+  const a = state.account;
+  a.error = null; a.notice = null; a.busy = true;
+  try {
+    const r = await Account.signUp({ email: a.email_up.trim(), username: a.username_up.trim(), password: a.pw_up });
+    if (!r.ok) { a.error = accErr(r.err); return; }
+    showToast(t('account.welcome', { name: a.username_up.trim() }), 'success', 2500);
+    if (r.reload) setTimeout(() => safeReload('account-auth'), 600);
+  } finally { a.busy = false; }
+}
+async function doSignIn() {
+  const a = state.account;
+  a.error = null; a.notice = null; a.busy = true;
+  try {
+    const r = await Account.signIn({ email: a.email_in.trim(), password: a.pw_in });
+    if (!r.ok) { a.error = accErr(r.err); return; }
+    showToast(t('account.signedIn'), 'success', 2500);
+    if (r.reload) setTimeout(() => safeReload('account-auth'), 600);
+  } finally { a.busy = false; }
+}
+function doSignOut() {
+  ask(t('account.signOutTitle'), t('account.signOutMsg'), async () => {
+    state.account.busy = true;
+    try {
+      // Erst den letzten Stand in die Cloud sichern (best effort), dann lokal
+      // ALLES löschen: Die Cloud ist die Wahrheit — blieben die Daten lokal,
+      // könnte man sie mit einem frisch registrierten Zweit-Account erneut
+      // hochladen (Duplikat). Beim erneuten Login desselben Kontos kommt alles
+      // aus der Cloud zurück (reconcile: takeCloud).
+      await Account.syncNow();
+      const r = await Account.signOutAccount();
+      if (r.ok) { deleteAllData(); log('account', 'Abgemeldet — lokale Daten zurückgesetzt'); }
+      if (r.reload) safeReload('account-signout');
+    } finally { state.account.busy = false; }
+  });
+}
+// Passwort direkt ändern: neues Passwort zweimal eingeben + Speichern (ohne altes).
+async function doChangePassword() {
+  const a = state.account;
+  a.error = null; a.notice = null;
+  if (a.pwNew1 !== a.pwNew2) { a.error = t('account.pwMismatch'); return; }
+  a.busy = true;
+  try {
+    const r = await Account.changePassword(a.pwNew1);
+    if (!r.ok) { a.error = accErr(r.err); return; }
+    a.pwNew1 = ''; a.pwNew2 = '';
+    showToast(t('account.pwChanged'), 'success', 2200);
+  } finally { a.busy = false; }
+}
+async function doResetPassword() {
+  const a = state.account;
+  a.error = null; a.notice = null;
+  const email = (a.mode === 'in' ? a.email_in : a.email_up).trim();
+  const r = await Account.resetPassword(email);
+  if (r.ok) a.notice = t('account.resetSent'); else a.error = accErr(r.err);
+}
+let usernameCheckTimer = 0, usernameCheckSeq = 0;
+function startUsernameEdit() {
+  const a = state.account;
+  a.usernameDraft = a.username || '';
+  a.usernameEditing = true; a.usernameCheck = 'unchanged'; a.error = null; a.notice = null;
+}
+// Live-Eindeutigkeitsprüfung mit Debounce, während getippt wird.
+function onUsernameInput() {
+  const a = state.account;
+  clearTimeout(usernameCheckTimer);
+  const draft = (a.usernameDraft || '').trim();
+  if (!draft || Account.normalizeUsername(draft) === Account.normalizeUsername(a.username || '')) {
+    a.usernameCheck = 'unchanged'; return;
+  }
+  a.usernameCheck = 'checking';
+  const seq = ++usernameCheckSeq;
+  usernameCheckTimer = setTimeout(async () => {
+    const r = await Account.checkUsernameAvailable(draft, a.username || '');
+    if (seq !== usernameCheckSeq) return;   // veraltete Antwort verwerfen
+    a.usernameCheck = r.state;
+  }, 400);
+}
+// Speichern nur erlauben, wenn frei/unverändert (oder Prüfung fehlgeschlagen → Server prüft final).
+function canSaveUsername() {
+  return ['available', 'unchanged', 'error'].includes(state.account.usernameCheck);
+}
+async function doChangeUsername() {
+  const a = state.account;
+  if (!canSaveUsername()) return;
+  a.busy = true; a.error = null; a.notice = null;
+  try {
+    const r = await Account.changeUsername(a.usernameDraft.trim());
+    if (!r.ok) { a.error = accErr(r.err); if (r.err === 'usernameTaken') a.usernameCheck = 'taken'; return; }
+    a.username = r.username; a.usernameEditing = false; a.usernameCheck = 'idle';
+    showToast(t('account.usernameChanged'), 'success', 2500);
+    if (a.status === 'in') Account.scheduleSyncUp();
+  } finally { a.busy = false; }
+}
+function doDeleteAccount() {
+  ask(t('account.deleteTitle'), t('account.deleteMsg'), async () => {
+    state.account.busy = true;
+    try {
+      const r = await Account.deleteAccount();
+      if (!r.ok) { state.account.error = accErr(r.err); return; }
+      deleteAllData();  // wie beim Abmelden: lokale Kopie nicht für neue Konten wiederverwendbar
+      showToast(t('account.deleted'), 'success', 2500);
+      if (r.reload) setTimeout(() => safeReload('account-auth'), 600);
+    } finally { state.account.busy = false; }
+  });
+}
+// ─── Admin (Geschenke/Rollen) ─────────────────────────────────────────────────
+// Vollbild-Admin-Konsole öffnen/schließen. Als eigenes Modal (statt inline im
+// Konto-Tab), damit die Nutzer-Tabelle nicht unter den Seitenfalz rutscht und
+// sicher scrollbar ist — die frühere Inline-Liste war auf iOS oft nicht sichtbar.
+function openAdminConsole() {
+  state.account.adminConsoleOpen = true;
+  if (!state.account.adminUsers.length) adminLoadUsers();
+}
+function closeAdminConsole() { state.account.adminConsoleOpen = false; }
+// Alle User laden (für den durchsuchbaren Browser).
+async function adminLoadUsers() {
+  const a = state.account; a.adminError = null; a.adminBusy = true;
+  try {
+    const r = await Account.adminListUsers();
+    if (!r.ok) { a.adminError = accErr(r.err); return; }
+    a.adminUsers = r.users;
+  } finally { a.adminBusy = false; }
+}
+// Erstellungsdatum eines Users lesbar (leer, wenn unbekannt/Server-Timestamp fehlt).
+function adminFmtDate(ts) {
+  if (!ts || typeof ts !== 'number') return '—';
+  try { return new Date(ts).toLocaleDateString(state.settings.locale || 'de'); } catch { return '—'; }
+}
+// Auswahl-Listen fürs Bearbeiten-Modal: statt Freitext alle BEKANNTEN Werte
+// anbieten (statisch bekannte IDs + alles, was in den geladenen Nutzern real
+// vorkommt) — der Admin muss keine Schlüssel auswendig kennen.
+function adminItemOptions() {
+  const ids = new Set([SKIN_ID, FOUNDER_ID]);
+  // Alle kaufbaren Sieganimationen sind auch verschenkbar (Confetti nicht — die gehört allen).
+  for (const e of WIN_EFFECTS) if (e.id !== CONFETTI_ID) ids.add(winEffectInvKey(e.id));
+  for (const it of SHOP_CATALOG) ids.add(shopInvKey(it));
+  for (const u of state.account.adminUsers) Object.keys(u.inventory || {}).forEach((k) => ids.add(k));
+  return [...ids].sort();
+}
+// Verschenkbare Artikel NACH KATEGORIE gruppiert — für den Shop-artigen
+// Geschenk-Auswahl-Screen (statt einer rohen Dropdown-Liste aus IDs). Jede
+// Kategorie: { key, title (übersetzt), icon, items:[{id (Inventar-Key), label, icon}] }.
+function adminGiftCategories() {
+  const cats = [];
+  // 1) Sieganimationen (alle außer Confetti)
+  cats.push({
+    key: 'winfx', title: t('shop.winFxTitle'), icon: 'party',
+    items: WIN_EFFECTS.filter((e) => e.id !== CONFETTI_ID)
+      .map((e) => ({ id: winEffectInvKey(e.id), label: adminItemLabel(winEffectInvKey(e.id)), icon: e.icon || 'party' })),
+  });
+  // 2) Shop-Kategorien (Paletten/Themes/Rahmen/Schriften/Skin-Presets/Sounds/Musik)
+  for (const cat of Object.keys(SHOP_CATS)) {
+    const items = shopCatItems(cat).map((it) => ({ id: shopInvKey(it), label: adminItemLabel(shopInvKey(it)), icon: it.icon || SHOP_CATS[cat].icon }));
+    if (items.length) cats.push({ key: cat, title: shopCategoryTitle(cat), icon: SHOP_CATS[cat].icon, items });
+  }
+  // 3) Besonderes: dynamischer Skin + Gründer-Abzeichen
+  cats.push({
+    key: 'special', title: t('admin.giftSpecial'), icon: 'star',
+    items: [
+      { id: SKIN_ID, label: adminItemLabel(SKIN_ID), icon: 'brush' },
+      { id: FOUNDER_ID, label: adminItemLabel(FOUNDER_ID), icon: 'crown' },
+    ],
+  });
+  return cats;
+}
+// Gesamtzahl der freischaltbaren Artikel (für die „besessen / möglich"-Anzeige):
+// alle Sieganimationen außer Confetti + kompletter Shop-Katalog + Skin + Founder.
+function adminGiftTotal() {
+  return WIN_EFFECTS.filter((e) => e.id !== CONFETTI_ID).length + SHOP_CATALOG.length + 2;
+}
+// Wie viele der freischaltbaren Katalog-Artikel besitzt der Nutzer? (Zähler, damit
+// „X / Y" konsistent aus DERSELBEN Menge kommt und nie größer als das Total wird.)
+function adminOwnedOfTotal(u) {
+  const inv = (u && u.inventory) || {};
+  let n = 0;
+  for (const e of WIN_EFFECTS) if (e.id !== CONFETTI_ID && inv[winEffectInvKey(e.id)]) n++;
+  for (const it of SHOP_CATALOG) if (inv[shopInvKey(it)]) n++;
+  if (inv[SKIN_ID]) n++; if (inv[FOUNDER_ID]) n++;
+  return n;
+}
+function openAdminGiftPicker() { state.account.adminGiftPickerOpen = true; }
+function closeAdminGiftPicker() { state.account.adminGiftPickerOpen = false; }
+// Zustand eines Artikels im Picker: 'owned' (hat der Nutzer schon) | 'grant'
+// (gestaged zu verschenken) | null. Revokes laufen weiter über die Chip-Xe.
+function adminGiftItemState(id) {
+  const a = state.account;
+  if (a.adminInvPending[id] === 'grant') return 'grant';
+  const inv = (a.adminEditUser && a.adminEditUser.inventory) || {};
+  return inv[id] ? 'owned' : null;
+}
+// Klick im Picker: nicht-besessene Artikel als Geschenk vor-/abwählen.
+function adminToggleGiftItem(id) {
+  if (adminGiftItemState(id) === 'owned') return; // besitzt er schon → nichts tun
+  if (state.account.adminInvPending[id] === 'grant') adminUnstageItem(id);
+  else adminStageItem(id, 'grant');
+}
+function adminGiftPendingCount() {
+  return Object.values(state.account.adminInvPending).filter((v) => v === 'grant').length;
+}
+function adminFieldOptions() {
+  const keys = new Set(['displayName', 'email']);
+  for (const u of state.account.adminUsers) Object.keys(u.profile || {}).forEach((k) => keys.add(k));
+  keys.delete('role'); keys.delete('username');  // haben eigene, sichere Admin-Aktionen
+  return [...keys].sort();
+}
+// Client-Filter über die geladene Liste (Username/E-Mail/uid).
+function filteredAdminUsers() {
+  const q = (state.account.adminFilter || '').trim().toLowerCase();
+  const list = state.account.adminUsers || [];
+  if (!q) return list;
+  return list.filter(u => (u.username || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q) || u.uid.toLowerCase().includes(q));
+}
+// Bearbeiten-Modal für einen User öffnen und Felder vorbelegen.
+function openAdminEdit(u) {
+  const a = state.account;
+  a.adminEditUser = u; a.adminError = null;
+  a.adminUsername = u.username || '';
+  a.adminEmail = u.email || '';
+  a.adminBalance = String(u.balance ?? 0);
+  a.adminBalanceMode = 'donate'; a.adminBalanceAmount = '';
+  a.adminItem = ''; a.adminFieldKey = ''; a.adminFieldVal = '';
+  a.adminData = null; a.adminDataDirty = {}; a.adminInvPending = {}; a.adminDataSection = null;
+  a.adminJsonPath = null; a.adminJsonDraft = ''; a.adminJsonError = null;
+  adminReloadData();  // frischen /data-Snapshot für den Daten-Editor laden
+}
+function closeAdminEdit() { state.account.adminEditUser = null; state.account.adminDataDirty = {}; state.account.adminInvPending = {}; state.account.adminJsonPath = null; }
+
+// ─── Admin-Daten-Editor: JEDES Feld des Nutzer-Snapshots einsehbar/setzbar ─────
+// Sektionen mit Icon + i18n-Label; bekannte zuerst in sinnvoller Reihenfolge,
+// alles Übrige (z.B. activeGame) generisch dahinter — nichts bleibt uneditierbar.
+const ADMIN_DATA_SECTIONS = [
+  { key: 'wallet', ic: 'coin' }, { key: 'daily', ic: 'flame' }, { key: 'stats', ic: 'chart' },
+  { key: 'achievements', ic: 'medal' }, { key: 'race', ic: 'swords' }, { key: 'settings', ic: 'gear' },
+  { key: 'profile', ic: 'user' }, { key: 'history', ic: 'scroll' },
+];
+const ADMIN_DATA_META_KEYS = ['rev', 'ts', 'v', 'label'];  // Sync-Metadaten, nie editieren
+async function adminReloadData() {
+  const uid = adminEditUid(); if (!uid) return;
+  const a = state.account; a.adminDataLoading = true;
+  try {
+    const r = await Account.adminGetUserData(uid);
+    if (r.ok) a.adminData = r.data; else a.adminError = accErr(r.err);
+  } finally { a.adminDataLoading = false; }
+}
+function adminDataSections() {
+  const d = state.account.adminData; if (!d) return [];
+  // 💰 Wallet IMMER anzeigen, auch wenn im Snapshot noch kein wallet-Knoten liegt
+  // (frisch angelegter Nutzer): sonst gäbe es kein editierbares Guthaben-Feld und
+  // der Admin könnte gar nichts anklicken. adminFieldRows synthetisiert dann balance:0.
+  const known = ADMIN_DATA_SECTIONS.filter(s => d[s.key] !== undefined || s.key === 'wallet');
+  const rest = Object.keys(d)
+    .filter(k => !ADMIN_DATA_SECTIONS.some(s => s.key === k) && !ADMIN_DATA_META_KEYS.includes(k))
+    .sort().map(k => ({ key: k, ic: 'box' }));
+  return [...known, ...rest];
+}
+function adminSectionLabel(key) { const k = 'admin.sec.' + key; const s = t(k); return s === k ? key : s; }
+// Felder einer Sektion als flache, typisierte Zeilen. Eine Ebene tief werden
+// reine Primitiv-Objekte aufgefaltet (z.B. daily.currentStreak); alles Tiefere
+// (byDifficulty, Arrays, activeGame) bekommt den JSON-Untereditor.
+function adminFieldRows(secKey) {
+  let sec = state.account.adminData ? state.account.adminData[secKey] : undefined;
+  // Fehlt der Wallet-Knoten (frischer Nutzer), trotzdem ein editierbares
+  // balance-Feld mit Standard 0 anbieten — Speichern legt wallet/balance neu an.
+  if (secKey === 'wallet' && (sec === undefined || sec === null)) sec = { balance: 0 };
+  const rows = [];
+  const push = (path, label, val) => {
+    const ty = typeof val;
+    if (val === null || ty === 'string' || ty === 'number' || ty === 'boolean') {
+      rows.push({ path, label, type: val === null ? 'string' : ty, value: val });
+    } else rows.push({ path, label, type: 'json', value: val });
+  };
+  if (sec === null || typeof sec !== 'object') { push(secKey, secKey, sec); return rows; }
+  if (Array.isArray(sec)) { push(secKey, secKey, sec); return rows; }
+  for (const [k, v] of Object.entries(sec)) {
+    if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+      const entries = Object.entries(v);
+      const allPrim = entries.length && entries.every(([, x]) => x === null || typeof x !== 'object');
+      if (allPrim && entries.length <= 12) entries.forEach(([k2, v2]) => push(`${secKey}/${k}/${k2}`, `${k} · ${k2}`, v2));
+      else push(`${secKey}/${k}`, k, v);
+    } else push(`${secKey}/${k}`, k, v);
+  }
+  return rows;
+}
+function toggleAdminSection(key) { const a = state.account; a.adminDataSection = a.adminDataSection === key ? null : key; }
+// Sektion gezielt aufklappen (nicht toggeln) — für die Kennzahlen-Chips oben.
+function openAdminSection(key) { state.account.adminDataSection = key; }
+// ── Klartext-Übersetzung (admin.dict in i18n): Der Admin soll NICHTS über die
+//    DB wissen müssen — jedes bekannte Feld bekommt Klarnamen + Beschreibung,
+//    Auswahlfelder eine Dropdown-Liste aller möglichen Werte in Klartext und
+//    Zeitstempel ein lesbares Datum. Unbekannte Felder fallen auf den rohen
+//    Schlüssel zurück und bleiben voll editierbar. ─────────────────────────────
+function adminDictLookup(path, kind) {
+  const parts = path.split('/');
+  const tries = [path];
+  if (parts.length === 3) tries.push(`${parts[0]}/*/${parts[2]}`);  // z.B. race/1v1/racesWon
+  for (const k of tries) {
+    const key = `admin.dict.f.${k}.${kind}`;
+    const v = t(key);
+    if (v !== key) return { v, wildcard: k !== path };
+  }
+  return null;
+}
+function adminRowLabel(row) {
+  const parts = row.path.split('/');
+  // Erfolge: reguläre Achievement-Texte wiederverwenden statt eigener Einträge.
+  if (parts[0] === 'achievements' && parts[1]) {
+    const key = `achievements.${parts[1]}.title`;
+    const v = t(key); if (v !== key) return v;
+  }
+  const hit = adminDictLookup(row.path, 'l');
+  if (!hit) return row.label;
+  return hit.wildcard ? `${parts[1]} · ${hit.v}` : hit.v;
+}
+function adminRowDesc(row) {
+  const parts = row.path.split('/');
+  if (parts[0] === 'achievements' && parts[1]) {
+    const key = `achievements.${parts[1]}.desc`;
+    const v = t(key); if (v !== key) return v;
+  }
+  const hit = adminDictLookup(row.path, 'd');
+  return hit ? hit.v : null;
+}
+// Auswahlfelder: bekannte Wertelisten je Pfad → Dropdown statt Freitext.
+const ADMIN_ENUM_VALUES = {
+  'settings/themeMode': ['auto', 'light', 'dark'],
+  'settings/confirmTool': ['pen', 'eraser'],
+  'settings/eraseStyle': ['hide', 'strike'],
+  'settings/skinStyle': ['solid', 'gradient', 'rainbow'],
+  'settings/skinDirection': ['cw', 'ccw'],
+  'settings/skinApplyTo': ['kept', 'removed', 'both'],
+};
+function adminEnumOptions(row) {
+  if (row.path === 'settings/language') return SUPPORTED_LOCALES.map((l) => ({ v: l.id, label: l.label }));
+  const vals = ADMIN_ENUM_VALUES[row.path];
+  if (!vals) return null;
+  const leaf = row.path.split('/').pop();
+  return vals.map((v) => {
+    const key = `admin.dict.o.${leaf}.${v}`;
+    const s = t(key);
+    return { v, label: s === key ? v : s };
+  });
+}
+function adminItemLabel(id) {
+  if (id === 'ALL') return t('admin.allItems'); // Sammel-Geschenk „Alles freischalten"
+  if (id === FOUNDER_ID) return t('admin.giftFounder'); // Gründer-Abzeichen (kein Shop-/Dict-Eintrag)
+  const key = `admin.dict.o.item.${id}`; const s = t(key);
+  if (s !== key) return s;
+  // Sieganimationen: Shop-Namen wiederverwenden statt eigener Dict-Einträge.
+  if (id.startsWith('winfx_')) { const k2 = `shop.effect.${id.slice(6)}`; const s2 = t(k2); if (s2 !== k2) return s2; }
+  // Generische Shop-Artikel: Kategorie-Präfix abtrennen, Shop-Namen nutzen.
+  const us = id.indexOf('_');
+  if (us > 0 && SHOP_CATS[id.slice(0, us)]) { const k3 = `shop.it.${id.slice(us + 1)}`; const s3 = t(k3); if (s3 !== k3) return s3; }
+  return id;
+}
+// Klartext-Label eines Profilfelds (Auswahl im „Profilfeld setzen“-Dropdown) —
+// dieselbe Klartext-Dict wie der Daten-Editor; Unbekanntes bleibt als lesbarer
+// Schlüssel (nie leer, aber auch nie ein roher DB-Key, wenn eine Übersetzung existiert).
+function adminProfileFieldLabel(k) {
+  const key = `admin.dict.f.profile/${k}.l`; const s = t(key);
+  return s === key ? k : s;
+}
+// Klartext-Titel für den JSON-Untereditor: ganze Sektion → Sektions-Klarname,
+// Feld-Pfad → Feld-Klarname, sonst der rohe Pfad.
+function adminPathLabel(path) {
+  if (!path) return '';
+  const secK = 'admin.sec.' + path; const secV = t(secK); if (secV !== secK) return secV;
+  const fK = `admin.dict.f.${path}.l`; const fV = t(fK); if (fV !== fK) return fV;
+  return path;
+}
+// Epoch-Millisekunden als lesbares Datum unter dem Zahlenfeld anzeigen.
+function adminRowTimestamp(row) {
+  const v = adminFieldValue(row);
+  if (typeof v !== 'number' || v < 1e12) return null;
+  try { return new Date(v).toLocaleString(state.settings.language || 'de'); } catch (_) { return null; }
+}
+// Datums-String-Felder (JJJJ-MM-TT) bekommen einen nativen Datums-Picker.
+function adminIsDateField(row) { return row.path === 'daily/lastCompletedDate'; }
+// Anzeige-Wert einer Zeile: ungespeicherte Änderung gewinnt über den Snapshot.
+function adminFieldValue(row) { const d = state.account.adminDataDirty; return row.path in d ? d[row.path] : row.value; }
+function adminMarkDirty(path, v) { state.account.adminDataDirty = { ...state.account.adminDataDirty, [path]: v }; }
+function adminInputField(row, ev) {
+  let v = ev.target.value;
+  if (row.type === 'number') { v = Number(v); if (!Number.isFinite(v)) return; }
+  adminMarkDirty(row.path, v);
+}
+function adminToggleField(row) { adminMarkDirty(row.path, !adminFieldValue(row)); }
+function adminDirtyCount() { return Object.keys(state.account.adminDataDirty).length + Object.keys(state.account.adminInvPending).length; }
+function adminDiscardData() { state.account.adminDataDirty = {}; state.account.adminInvPending = {}; }
+// ─── Inventar-Staging (Admin-Gift) ────────────────────────────────────────────
+// Grants/Revokes werden NICHT sofort gesendet, sondern gesammelt und erst beim
+// „Speichern" (adminSaveData) an die Cloud geschickt — analog zum Daten-Editor.
+// So löst z.B. „Alles freischalten" nichts aus, bevor final bestätigt wird.
+function adminStageItem(id, action) {
+  if (!id) return;
+  const a = state.account;
+  const owned = !!(a.adminEditUser && a.adminEditUser.inventory && a.adminEditUser.inventory[id]);
+  const pend = { ...a.adminInvPending };
+  // Staging, das den bereits vorhandenen Zustand wiederherstellt, ist ein No-op
+  // (z.B. ein Revoke eines ohnehin nicht besessenen Items) → Eintrag entfernen.
+  if ((action === 'grant' && owned) || (action === 'revoke' && !owned)) delete pend[id];
+  else pend[id] = action;
+  a.adminInvPending = pend;
+}
+function adminUnstageItem(id) { const pend = { ...state.account.adminInvPending }; delete pend[id]; state.account.adminInvPending = pend; }
+// Effektiver Besitz-Zustand FÜR DIE ANZEIGE inkl. gestagter Änderungen:
+// besessen ⊕ pending. Liefert die Item-ids, die nach dem Speichern besessen wären.
+function adminEffectiveInventoryIds() {
+  const a = state.account;
+  const owned = (a.adminEditUser && a.adminEditUser.inventory) || {};
+  const ids = new Set(Object.keys(owned));
+  for (const [id, act] of Object.entries(a.adminInvPending)) {
+    if (act === 'grant') ids.add(id); else ids.delete(id);
+  }
+  return [...ids];
+}
+function adminItemPendingState(id) { return state.account.adminInvPending[id] || null; }
+// ─── Guthaben ändern: spenden (+) / abziehen (−) / Zielwert (=) ────────────────
+// Statt das Guthaben fix zu setzen, kann der Admin eine Menge spenden/abziehen
+// oder einen Zielwert vorgeben; die Differenz wird berechnet und angezeigt. Die
+// Änderung wird — wie alles im Modal — als wallet/balance in adminDataDirty
+// GESTAGT und erst beim „Speichern" gesendet. Der Empfänger sieht die Differenz
+// dann im Geldverlauf (applyCloudWallet bucht sie beim Sync, s. storage.js).
+function adminBalanceCurrent() {
+  // Aktueller (ggf. bereits gestagter) Stand — konsistent mit den Kopf-Chips.
+  const v = adminChipValue('wallet/balance', (state.account.adminEditUser && state.account.adminEditUser.balance) ?? 0);
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) ? Math.max(0, n) : 0;
+}
+function adminBalanceTarget() {
+  const cur = adminBalanceCurrent();
+  const amt = Math.max(0, Math.floor(parseInt(state.account.adminBalanceAmount, 10) || 0));
+  const mode = state.account.adminBalanceMode;
+  if (mode === 'donate') return cur + amt;
+  if (mode === 'subtract') return Math.max(0, cur - amt);
+  return amt; // 'target'
+}
+function adminBalanceDelta() { return adminBalanceTarget() - adminBalanceCurrent(); }
+function adminSetBalanceMode(m) { state.account.adminBalanceMode = m; }
+// Vormerken: den berechneten Zielwert als wallet/balance stagen (Speichern sendet).
+function adminApplyBalanceChange() {
+  if (!state.account.adminBalanceAmount) return;
+  adminMarkDirty('wallet/balance', adminBalanceTarget());
+  state.account.adminBalanceAmount = '';
+}
+// Kurzer Hinweis auf ungespeicherte Inventar-Änderungen (erst beim Speichern gesendet).
+function adminPendingSummary() {
+  const pend = state.account.adminInvPending;
+  const g = Object.values(pend).filter((v) => v === 'grant').length;
+  const r = Object.values(pend).filter((v) => v === 'revoke').length;
+  if (!g && !r) return '';
+  return t('admin.pendingItems', { grant: g, revoke: r });
+}
+// Chip-Liste fürs Inventar inkl. Staging: besessene Items (evtl. als Revoke
+// markiert) + vorgemerkte Grants (noch nicht besessen). `pending` steuert die Optik.
+function adminInventoryDisplay() {
+  const a = state.account;
+  const owned = (a.adminEditUser && a.adminEditUser.inventory) || {};
+  const ids = new Set(Object.keys(owned));
+  for (const [id, act] of Object.entries(a.adminInvPending)) if (act === 'grant') ids.add(id);
+  return [...ids].sort().map((id) => ({ id, label: adminItemLabel(id), pending: adminItemPendingState(id) }));
+}
+async function adminSaveData() {
+  const a = state.account; const uid = adminEditUid();
+  if (!uid || !adminDirtyCount()) return;
+  a.adminBusy = true; a.adminError = null;
+  // Selbst-Bearbeitung des eigenen Guthabens: vorherigen Stand + ob überhaupt eine
+  // Guthaben-Änderung gestaged ist merken, um die Differenz danach im EIGENEN
+  // Geldverlauf zu buchen (der Snapshot-Import unten setzt den Saldo, protokolliert
+  // ihn aber nicht — Ursache dafür, dass Selbstgaben nicht im Verlauf auftauchten).
+  const isSelfEdit = uid === state.account.uid;
+  const selfPrevBalance = isSelfEdit ? (loadWallet().balance || 0) : 0;
+  const selfBalanceStaged = isSelfEdit && ('wallet/balance' in a.adminDataDirty);
+  // Guthaben-Änderung an einen ANDEREN Nutzer: Vorher-Stand + Zielwert festhalten,
+  // um danach eine Benachrichtigung mit der Differenz zu senden.
+  const walletStaged = 'wallet/balance' in a.adminDataDirty;
+  const otherPrevBalance = (!isSelfEdit && a.adminEditUser) ? (a.adminEditUser.balance || 0) : 0;
+  const walletTarget = walletStaged ? (Number(a.adminDataDirty['wallet/balance']) || 0) : 0;
+  // updatedAt MITSCHREIBEN, sobald sich der Saldo ändert — sonst greift die
+  // watchGifts-Gate (Cloud.updatedAt > lokal.updatedAt) beim Empfänger nicht →
+  // keine Live-Übernahme und KEIN Eintrag im Geldverlauf (applyCloudWallet).
+  if (walletStaged) a.adminDataDirty['wallet/updatedAt'] = Date.now();
+  try {
+    // 1) /data-Snapshot-Änderungen (falls vorhanden) senden.
+    if (Object.keys(a.adminDataDirty).length) {
+      const r = await Account.adminSetUserData(uid, a.adminDataDirty);
+      if (!r.ok) { a.adminError = accErr(r.err); return; }
+      a.adminDataDirty = {};
+    }
+    // Fremd-Empfänger über die Guthaben-Änderung benachrichtigen (Selbstgabe wird
+    // weiter unten separat behandelt). Der Geldverlauf des Empfängers wird bei IHM
+    // via applyCloudWallet (watchGifts, dank updatedAt-Bump) gebucht.
+    if (!isSelfEdit && walletStaged) {
+      const delta = walletTarget - otherPrevBalance;
+      if (delta) adminNotifyUser(uid, { kind: 'currency', amount: delta });
+    }
+    // 2) Gestagte Inventar-Änderungen (Grants/Revokes) JETZT anwenden — vorher
+    // löste jeder Klick sofort aus; jetzt erst hier beim „Speichern".
+    const pend = a.adminInvPending;
+    const grants = Object.keys(pend).filter((id) => pend[id] === 'grant');
+    const revokes = Object.keys(pend).filter((id) => pend[id] === 'revoke');
+    if (grants.length) {
+      const r = await Account.adminGrantItems(uid, grants);
+      if (!r.ok) { a.adminError = accErr(r.err); return; }
+      for (const id of grants) adminMirrorSelfItem(uid, id, true);
+      adminNotifyUser(uid, { kind: 'gift', item: grants.length > 1 ? 'ALL' : grants[0] });
+      log('account', 'Admin: Items freigeschaltet (gestaged)', { uid, count: grants.length });
+    }
+    for (const id of revokes) {
+      const r = await Account.adminRevokeItem(uid, id);
+      if (!r.ok) { a.adminError = accErr(r.err); return; }
+      adminMirrorSelfItem(uid, id, false);
+      adminNotifyUser(uid, { kind: 'revoke', item: id });
+    }
+    a.adminInvPending = {};
+    await adminReloadData();   // frischer Stand ins Formular…
+    // SELBST-Bearbeitung: sofort auf DIESEM Gerät übernehmen. Ohne das bliebe
+    // lokal der alte Stand — und der eigene Auto-Sync würde die Cloud-Änderung
+    // beim nächsten Upload wieder überschreiben (Symptom: „speichert nicht").
+    // Import bewahrt role/accountId (siehe importFromFile); rev-Abgleich stellt
+    // lokal == Cloud == Basislinie her, damit weder Upload noch reconcile die
+    // Änderung anfassen. Danach die reaktiven States auffrischen (Muster wie
+    // beim Datei-Import).
+    if (uid === state.account.uid && a.adminData) {
+      importFromFile(JSON.stringify(a.adminData));
+      const rev = a.adminData.rev || 0;
+      setDataRev(rev); setSyncedRev(rev);
+      // Das VOLLE Union-Inventar aus der Cloud nachziehen: der `data`-Snapshot hat nur
+      // die zuletzt hochgeladene Inventar-Kopie — gerade freigeschaltete Items (auch
+      // via „Alles freischalten"), die schon im Union-Knoten liegen, aber nie
+      // synchronisiert wurden, fehlten sonst lokal bis zum Neustart.
+      await Account.syncInventoryFromCloud(uid);
+      state.settings = loadSettings(); state.stats = loadStats(); state.streak = loadStreak();
+      state.wallet = loadWallet(); state.inventory = loadInventory(); state.puzzleHistory = loadHistory();
+      applyTheme(); applySfxPack(); applyMusicPack(); applyLocale(); refreshResume();
+      log('account', 'Admin: eigene Daten lokal übernommen');
+      // Eigene Guthaben-Änderung nachträglich im Geldverlauf buchen (Saldo ist
+      // durch den Import schon korrekt) + lokale Benachrichtigung zeigen.
+      if (selfBalanceStaged) {
+        const delta = (loadWallet().balance || 0) - selfPrevBalance;
+        if (delta) {
+          noteWalletTransaction(delta, 'admin');
+          adminNotifyUser(uid, { kind: 'currency', amount: delta });
+          log('account', 'Admin: Selbst-Guthaben gebucht', { delta });
+        }
+      }
+    }
+    await adminLoadUsers();    // …und Tabelle (Guthaben etc.) auffrischen
+    const fresh = a.adminUsers.find(u => u.uid === uid);
+    if (fresh) a.adminEditUser = fresh;
+    showToast(t('admin.saved'), 'success', 1800);
+  } finally { a.adminBusy = false; }
+}
+// JSON-Untereditor für tiefe Strukturen (byDifficulty, history, activeGame, …).
+function openAdminJson(row) {
+  const a = state.account;
+  a.adminJsonPath = row.path; a.adminJsonError = null;
+  a.adminJsonDraft = JSON.stringify(adminFieldValue(row), null, 2);
+}
+function closeAdminJson() { state.account.adminJsonPath = null; state.account.adminJsonError = null; }
+function saveAdminJson() {
+  const a = state.account;
+  try {
+    const parsed = JSON.parse(a.adminJsonDraft);
+    adminMarkDirty(a.adminJsonPath, parsed);
+    closeAdminJson();
+  } catch (e) { a.adminJsonError = String(e.message || e); }
+}
+// Kopf-Chips: Live-Werte bevorzugt aus dem frischen Snapshot (inkl. Dirty-Werte).
+function adminChipValue(path, fallback) {
+  const dirty = state.account.adminDataDirty;
+  if (path in dirty) return dirty[path];
+  const parts = path.split('/');
+  let cur = state.account.adminData;
+  for (const p of parts) { if (cur == null || typeof cur !== 'object') { cur = undefined; break; } cur = cur[p]; }
+  return cur ?? fallback;
+}
+async function adminAction(fn, ...args) {
+  const a = state.account; a.adminError = null; a.adminBusy = true;
+  try {
+    const r = await fn(...args);
+    if (!r.ok) { a.adminError = accErr(r.err); return false; }
+    await adminLoadUsers();  // Liste auffrischen…
+    // …und das offene Modal auf den frischen Stand des Users heben.
+    if (a.adminEditUser) {
+      const fresh = a.adminUsers.find(u => u.uid === a.adminEditUser.uid);
+      if (fresh) { a.adminEditUser = fresh; a.adminBalance = String(fresh.balance ?? 0); a.adminEmail = fresh.email || ''; a.adminUsername = fresh.username || ''; }
+    }
+    showToast(t('admin.done'), 'success', 1800);
+    return true;
+  } finally { a.adminBusy = false; }
+}
+function adminEditUid() { return state.account.adminEditUser && state.account.adminEditUser.uid; }
+// Selbst-gerichtete Admin-Aktionen sofort lokal spiegeln: Grant/Revoke/Guthaben
+// schreiben direkt in die Cloud — das EIGENE Gerät sähe das sonst erst beim
+// Start-Reconcile (Symptom: selbst verschenkte Items erst nach Neustart
+// ausrüstbar). Inventar lokal idempotent nachziehen (Union-Semantik bleibt
+// gewahrt), Wallet per Differenz angleichen; die reaktiven States springen mit.
+// Fremde Nutzer über die Änderung benachrichtigen (persistente RTDB-Notiz;
+// kommt auch offline an — beim nächsten App-Start). Nur wenn der Haken an ist.
+function adminNotifyUser(uid, notice) {
+  if (!uid || !state.account.adminNotify) return;
+  // Selbst-Aktion: es gibt keinen fremden Empfänger — die Benachrichtigung lokal
+  // anzeigen (statt sie zu verschlucken), damit man auch bei Selbstgabe Feedback
+  // bekommt. Fremde Nutzer bekommen die persistente RTDB-Notiz wie bisher.
+  if (uid === state.account.uid) { showSelfAdminNotice(notice); return; }
+  Account.sendAdminNotice(uid, { ...notice, from: state.account.username || 'Admin' });
+}
+// Lokale Admin-Benachrichtigung (Selbstgabe): nutzt dasselbe Notice-Modal wie
+// eine empfangene Gabe, aber ohne Cloud-Umweg. `self:true` steuert den Text +
+// verhindert das Cloud-Löschen beim Schließen (es gibt keinen Cloud-Eintrag).
+function showSelfAdminNotice(notice) {
+  state.adminNotice = { ...notice, self: true, id: 'self-' + Date.now() };
+}
+function adminAfterItem(uid, id, granted) {
+  adminMirrorSelfItem(uid, id, granted);
+  adminNotifyUser(uid, { kind: granted ? 'gift' : 'revoke', item: id });
+}
+function adminAfterBalance(uid, n) {
+  adminMirrorSelfBalance(uid, n);
+  adminNotifyUser(uid, { kind: 'currency', amount: n });
+}
+function adminMirrorSelfItem(uid, id, granted) {
+  if (!uid || uid !== state.account.uid) return;
+  state.inventory = granted ? grantInventory(id, 'gift') : revokeInventory(id);
+  log('account', 'Admin: Selbst-Geschenk lokal gespiegelt', { id, granted });
+}
+function adminMirrorSelfBalance(uid, n) {
+  if (!uid || uid !== state.account.uid) return;
+  const cur = loadWallet().balance || 0;
+  if (n > cur) grantCurrency(n - cur, 'admin');
+  else if (n < cur) spendCurrency(cur - n, 'admin');
+  state.wallet = loadWallet();
+}
+// Grant/Revoke werden jetzt GESTAGT (erst bei „Speichern" gesendet, s.
+// adminSaveData) statt sofort geschrieben.
+function adminGrantSkin() { adminStageItem('dynamicColor', 'grant'); }
+function adminRevokeSkin() { adminStageItem('dynamicColor', 'revoke'); }
+function adminToggleRole() {
+  const u = state.account.adminEditUser; if (!u) return;
+  adminAction(Account.adminSetRole, u.uid, u.role === 'admin' ? 'user' : 'admin');
+}
+function adminSetBalance() { const uid = adminEditUid(); const n = parseInt(state.account.adminBalance || '0', 10); if (uid) adminAction(Account.adminSetCurrency, uid, n).then((ok) => ok && adminAfterBalance(uid, Math.max(0, Math.floor(n || 0)))); }
+function adminChangeUsername() { const uid = adminEditUid(); const n = state.account.adminUsername.trim(); if (uid && n) adminAction(Account.adminSetUsername, uid, n); }
+// Auswahl aus dem Dropdown STAGEN (nicht sofort senden); danach die Auswahl leeren.
+function adminGrantAnyItem() { const id = state.account.adminItem.trim(); if (id) { adminStageItem(id, 'grant'); state.account.adminItem = ''; } }
+// „Alles freischalten": alle bekannten Items (Sieganimationen, Shop-Artikel, Skin,
+// Founder), die der Nutzer nach aktuellem Staging noch NICHT besitzt, als Grant
+// vormerken — wird ebenfalls erst beim „Speichern" gesendet.
+function adminGrantAllItems() {
+  const have = new Set(adminEffectiveInventoryIds());
+  const ids = adminItemOptions().filter((id) => !have.has(id));
+  if (!ids.length) { showToast(t('admin.nothingToGrant'), 'success', 1800); return; }
+  for (const id of ids) adminStageItem(id, 'grant');
+}
+// ✕ an einem Chip toggelt den Staging-Zustand: gestagten Grant/Revoke zurücknehmen,
+// sonst (besessenes Item) einen Revoke vormerken. Nichts wird sofort gesendet.
+function adminRevokeItemId(id) {
+  if (!id) return;
+  if (state.account.adminInvPending[id]) adminUnstageItem(id); // gestagte Änderung rückgängig
+  else adminStageItem(id, 'revoke');
+}
+function adminRevokeAnyItem() { const id = state.account.adminItem.trim(); if (id) { adminStageItem(id, 'revoke'); state.account.adminItem = ''; } }
+function adminSetField() { const uid = adminEditUid(); const k = state.account.adminFieldKey.trim(); if (uid && k) adminAction(Account.adminSetProfileField, uid, k, state.account.adminFieldVal); }
+async function adminResetPw() {
+  const a = state.account; const email = (a.adminEmail || (a.adminEditUser && a.adminEditUser.email) || '').trim();
+  if (!email) { a.adminError = accErr('invalidEmail'); return; }
+  a.adminBusy = true; a.adminError = null;
+  try {
+    const res = await Account.adminSendPasswordReset(email);
+    if (!res.ok) { a.adminError = accErr(res.err); return; }
+    showToast(t('admin.resetSent'), 'success', 2600);
+  } finally { a.adminBusy = false; }
+}
+
+// ─── Freunde & Präsenz ────────────────────────────────────────────────────────
+let friendsUnwatch = null, presenceUnwatch = null, presenceGameTimer = 0;
+function openFriends() {
+  if (!isOnline()) { showToast(t('offline.unavailable'), 'error', 2600); return; }
+  if (state.account.status !== 'in') { openSettings(); state.settingsTab = 'konto'; return; }
+  state.friends.open = true; state.friends.tab = 'friends';
+  state.friends.addName = ''; state.friends.addError = null; state.friends.addNotice = null;
+  startFriendsWatch();
+}
+function closeFriends() { state.friends.open = false; stopLeaderboardWatch(); }
+function setFriendsTab(tab) {
+  state.friends.tab = tab;
+  if (tab === 'leaderboard') startLeaderboardWatch();
+  else stopLeaderboardWatch();
+}
+// ─── Bestenliste ──────────────────────────────────────────────────────────────
+let leaderboardUnwatch = null;
+async function startLeaderboardWatch() {
+  stopLeaderboardWatch();
+  // Alte Einträge stehen lassen, bis die neuen ankommen — verhindert das
+  // Leer-/Lade-Flackern beim Schwierigkeit-Wechsel. Nur beim ERSTEN Laden
+  // (noch keine Einträge) zeigen wir den Lade-Hinweis.
+  state.leaderboard.loading = !state.leaderboard.entries.length;
+  const forDiff = state.leaderboard.diff;
+  leaderboardUnwatch = await Account.watchLeaderboard(forDiff, (entries) => {
+    // Nur anwenden, wenn die Antwort noch zur aktuell gewählten Schwierigkeit passt.
+    if (state.leaderboard.diff !== forDiff) return;
+    state.leaderboard.entries = entries;
+    state.leaderboard.loading = false;
+  });
+}
+function stopLeaderboardWatch() {
+  try { leaderboardUnwatch && leaderboardUnwatch(); } catch (_) {}
+  leaderboardUnwatch = null;
+}
+function selectLeaderboardDiff(id) {
+  if (state.leaderboard.diff === id) return;
+  log('app', 'Bestenliste: Schwierigkeit gewechselt', { diff: id });
+  state.leaderboard.diff = id;
+  if (state.friends.tab === 'leaderboard') startLeaderboardWatch();
+}
+// Live-Listener auf Freunde/Anfragen aufsetzen und Präsenz aller Freunde nachziehen.
+async function startFriendsWatch() {
+  if (friendsUnwatch) return;   // schon aktiv
+  friendsUnwatch = await Account.watchFriends((upd) => {
+    if (upd.friends) state.friends.list = upd.friends;
+    if (upd.requests) state.friends.requests = upd.requests;
+    rearmPresenceWatch();
+  });
+}
+function stopFriendsWatch() {
+  try { friendsUnwatch && friendsUnwatch(); } catch (_) {}
+  try { presenceUnwatch && presenceUnwatch(); } catch (_) {}
+  friendsUnwatch = presenceUnwatch = null;
+}
+// Präsenz-Listener auf die aktuelle Freundes-uid-Menge neu aufsetzen.
+async function rearmPresenceWatch() {
+  try { presenceUnwatch && presenceUnwatch(); } catch (_) {}
+  const uids = state.friends.list.map((f) => f.uid);
+  presenceUnwatch = await Account.watchPresence(uids, (uid, status) => { state.friends.presence[uid] = status; });
+}
+function openAddFriend() { const f = state.friends; f.addOpen = true; f.addName = ''; f.addError = null; f.addNotice = null; }
+function closeAddFriend() { state.friends.addOpen = false; }
+async function addFriend() {
+  const f = state.friends;
+  const name = (f.addName || '').trim();
+  if (!name) return;
+  f.addBusy = true; f.addError = null; f.addNotice = null;
+  try {
+    const r = await Account.sendFriendRequest(name);
+    if (!r.ok) { const k = 'friends.err.' + r.err, s = t(k); f.addError = s === k ? accErr(r.err) : s; return; }
+    f.addName = ''; f.addOpen = false;
+    showToast(t('friends.requestSent', { name }), 'success', 2600);
+  } finally { f.addBusy = false; }
+}
+async function acceptFriend(req) {
+  const r = await Account.acceptFriendRequest(req.uid, req.username);
+  if (r.ok) showToast(t('friends.nowFriends', { name: req.username || req.uid }), 'success', 2500);
+}
+async function declineFriend(req) { await Account.declineFriendRequest(req.uid); }
+function removeFriendAsk(fr) {
+  ask(t('friends.removeTitle'), t('friends.removeMsg', { name: fr.username || fr.uid }), async () => {
+    await Account.removeFriend(fr.uid);
+  });
+}
+// Sortierte Freundesliste (im Spiel > online > offline, dann alphabetisch).
+// state.friends.now (statt Date.now()) hält die Frische-Prüfung reaktiv: der
+// Heartbeat-Tick unten bumpt es, sodass ein Geister-Status (hängen gebliebenes
+// online:true ohne Lebenszeichen) auch bei offenem Modal live auf offline kippt.
+function friendsSorted() { return Account.sortFriends(state.friends.list, state.friends.presence, state.friends.now); }
+function friendPresence(uid) { return state.friends.presence[uid] || null; }
+// Online nur mit frischem lastActive (Account.presenceOnline) — ein verwaister
+// Browser, dessen onDisconnect verloren ging, zeigte sonst 24/7 „online".
+function friendOnline(uid) { return Account.presenceOnline(state.friends.presence[uid], state.friends.now); }
+// Ist mindestens ein Freund online (egal ob im Spiel)? → grüner Punkt am 👫-Button.
+function anyFriendOnline() { return state.friends.list.some((f) => friendOnline(f.uid)); }
+// „Im Spiel" nur, wenn ONLINE und eine Partie läuft — eine veraltete game-Info
+// eines offline gegangenen Freundes darf nie als „im Spiel" gezeigt werden.
+function friendInGame(uid) { const p = state.friends.presence[uid]; return friendOnline(uid) && !!(p && p.game); }
+// Ist dieser Freund bereits DEM eigenen Coop-Raum beigetreten? Match über den
+// (eindeutigen) Account-Benutzernamen gegen die Roster-Einträge (außer mir).
+// Roster-getrieben: tritt er bei, erscheint sein Spieler → „Beigetreten"; verlässt
+// er, verschwindet er → wieder „Einladen". So bleibt der Button ehrlich.
+function friendInRoom(fr) {
+  const u = (fr && fr.username || '').trim().toLowerCase();
+  if (!u) return false;
+  return state.coop.players.some((p) => p.id !== state.coop.myId && (p.username || '').trim().toLowerCase() === u);
+}
+// Relative Zeitangabe („vor 5 Min", „gestern", „vor 3 Tagen") aus einem
+// Epoch-Millisekunden-Zeitstempel — via Intl.RelativeTimeFormat in der UI-Sprache.
+function fmtRelative(ts) {
+  if (!ts || typeof ts !== 'number') return '';
+  const diffMs = Date.now() - ts;
+  const abs = Math.abs(diffMs);
+  const locale = state.settings.language || i18nState.locale || 'de';
+  let rtf; try { rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }); } catch (_) { return ''; }
+  const units = [['year', 31536e6], ['month', 2592e6], ['day', 864e5], ['hour', 36e5], ['minute', 6e4]];
+  for (const [unit, ms] of units) {
+    if (abs >= ms || unit === 'minute') return rtf.format(-Math.round(diffMs / ms), unit);
+  }
+  return '';
+}
+// Menschlicher Aktivitätstext für einen Freund.
+function friendActivityText(uid) {
+  const p = state.friends.presence[uid];
+  if (!friendOnline(uid)) {
+    // Offline (oder abgelaufener Geister-Status): wenn bekannt, zeigen, wann
+    // der Freund WIRKLICH zuletzt aktiv war (lastActive statt online-Flag).
+    const rel = p && p.lastActive ? fmtRelative(p.lastActive) : '';
+    return rel ? t('friends.offlineSince', { when: rel }) : t('friends.offline');
+  }
+  if (!p.game) return t('friends.online');
+  const g = p.game;
+  const mode = t('friends.mode.' + (g.mode || 'solo'));
+  const diff = g.difficulty ? t('difficulty.' + g.difficulty) : '';
+  const parts = [mode, diff, g.size].filter(Boolean).join(' · ');
+  return t('friends.inGame', { info: parts });
+}
+// ── Eigene Präsenz veröffentlichen ──
+// gameInfo aus dem aktuellen State ableiten (oder null im Menü).
+function currentGameInfo() {
+  if (!gameSessionActive() || !state.puzzle) return null;
+  return {
+    mode: state.coop.active ? (state.race.active ? 'race' : state.team.active ? 'team' : 'coop') : 'solo',
+    difficulty: state.puzzle.difficulty || null,
+    size: `${state.puzzle.rows}×${state.puzzle.cols}`,
+    pct: progressPct(),
+  };
+}
+function pushPresence() {
+  if (state.account.status !== 'in') return;
+  Account.publishPresence(currentGameInfo(), myBadge());
+}
+
+// ─── Dynamischer Skin: Freischaltung ──────────────────────────────────────────
+// Schaltet das Cosmetic 'dynamicColor' frei (idempotent, lokales Inventar) und
+// zeigt EINMAL die Feier-Anzeige. Bei eingeloggtem Konto wird der Unlock
+// hochgeladen (roamt über /users/{uid}/inventory).
+function grantSkin(source) {
+  if (state.inventory[SKIN_ID]) return false;
+  state.inventory = grantInventory(SKIN_ID, source);
+  state.skinJustUnlocked = true;
+  if (state.account.status === 'in') Account.scheduleSyncUp();
+  log('app', 'Skin freigeschaltet', { source });
+  return true;
+}
+// „Feier des Tages": JEDER ab 1.0 bekommt den Skin geschenkt. Zusätzlich bekommt,
+// wer den Sprung von <1.0 aktiv miterlebt hat, einen bleibenden Founder-Marker
+// (für später). Liest die zuletzt gesehene Version VOR dismissWhatsNew.
+function maybeUnlockV1Skin() {
+  // EXKLUSIV für Bestandsspieler, die den Sprung auf 1.0 aktiv miterlebt haben
+  // (zuletzt gesehene Version <1.0). Neue Installationen bekommen weder Skin
+  // noch Founder-Abzeichen automatisch — nur per Freischaltcode/Admin-Geschenk.
+  if (!qualifiesForV1Skin(loadSeenVersion(), BUILD)) return;
+  if (!state.inventory[SKIN_ID]) grantSkin('v1celebration');
+  if (!state.inventory[FOUNDER_ID]) {
+    state.inventory = grantInventory(FOUNDER_ID, 'version-jump');
+    if (state.account.status === 'in') Account.scheduleSyncUp();
+    log('app', 'Founder-Marker vergeben (1.0-Sprung miterlebt)');
+  }
+}
+function redeemSkinCode() {
+  const a = state.account;
+  if (state.inventory[SKIN_ID]) { showToast(t('skin.alreadyOwned'), 'info', 2200); return; }
+  if (skinCodeMatches(state.skinCodeInput)) {
+    grantSkin('code');
+    state.skinCodeInput = '';
+    showToast(t('skin.codeOk'), 'success', 2600);
+  } else {
+    showToast(t('skin.codeBad'), 'error', 2600);
+  }
+}
+function dismissSkinUnlock() { state.skinJustUnlocked = false; }
+function openSkinEditor() {
+  // Wer den Skin anpassen möchte, will ihn auch sehen → aktivieren (Default ist aus).
+  state.settings.skinEnabled = true;
+  state.skinJustUnlocked = false;
+  navigate('settings'); state.settingsTab = 'farbe';
+  nextTick(() => { document.querySelector('.skin-editor')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); });
+}
+
+// ─── WAS IST NEU ──────────────────────────────────────────────────────────────
+// Semver-artiger Vergleich ("0.155" > "0.154"): teilstückweise numerisch.
+function cmpVersion(a, b) {
+  const pa = String(a).split('.').map(Number), pb = String(b).split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return d;
+  }
+  return 0;
+}
+function maybeShowWhatsNew() {
+  const seen = loadSeenVersion();
+  if (seen !== BUILD && CHANGELOG.length) {
+    state.whatsNewSince = seen; // zuletzt gesehene Version festhalten (siehe whatsNewEntries)
+    state.showWhatsNew = true;
+  }
+}
+function dismissWhatsNew() { state.showWhatsNew = false; saveSeenVersion(BUILD); }
+function dismissStreakLostNotice() { state.streakLostNotice = false; }
+function dismissStreakExtended() { state.streakExtended = null; }
+
+// ─── SPIELSTIL-AUFZEICHNUNG (Basis des eigenen KI-Klons) ─────────────────────
+// Während der Partie wird nur roh mitgeschrieben (s. setMark). Ausgewertet wird
+// EINMAL am Spielende in der afterPaint-Buchhaltung — dort ist Rechenzeit
+// unkritisch, im Tap-Pfad wäre sie es nicht.
+let moveLog = null;
+
+// Nur ECHTE eigene Solo-Partien taugen als Trainingsdaten: Training ist geführt,
+// Coop/Team sind fremdbestimmt, und KI-Duelle würden den Klon auf sich selbst
+// zurückkoppeln.
+// JEDER Modus zählt für den Klon: Solo, Endlos, Coop, Team, Duell 1v1/FFA und
+// auch das KI-Duell — überall spielt der Nutzer selbst, und nur die Summe aller
+// Partien ergibt einen Klon, der wirklich er ist. Ausgenommen bleibt EINZIG der
+// Trainingsmodus: dort setzt der Tutor die Züge (`applyTrainingStep` ruft setMark),
+// die Deduktion kommt also von der App und nicht vom Spieler — als Stilprobe wäre
+// das eine Aufzeichnung der App über sich selbst.
+function playSampleEligible() {
+  return !state.isTrainingGame;
+}
+function startPlayLog() { moveLog = playSampleEligible() ? [] : null; }
+
+// Am Spielende: Zug-Log auswerten und als kompakte Stichprobe sichern.
+function recordPlaySample() {
+  if (!moveLog || !moveLog.length || !state.puzzle) { moveLog = null; return; }
+  const moves = moveLog;
+  moveLog = null;
+  try {
+    const t0 = Date.now();
+    const sample = analyzeGame({
+      puzzle: state.puzzle, moves, mistakes: state.mistakes,
+      totalMs: state.elapsed, difficulty: state.puzzle.difficulty,
+    });
+    if (!sample) return;
+    const all = addPlaySample(sample);
+    log('game', 'Spielstil-Stichprobe gesichert', { games: all.length, tookMs: Date.now() - t0, thinkCount: sample.thinkCount });
+    // Genau EIN Ort für die Veröffentlichung: hier ist der Klon gerade frisch
+    // geworden. Der Aufruf ist bewusst nicht abgewartet — die Spielende-
+    // Buchhaltung darf nicht auf das Netz warten.
+    publishMyClone();
+  } catch (e) {
+    log('error', 'Spielstil-Auswertung fehlgeschlagen', e);
+  }
+}
+
+// Der eigene Klon: aus den gesammelten Stichproben abgeleitet. `ready` erst ab
+// genug Partien — vorher zeigt die UI den Fortschritt statt eines halbgaren Klons.
+function myClone() {
+  return buildProfile(loadPlaySamples());
+}
+
+// ─── KI-DUELL ─────────────────────────────────────────────────────────────────
+// Ein KI-Duell ist ein vollwertiges Race-Match (state.isRaceGame = true, damit
+// alle Duell-Achievements greifen), aber ohne Firebase: der Gegner ist ein
+// lokaler opponents-Eintrag, den ein setTimeout-Scheduler treibt. Läuft deshalb
+// auch offline. Die Duell-UI (HUD-Balken, duelBars, .duel-graph-Ergebniskarte)
+// bleibt unverändert — für sie ist der Bot einfach ein weiterer Gegner.
+let botState = null;        // Bot-Instanz (js/duelbot.js), null = kein KI-Duell
+let botTimer = null;
+
+function stopBot() {
+  if (botTimer) { clearTimeout(botTimer); botTimer = null; }
+}
+// Der Bot darf NICHT weiterlaufen, während der Spieler pausiert oder die App im
+// Hintergrund ist — sonst „rennt" er, obwohl die eigene Uhr steht.
+function botPaused() {
+  return state.paused || !!state.resumeCountdown || (typeof document !== 'undefined' && document.hidden);
+}
+// setTimeout-Kette statt Frame-Loop: ein Bot-Zug kostet nichts am Brett (der Bot
+// hat keins) und schreibt nur den ganzzahligen Fortschritt des Gegners — das
+// Brett rendert dabei nicht neu (s. Board-Render-Regeln in CLAUDE.md).
+function scheduleBotAction() {
+  stopBot();
+  if (!botState || !state.race.ai || state.race.matchOver || state.status !== 'playing') return;
+  const action = botNextAction(botState);
+  if (action.kind === 'done') return;
+  const wait = botPaused() ? 400 : Math.max(50, action.delayMs);
+  botTimer = setTimeout(() => {
+    botTimer = null;
+    if (!botState || !state.race.ai || state.race.matchOver || state.status !== 'playing') return;
+    // Während Pause/Hintergrund NICHT ausführen, nur erneut nachsehen.
+    if (botPaused()) { scheduleBotAction(); return; }
+    const res = botApplyAction(botState, action);
+    const opp = state.race.opponents[0];
+    if (opp) { opp.pct = res.pct; opp.mistakes = botState.mistakes; }
+    state.race.opponentPct = res.pct;
+    state.race.opponentMistakes = botState.mistakes;
+    if (res.out) { onBotEliminated(); return; }
+    if (res.done) { onBotSolved(); return; }
+    scheduleBotAction();
+  }, wait);
+}
+
+// Der Bot hat gelöst → das Match ist verloren (Spiegel des RACE_DONE-1v1-Zweigs,
+// nur ohne Netzwerk).
+function onBotSolved() {
+  stopBot();
+  if (state.race.matchOver || state.status !== 'playing') return;
+  state.race.matchOver = true;
+  state.race.winner = 'opponent';
+  state.race.endReason = 'won';
+  state.race.winnerName = state.race.opponentName;
+  state.race.opponentPct = 100;
+  state.race.myPct = progressPct();
+  log('game', 'KI-Duell: Bot hat gelöst', { level: state.race.aiLevel, botMistakes: botState?.mistakes, myPct: state.race.myPct });
+  lose({ timeMs: state.elapsed, mistakes: state.mistakes, hintsUsed: state.hintsUsed });
+}
+// Der Bot hat alle Leben verloren → er ist ausgeschieden, der Spieler gewinnt.
+function onBotEliminated() {
+  stopBot();
+  if (state.race.matchOver || state.status !== 'playing') return;
+  const opp = state.race.opponents[0];
+  if (opp) opp.out = true;
+  state.race.matchOver = true;
+  state.race.winner = 'me';
+  state.race.winnerName = myUsername() || t('common.you');
+  state.race.endReason = 'won';
+  state.race.myPct = progressPct();
+  log('game', 'KI-Duell: Bot ausgeschieden (alle Leben verloren)', { level: state.race.aiLevel });
+  win();
+}
+
+// Zielzeit des Duells: Grundlage sind die EIGENEN DURCHSCHNITTSzeiten aus den
+// Statistiken (sumTimeMs / won), nicht die Bestzeiten — ein Gegner, der immer
+// Bestzeit spielt, wäre unfair. Fehlt für eine Schwierigkeit ein eigener Wert,
+// greift die Vorgabetabelle in duelbot.js.
+function aiTargetFor(difficulty, spec = aiOpponentSpec()) {
+  return targetMsFor({
+    avgMs: spec.avgMs,
+    difficulty,
+    level: spec.level,
+    skill: state.race.aiSkill,
+  });
+}
+
+// Der gewählte Gegner, aufgelöst zu allem, was Zielzeit und Verhalten brauchen.
+// Bewusst EINE Stelle für die drei Fälle (feste Stufe / eigener Klon /
+// Freundes-Klon), damit die angezeigte Erwartungszeit und das tatsächliche Duell
+// garantiert dieselbe Grundlage benutzen.
+function aiOpponentSpec() {
+  const individual = state.race.aiMode === 'individual';
+  const fuid = individual ? state.race.aiFriend : null;
+  if (fuid) {
+    const entry = state.race.friendClones[fuid] || null;
+    const friend = (state.friends.list || []).find((f) => f.uid === fuid);
+    // FREMDDATEN aus der Cloud, ungeprüft: Profil UND Durchschnittszeiten müssen
+    // beide durch ihre Klemme. Ohne clampAvgMs hätte eine manipulierte 1-ms-Zeit
+    // den Klon sofort gewinnen lassen — clampProfile fasst die Zeit nicht an.
+    return {
+      kind: 'friend',
+      name: (entry && entry.username) || (friend && friend.username) || t('aiduel.oppFriend'),
+      profile: clampProfile(entry && entry.profile),
+      avgMs: clampAvgMs(entry && entry.avgMs),
+      level: 'medium',
+    };
+  }
+  if (individual && state.race.aiClone) {
+    const c = myClone();
+    return {
+      kind: 'clone',
+      name: t('aiduel.oppCloneName'),
+      // Der eigene Klon behält bewusst den searchMax des Presets: der Wert steuert
+      // die U-Kurve der Suche, nicht den persönlichen Stil.
+      profile: (c.ready && c.profile)
+        ? { ...PRESET_PROFILES.medium, ...c.profile, searchMax: PRESET_PROFILES.medium.searchMax }
+        : { ...PRESET_PROFILES.medium },
+      avgMs: avgTimesByDifficulty(state.stats),
+      level: 'medium',
+    };
+  }
+  const level = PRESET_LEVELS[state.race.aiLevel] ? state.race.aiLevel : 'medium';
+  return {
+    kind: 'preset',
+    name: t('aiduel.opponentName', { level: t('aiduel.level.' + level) }),
+    profile: { ...PRESET_PROFILES.medium, mistakesPerGame: PRESET_LEVELS[level].mistakesPerGame, stallRate: PRESET_LEVELS[level].stallRate },
+    avgMs: avgTimesByDifficulty(state.stats),
+    level,
+  };
+}
+
+// Hat der Spieler für diese Schwierigkeit eigene Durchschnittsdaten? (Nur für die
+// Anzeige „kalibriert auf dich" vs. „Vorgabewert".) Beim Freundes-Klon zählt
+// dessen Kalibrierung, nicht die eigene.
+function aiCalibrated(difficulty) {
+  return aiOpponentSpec().avgMs[difficulty] != null;
+}
+// Status des eigenen Klons für die Gegnerauswahl: kalibriert oder „lernt noch".
+function cloneStatus() {
+  const c = myClone();
+  return { ready: c.ready, games: c.games, need: CLONE_MIN_GAMES };
+}
+function aiTargetLabel(difficulty) {
+  return fmtTime(aiTargetFor(difficulty));
+}
+
+// Alle Freundes-Klone mit ihrem Kalibrier-Stand. Fertige zuerst, danach alphabetisch.
+function friendClones() {
+  return (state.friends.list || []).map((f) => {
+    const e = state.race.friendClones[f.uid] || null;
+    const games = Number(e && e.games) || 0;
+    return {
+      uid: f.uid,
+      name: (e && e.username) || f.username || '?',
+      games,
+      need: CLONE_MIN_GAMES,
+      ready: !!(e && e.profile) && games >= CLONE_MIN_GAMES,
+    };
+  }).sort((a, b) => (Number(b.ready) - Number(a.ready)) || a.name.localeCompare(b.name));
+}
+
+// Die Auswahl zeigt NUR spielbereite Klone. Unfertige gehören bewusst NICHT in
+// die Liste: bei inaktiven Freunden wird ihr Klon nie fertig, sie würden also für
+// immer Platz belegen. Sie stecken stattdessen in einer eigenen Übersicht
+// (aiLearning-Modal), die man nur öffnet, wenn man wissen will, wer noch lernt.
+function readyClones() {
+  return friendClones().filter((c) => c.ready);
+}
+function learningClones() {
+  return friendClones().filter((c) => !c.ready);
+}
+// Gibt es überhaupt einen spielbaren individuellen Gegner (eigener Klon oder Freund)?
+function anyCloneReady() {
+  return cloneStatus().ready || readyClones().length > 0;
+}
+
+// Modus umschalten. Beim Wechsel auf „individuell" gleich etwas Spielbares
+// vorauswählen (eigener Klon zuerst, sonst der erste fertige Freund), damit der
+// Start-Knopf nie ins Leere zeigt.
+function setAiMode(mode) {
+  state.race.aiMode = mode === 'individual' ? 'individual' : 'preset';
+  if (state.race.aiMode !== 'individual') return;
+  const stillValid = state.race.aiFriend
+    ? readyClones().some((c) => c.uid === state.race.aiFriend)
+    : (state.race.aiClone && cloneStatus().ready);
+  if (stillValid) return;
+  if (cloneStatus().ready) pickAiOpponent('clone');
+  else if (readyClones().length) pickAiOpponent('friend', readyClones()[0].uid);
+  else pickAiOpponent('preset');
+}
+
+function pickAiOpponent(kind, uid = null) {
+  state.race.aiClone = kind === 'clone';
+  state.race.aiFriend = kind === 'friend' ? uid : null;
+}
+
+// Die Klon-Profile der Freunde beim Öffnen des Duell-Screens einmal holen (kein
+// Dauer-Listener — ein Profil ändert sich höchstens einmal je Partie des Freundes).
+async function loadFriendClones() {
+  const uids = (state.friends.list || []).map((f) => f.uid).filter(Boolean);
+  if (!uids.length || state.account.status !== 'in' || !isOnline()) return;
+  state.race.clonesLoading = true;
+  const t0 = Date.now();
+  try {
+    state.race.friendClones = await Account.fetchAiProfiles(uids);
+    log('game', 'Freundes-Klone geladen', {
+      asked: uids.length, found: Object.keys(state.race.friendClones).length,
+      ready: readyClones().length, tookMs: Date.now() - t0,
+    });
+    // Erst jetzt steht fest, wer spielbereit ist — eine im leeren Zustand
+    // getroffene Vorauswahl nachziehen.
+    if (state.race.aiMode === 'individual') setAiMode('individual');
+  } catch (e) {
+    log('error', 'Freundes-Klone laden fehlgeschlagen', e);
+  } finally {
+    state.race.clonesLoading = false;
+  }
+}
+
+// Den eigenen Klon veröffentlichen, sobald er fertig kalibriert ist — damit
+// Freunde gegen ihn spielen können. Läuft am Spielende (nach der Auswertung der
+// Partie) und ist bewusst „fire and forget": ein Fehlschlag darf die
+// Spielende-Buchhaltung nicht stören.
+function publishMyClone() {
+  try {
+    if (state.account.status !== 'in' || !isOnline()) return;
+    const c = myClone();
+    // BEWUSST auch den noch unfertigen Klon veröffentlichen. Vorher stand hier
+    // `!c.ready` — dadurch existierte `/aiProfiles/{uid}` erst ab der achten
+    // Partie, und für jeden lernenden Freund zeigte die Übersicht zwangsläufig
+    // „0/8" mit leerem Balken. Der Fortschritt war also strukturell nicht
+    // darstellbar. Die Empfängerseite entscheidet ohnehin selbst über die
+    // Spielbereitschaft (`games >= CLONE_MIN_GAMES` in friendClones), das
+    // vorläufige Profil wird nie als Gegner ausgewählt.
+    if (!c.profile) return;
+    Account.publishAiProfile({
+      profile: c.profile,
+      games: c.games,
+      avgMs: avgTimesByDifficulty(state.stats),
+      username: state.account.username,
+      badge: myBadge(),
+    });
+  } catch (e) { log('error', 'KI-Klon veröffentlichen fehlgeschlagen', e); }
+}
+
+function goAiDuel() {
+  state.modal = null;
+  coopReset();
+  pushNav(() => { coopReset(); navigate('home'); });
+  navigate('aiduel');
+  loadFriendClones();
+}
+
+// Startet das KI-Duell: Rätsel generieren, Bot auf die Zielzeit kalibrieren,
+// Timer + Scheduler anwerfen. Kein Raum, keine Lobby, kein awaitingStart.
+function startAiDuel(diffId) {
+  const difficulty = diffId || state.sel.difficulty;
+  state.isTrainingGame = false;
+  state.isRaceGame = true;
+  state.race.active = true;
+  state.race.ai = true;
+  state.race.ffa = false;
+  state.race.matchOver = false;
+  state.race.winner = null;
+  state.race.winnerName = '';
+  state.race.endReason = null;
+  state.race.myPct = 0;
+  state.race.opponentPct = 0;
+  state.race.opponentMistakes = 0;
+  if (!PRESET_LEVELS[state.race.aiLevel]) state.race.aiLevel = 'medium';
+  // Gegner EINMAL auflösen und festhalten: Zielzeit, Name und Profil müssen aus
+  // derselben Momentaufnahme kommen — die Auswahl darf sich während der
+  // Generierung nicht mehr auswirken.
+  const spec = aiOpponentSpec();
+  state.race.opponentId = 'ai';
+  state.race.opponentName = spec.name;
+  state.race.opponentColor = '#7c8cff';
+  state.race.opponents = [{ id: 'ai', name: state.race.opponentName, color: state.race.opponentColor, pct: 0, mistakes: 0, out: false }];
+  state.screen = 'game';
+  state.generating = true;
+  const targetMs = aiTargetFor(difficulty, spec);
+  state.race.aiTargetMs = targetMs;
+  log('game', 'KI-Duell gestartet', { difficulty, kind: spec.kind, level: spec.level, targetMs, calibrated: spec.avgMs[difficulty] != null });
+  const t0 = Date.now();
+  generateAsync({ difficulty, bigNumbers: false }).then(puzzle => {
+    if (!state.race.ai) return;   // zwischenzeitlich abgebrochen
+    loadPuzzleIntoState(puzzle, null);
+    state.generating = false;
+    // Das Profil bestimmt nur, WIE sich die Zeit über die Züge verteilt (Tier-Mix,
+    // Bursts, Hänger, Fehler); die absolute Dauer kommt aus targetMs.
+    botState = createBot({ puzzle, profile: spec.profile, skill: state.race.aiSkill, seed: (Date.now() ^ 0x9e3779b9) >>> 0, targetMs });
+    startTimer();
+    scheduleBotAction();
+    log('game', 'KI-Duell: Brett bereit', { tookMs: Date.now() - t0, timeScale: Number(botState.timeScale.toFixed(3)) });
+  }).catch(e => {
+    log('error', 'KI-Duell: Generierung fehlgeschlagen', e);
+    state.generating = false;
+    showToast(t('toast.genFailed'), 'error', 3000);
+    aiDuelReset();
+    navigate('home');
+  });
+}
+function aiDuelReset() {
+  stopBot();
+  botState = null;
+  state.race.ai = false;
+  state.race.active = false;
+  state.isRaceGame = false;
+}
+
+// ─── APP-UPDATE (Service Worker) ──────────────────────────────────────────────
+// Läuft gerade ein Spiel oder eine Coop-/Wettkampf-Session? Dann darf NICHTS die
+// Seite neu laden oder einen Update-Dialog aufpoppen — sonst wird der Nutzer
+// mitten im Spiel herausgeworfen (genau die gemeldete Beschwerde). Reloads werden
+// stattdessen aufgeschoben, bis der Nutzer wieder auf einem sicheren Screen ist.
+function gameSessionActive() {
+  return state.screen === 'game' || state.coop.active || state.team.active || state.race.active;
+}
+let pendingReloadReason = null;
+// Harte Reload-Schleifen-Bremse: hält die Zeitstempel der letzten (durchgeführten)
+// Neuladungen in localStorage (überlebt Reloads/PWA-Neustarts). Passieren zu viele
+// in kurzer Zeit, wird NICHT mehr neu geladen — so kann die App nie in einer
+// Endlos-Reload-Schleife (Splash→Menü→Splash…) hängen, egal welcher Auslöser.
+const RELOAD_LOG_KEY = 'cns_reload_log';
+// Fenster BEWUSST großzügig (3 min): ein Reload-Loop muss auch dann erkannt werden,
+// wenn die Zyklen LANGSAM sind (z.B. exakt alle ~36 s durch einen periodischen
+// Auslöser). Bei 60 s Fenster passten bei 36-s-Abstand nie 3 Reloads hinein → die
+// Bremse hätte nie ausgelöst und der Loop wäre endlos gelaufen. Nur unsere EIGENEN
+// (safeReload-)Neuladungen zählen hier — ein normales Kalt-Öffnen der PWA nicht.
+const RELOAD_WINDOW_MS = 180000, RELOAD_MAX = 3;
+function reloadLoopTripped(reason) {
+  try {
+    const now = Date.now();
+    let arr = [];
+    try { arr = JSON.parse(localStorage.getItem(RELOAD_LOG_KEY) || '[]'); } catch (_) { arr = []; }
+    arr = (Array.isArray(arr) ? arr : []).filter(t => now - t < RELOAD_WINDOW_MS);
+    if (arr.length >= RELOAD_MAX) {
+      log('sw', 'Reload-Schleife erkannt — Neuladen unterdrückt', { reason, count: arr.length });
+      try { showToast(t('update.reloadLoop'), 'error', 7000); } catch (_) {}
+      return true;
+    }
+    arr.push(now);
+    localStorage.setItem(RELOAD_LOG_KEY, JSON.stringify(arr));
+    return false;
+  } catch (_) { return false; }
+}
+// Zentrale, SICHERE Neuladen-Funktion: protokolliert immer (Grund + Kontext),
+// lädt nie mitten in einem Spiel/Coop neu (schiebt auf bis navigate('home')) und
+// bricht Reload-Schleifen ab.
+function safeReload(reason) {
+  const deferred = gameSessionActive();
+  log('sw', 'Neuladen angefordert', { reason, screen: state.screen, status: state.status, coop: state.coop.active, deferred });
+  if (deferred) { pendingReloadReason = reason; return; }
+  if (reloadLoopTripped(reason)) return;
+  location.reload();
+}
+function flushPendingReload() {
+  if (pendingReloadReason && !gameSessionActive()) {
+    const reason = pendingReloadReason; pendingReloadReason = null;
+    if (reloadLoopTripped(reason)) return;
+    log('sw', 'Aufgeschobenes Neuladen wird jetzt ausgeführt', { reason });
+    location.reload();
+  }
+}
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+// ─── DIAGNOSE: FEHLER + GERÄT + JANK ──────────────────────────────────────────
+// Schreibt aussagekräftige, aber bewusst SELTENE Diagnose-Einträge (debuglog.js →
+// Einstellungen ▸ Diagnoseprotokoll exportieren), damit sich Probleme auf fremden
+// Geräten nachvollziehen lassen — inkl. Hänger/Jank und "toter" Buttons.
+// WICHTIG: nur niederfrequente Ereignisse protokollieren (Start, Fehler, alle 10s
+// aggregierter Jank) — NIEMALS pro Frame/Tap. log() macht synchrone localStorage-
+// Zugriffe; häufiges Loggen würde die Performance selbst beeinträchtigen.
+function initDiagnostics() {
+  // 1) Unbehandelte Fehler / Promise-Rejections. Häufige Ursache dafür, dass plötzlich
+  //    Buttons "tot" wirken: ein geworfener Handler bricht Folgelogik/Reaktivität ab.
+  window.addEventListener('error', (e) => {
+    log('error', 'Unbehandelter Fehler', {
+      message: e.message, source: e.filename, line: e.lineno, col: e.colno,
+      name: e.error && e.error.name,
+    });
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    const r = e.reason;
+    log('error', 'Unbehandelte Promise-Rejection', r instanceof Error ? r : { message: String(r) });
+  });
+  // 1b) Lebenszyklus-Diagnose: warum verschwindet die App mitten im Spiel? pagehide/
+  //     freeze feuern, wenn iOS/der Browser die PWA in den Hintergrund oder aus dem
+  //     Speicher schiebt; ein direkt danach folgender „App gestartet"-Eintrag im
+  //     Protokoll bedeutet: das OS hat die App neu geladen (nicht unser Code). Ein
+  //     'error'-Eintrag davor bedeutet stattdessen einen Absturz im JS. Alle Events
+  //     sind selten (nutzergetrieben) → unbedenklich fürs Protokoll.
+  const lifeInfo = () => ({ screen: state.screen, status: state.status, coop: !!state.coop.active, inGame: gameSessionActive() });
+  window.addEventListener('pagehide', (e) => log('app', 'pagehide (Seite versteckt/entladen)', { persisted: !!e.persisted, ...lifeInfo() }));
+  window.addEventListener('beforeunload', () => log('app', 'beforeunload (Seite wird entladen)', lifeInfo()));
+  document.addEventListener('freeze', () => log('app', 'freeze (Browser friert Seite ein)', lifeInfo()));
+  document.addEventListener('resume', () => log('app', 'resume (aus dem Freeze zurück)', lifeInfo()));
+  document.addEventListener('visibilitychange', () => log('app', 'visibility → ' + document.visibilityState, lifeInfo()));
+  // „Letzter Lebenszustand": alle 15 s in einen EIGENEN localStorage-Key schreiben
+  // (kein Protokoll-Spam). Beim nächsten Start wird er als eine Zeile protokolliert
+  // → so ist der letzte bekannte Zustand VOR einem harten OS-Kill/Absturz sichtbar,
+  // auch wenn kein pagehide mehr durchkam.
+  try {
+    const prev = localStorage.getItem('cns_last_alive');
+    if (prev) log('app', 'Letzter Zustand vor (Neu-)Start', JSON.parse(prev));
+  } catch (_) {}
+  setInterval(() => { try { localStorage.setItem('cns_last_alive', JSON.stringify({ atISO: new Date().toISOString(), ...lifeInfo() })); } catch (_) {} }, 15000);
+  // 2) Einmaliger Geräte-/Umgebungs-Schnappschuss. Kernfrage bei Perf-Problemen:
+  //    Welches Gerät/Browser, wie viele Kerne/RAM? Genau eine Zeile -> praktisch gratis.
+  try {
+    const nav = navigator, scr = screen;
+    log('env', 'App gestartet', {
+      build: BUILD,
+      ua: nav.userAgent,
+      platform: nav.platform,
+      cores: nav.hardwareConcurrency,
+      mem: nav.deviceMemory,
+      screen: `${scr.width}x${scr.height}`,
+      viewport: `${window.innerWidth}x${window.innerHeight}`,
+      dpr: window.devicePixelRatio,
+      standalone: window.matchMedia('(display-mode: standalone)').matches || nav.standalone === true,
+      lang: nav.language,
+      online: nav.onLine,
+      reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+    });
+  } catch {}
+  // 3) Jank-Erkennung: lange Haupt-Thread-Tasks (>50ms = spürbares Ruckeln, evtl.
+  //    "hängende" Buttons) via PerformanceObserver. NICHT jede Task einzeln loggen
+  //    (würde das Protokoll fluten und selbst bremsen) — aggregieren und höchstens
+  //    alle 10s EINE Zusammenfassung schreiben, nur wenn überhaupt Jank auftrat.
+  if (typeof PerformanceObserver === 'function') {
+    let count = 0, totalMs = 0, maxMs = 0;
+    try {
+      const obs = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          count++; totalMs += entry.duration; if (entry.duration > maxMs) maxMs = entry.duration;
+        }
+      });
+      obs.observe({ type: 'longtask', buffered: true });
+      setInterval(() => {
+        if (!count) return;
+        log('perf', 'Längere Haupt-Thread-Blockaden (Jank, 10s-Fenster)', {
+          count, maxMs: Math.round(maxMs), totalMs: Math.round(totalMs), screen: state.screen,
+        });
+        count = 0; totalMs = 0; maxMs = 0;
+      }, 10000);
+    } catch {}
+  }
+}
+
+// ── Globaler Netz-Status (Offline-Bewusstsein) ────────────────────────────────
+// Solo/Training laufen komplett lokal; das Netz ist optional (Cloud-Backup,
+// Multiplayer, Bestenliste). state.net spiegelt die Erreichbarkeit, damit die UI
+// netzabhängige Aktionen sauber ausgraut statt in Firebase-Timeouts zu laufen.
+function isOnline() { return state.net !== 'offline'; }
+function setNet(status) {
+  if (state.net === status) return;
+  const wasOffline = state.net === 'offline';
+  state.net = status;
+  log('app', 'Netz-Status geändert', { net: status });
+  if (status === 'online' && wasOffline) onReconnect();
+}
+function onReconnect() {
+  // Zurück online: den aktiven Spielstand + Nutzdaten frisch abgleichen. Die
+  // durable Outbox (ausstehende Cloud-Schreibvorgänge) wird in einem Folge-PR
+  // hier abgespielt; heute reicht der bestehende Reconcile/Sync.
+  if (state.account.status === 'in') { try { reconcileSession(); doSyncNow(); } catch (_) {} }
+}
+function initConnectivity() {
+  const update = () => setNet(navigator.onLine === false ? 'offline' : 'online');
+  window.addEventListener('online', update);
+  window.addEventListener('offline', update);
+  // Beim Sichtbarwerden zusätzlich prüfen (navigator.onLine wird beim Wecken aktualisiert).
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') update(); });
+  update();
+}
+
+function init() {
+  initDiagnostics();
+  initConnectivity();
+  // Läuft die App STABIL (länger als das Loop-Fenster) ohne Neuladen, gilt eine
+  // evtl. Reload-Serie als beendet → Zähler zurücksetzen, damit ein späteres
+  // legitimes Update wieder neu laden darf. WICHTIG: Der Reset MUSS länger sein als
+  // das Loop-Fenster (RELOAD_WINDOW_MS) — sonst würde er den Zähler bei langsamen
+  // Loops (z.B. ~36 s) immer VOR dem nächsten Reload leeren und die Bremse aushebeln.
+  setTimeout(() => { try { localStorage.removeItem(RELOAD_LOG_KEY); } catch (_) {} }, RELOAD_WINDOW_MS + 30000);
+  // Diagnose: Abstand zum vorherigen (Neu-)Start protokollieren. Ein regelmäßiger,
+  // kurzer Abstand (z.B. exakt ~36 s) ist der Fingerabdruck einer Reload-Schleife
+  // (im Gegensatz zu unregelmäßigen iOS-Speicher-Kills). Genau ein Eintrag pro Start.
+  try {
+    const prevStart = parseInt(localStorage.getItem('cns_last_start') || '0', 10);
+    const now = Date.now();
+    if (prevStart) log('app', 'Zeit seit letztem Start', { seconds: Math.round((now - prevStart) / 1000) });
+    localStorage.setItem('cns_last_start', String(now));
+  } catch (_) {}
+  applyTheme();
+  applySfxPack(); applyMusicPack();
+  Music.setMuted(state.settings.muteAll);  // „Alles stumm"-Zustand vom letzten Mal übernehmen
+  // Bei themeMode 'auto' Systemwechsel (hell/dunkel) live übernehmen — ohne Neustart.
+  try {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      if (state.settings.themeMode === 'auto') applyTheme();
+    });
+  } catch (_) {}
+  applyLocale();
+  // Tipp-Indikator: live tippende Mitspieler aus dem Raum übernehmen (Chat-Button
+  // + Tipp-Blase). Einmalige Registrierung — gilt für jede künftige Coop-Session.
+  Coop.onTyping((uids) => { state.chat.typingUids = uids; });
+  refreshResume();
+  initMissions();   // Wochen-Missionen laden / bei Wochenwechsel neu setzen
+  runEndlessBackfill();   // einmalig: alte Endlos-Läufe rückwirkend als Einzelspiele anrechnen
+  refreshAccountFromLocal();
+  if (loadProfile().accountId) {
+    refreshAccount();  // genauere Cloud-Infos nachladen (nur wenn eingeloggt)
+    // Abgleich lokal↔Cloud beim Start. Formale Divergenz wird INHALTLICH
+    // aufgelöst (Account.mergeSnapshots: verlustfreier Merge, Kleinkram folgt
+    // der jüngeren Seite) — der Versions-Mismatch-Dialog erscheint NUR noch,
+    // wenn die Geld-Salden abweichen, und entscheidet auch nur das Guthaben.
+    Account.reconcile().then(r => {
+      if (r.decision === 'conflict') { openVersionMismatch(r); return; }
+      // Cloud übernommen ODER still gemergt → lokale Daten haben sich geändert → sauber neu laden
+      if (r.decision === 'takeCloud' || r.decision === 'merged') { safeReload('reconcile-' + r.decision); return; }
+      state.inventory = loadInventory();
+      state.wallet = loadWallet();
+      maybeUnlockV1Skin();
+      refreshAccountFromLocal();  // lastSync/Status auffrischen
+      // Multi-Device: Aktivspiel-Session live überwachen (Fremd-Änderung → sofortiger
+      // Reconcile) und einmal beim Start abgleichen (z.B. auf einem frischen Gerät
+      // erscheint eine anderswo laufende Partie als „Fortsetzen").
+      startSessionWatch();
+      reconcileSession();
+    });
+    // …und automatisch alle 30s weiter sichern — AUCH während einer laufenden
+    // Partie (Solo/Endlos): sonst sah ein laufendes Spiel die Cloud nur bei den
+    // seltenen Event-Triggern (Start/Pause/Sieg/Verstecken) und blieb auf einem
+    // Zweitgerät als "nicht fortsetzbar" hängen, sobald genau diese Trigger auf
+    // dem Erstgerät ausblieben (z.B. hartes Beenden ohne sauberes pagehide).
+    // syncCloudNow (statt blindem doSyncNow) hält dabei auch die Live-Solo-Session
+    // (pushSession) auf demselben Takt aktuell. Kostet pro Tick nur einen kleinen
+    // Cloud-Read (data/rev-Vergleich in Account.syncNow) plus — nur bei Bedarf —
+    // den vollen Snapshot-Write, den ohnehin jedes Pause/Hide-Event auslöst.
+    setInterval(() => { if (state.account.status === 'in') syncCloudNow('periodic'); }, 30000);
+  }
+  // Präsenz-Heartbeat: hält das eigene lastActive frisch, damit die Frische-
+  // Prüfung (Account.presenceOnline, TTL PRESENCE_STALE_MS) echte Online-Nutzer
+  // nie fälschlich als offline zeigt — und hängen gebliebene online:true-Knoten
+  // („Geister" verwaister Browser) automatisch ablaufen. Im Spiel alle 20 s
+  // (inkl. Fortschritt-%), im Menü jede Minute; NUR solange die App sichtbar
+  // ist — eine versteckte/verlassene App soll ja gerade als offline enden.
+  // Der Tick bumpt zudem state.friends.now → Geister kippen live auf offline.
+  let presenceBeat = 0;
+  setInterval(() => {
+    presenceBeat++;
+    state.friends.now = Date.now();
+    if (state.account.status !== 'in' || document.hidden) return;
+    if (gameSessionActive()) pushPresence();
+    else if (presenceBeat % 3 === 0) pushPresence();
+  }, 20000);
+  log('account', 'Präsenz-Heartbeat aktiv', { gameMs: 20000, menuMs: 60000, staleMs: Account.PRESENCE_STALE_MS });
+  maybeShowWhatsNew();
+  maybeUnlockV1Skin();  // 1.0-Feier-Skin beim Versionssprung (vor dismissWhatsNew, das die Version speichert)
+  // Alt-Spieler, die bereits ALLE 12 Kategorien gemeistert haben, bekommen die
+  // Großmeister-Feier EINMAL beim ersten Start nach dem Update (nur auf Home).
+  setTimeout(() => { if (state.screen === 'home') checkMasterUnlock(); }, 1200);
+  if (state.streak.justLost) state.streakLostNotice = true;
+  window.addEventListener('resize', computeCellSize);
+  window.addEventListener('resize', scheduleScrollLockUpdate);
+  // Deckt jede Inhaltsänderung ab (Badges, Sprache, dynamische Banner), ohne
+  // jedes betroffene state-Feld einzeln verdrahten zu müssen.
+  const appEl = document.querySelector('.app');
+  if (appEl) new MutationObserver(scheduleScrollLockUpdate).observe(appEl, { childList: true, subtree: true, attributes: true, characterData: true });
+  nextTick(() => { document.querySelector('.screen')?.scrollTo(0, 0); scheduleScrollLockUpdate(); });
+  // Menü-/App-Musik: Browser erlauben Audio erst nach einer Nutzergeste. Der
+  // Listener bleibt BESTEHEN (nicht { once }), damit auch nach dem Zurückkehren
+  // aus dem Hintergrund (frischer, zunächst gesperrter AudioContext) der erste
+  // Tap die Musik wieder startet. updateMusic() ist idempotent.
+  // Menü-/App-Musik möglichst SOFORT starten (Wunsch: Musik schon beim Öffnen
+  // der App / sobald das Menü sichtbar ist, ohne dass man erst etwas antippen
+  // muss). Daher EAGER beim Laden versuchen — auf Android/Desktop startet das
+  // direkt. iOS/Safari verlangt für den allerersten Audiostart prinzipiell eine
+  // Nutzergeste; dort greift der Listener unten und startet die Musik beim ersten
+  // Tippen/Tasten/Touch. updateMusic() ist idempotent.
+  updateMusic();
+  const unlockAudio = () => updateMusic();
+  window.addEventListener('pointerdown', unlockAudio);
+  window.addEventListener('keydown', unlockAudio);
+  // Desktop-Werkzeugtaste (z.B. Tab) — capture:true, damit wir Tab abfangen,
+  // BEVOR der Browser den Fokus verschiebt.
+  window.addEventListener('keydown', onDesktopKeydown, true);
+  window.addEventListener('touchstart', unlockAudio, { passive: true });
+  // App im Hintergrund: AudioContext KOMPLETT schließen (suspendForBackground),
+  // damit das OS nichts mehr glitchen kann. Zurück im Vordergrund sofort wieder
+  // starten (und falls iOS das blockt, beim ersten Tap, s.o.).
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { Music.suspendForBackground(); persistGame(); syncCloudNow('hide'); }
+    else updateMusic();
+  });
+  // pagehide/pageshow zusätzlich: feuert auf iOS-PWA beim Backgrounding oft
+  // zuverlässiger/früher als visibilitychange. Auch hier sofort sichern, damit
+  // ein fertiges/laufendes Spiel beim Schließen zuverlässig in der Cloud landet.
+  window.addEventListener('pagehide', () => { Music.suspendForBackground(); persistGame(); syncCloudNow('pagehide'); });
+  window.addEventListener('pageshow', () => updateMusic());
+  window.addEventListener('blur', () => { if (document.hidden) Music.suspendForBackground(); });
+
+  // Worker für die Off-Thread-Generierung bereitstellen (siehe oben). Es wird NICHT
+  // mehr vorab generiert -- Rätsel entstehen erst beim Spielstart on-demand.
+  initGenWorker();
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  KOMPONENTE: Slider-Schwierigkeitsauswahl (wiederverwendbar in ALLEN Modi)
+// ════════════════════════════════════════════════════════════════════════════
+// v-model = Schwierigkeits-ID; `coop` schaltet Münz-/Zeitanzeige auf Mehrspieler
+// (Coop-Münzen ×2, Lobby-Zeiten). Der morphende Hintergrund liegt am umgebenden
+// Container (setzt --dacc via diffVars); die Komponente erbt die Vars und rendert
+// nur den Inhalt (Medaillon, Name, Maße, Stats, Regler). Eigene Münz-Count-up-
+// Animation je Instanz. Reagiert flott (styles.css --snapT), morpht smooth.
+const DifficultySlider = {
+  props: {
+    modelValue: { type: String, required: true },
+    coop: { type: Boolean, default: false },
+  },
+  emits: ['update:modelValue', 'randomstart'],
+  setup(props, { emit }) {
+    const coin = ref(0);
+    const list = DIFFICULTIES;
+    let raf = 0, dragging = false;
+    const curDiff = () => DIFF_BY_ID[props.modelValue] || list[0];
+    const idxOf = () => { const i = list.findIndex(d => d.id === props.modelValue); return i < 0 ? 0 : i; };
+    const pct = () => list.length > 1 ? (idxOf() / (list.length - 1)) * 100 : 0;
+    const coinVal = (id) => coinReward(list.findIndex(d => d.id === id), { coop: props.coop });
+    // Zeiten modusgerecht: Coop/Race/Team → Lobby-Zeiten, Solo → Solo-Zeiten.
+    const avgFor = (id) => props.coop ? lobbyAvgTimeFor(id) : avgTimeFor(id);
+    const bestFor = (id) => {
+      if (props.coop) return lobbyBestTimeMs(id);
+      const s = state.stats.byDifficulty[id];
+      return s && s.bestTimeMs != null ? s.bestTimeMs : null;
+    };
+    function animCoin(to) {
+      cancelAnimationFrame(raf);
+      const from = coin.value || 0, t0 = performance.now(), dur = 420;
+      const step = now => { const p = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - p, 3); coin.value = Math.round(from + (to - from) * e); if (p < 1) raf = requestAnimationFrame(step); };
+      raf = requestAnimationFrame(step);
+    }
+    function setIdx(i) {
+      i = Math.max(0, Math.min(list.length - 1, i));
+      const id = list[i].id;
+      if (id === props.modelValue) return;
+      emit('update:modelValue', id);
+      if (state.settings.sfxToolSwitch) Music.sfxToolSwitch();
+    }
+    // Zufällige Schwierigkeit wählen (Überraschung). Bewusst IMMER eine ANDERE als
+    // die aktuelle, damit der Klick sichtbar etwas tut; der Slider springt dorthin.
+    function randomize() {
+      if (list.length < 2) return;
+      let i = idxOf();
+      while (i === idxOf()) i = Math.floor(Math.random() * list.length);
+      setIdx(i);
+      // Der Zufall-Knopf startet die Runde SOFORT mit der gewürfelten Schwierigkeit
+      // (kein Zwischenschritt „schau, was gewählt wurde"). setIdx() hat modelValue
+      // bereits synchron aktualisiert; der jeweilige Screen wired 'randomstart' an
+      // seine Start-Aktion (Solo newGame / Coop-Host startHosting / Race-Rematch).
+      emit('randomstart', list[i].id);
+    }
+    function idxFromX(clientX, el) {
+      const r = el.getBoundingClientRect(), pad = 16, span = Math.max(1, r.width - pad * 2);
+      const p = Math.max(0, Math.min(1, (clientX - r.left - pad) / span));
+      return Math.round(p * (list.length - 1));
+    }
+    function down(e) { dragging = true; try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {} setIdx(idxFromX(e.clientX, e.currentTarget)); }
+    function move(e) { if (dragging) setIdx(idxFromX(e.clientX, e.currentTarget)); }
+    function up() { dragging = false; }
+    function key(e) {
+      const k = e.key;
+      if (k === 'ArrowRight' || k === 'ArrowUp') { setIdx(idxOf() + 1); e.preventDefault(); }
+      else if (k === 'ArrowLeft' || k === 'ArrowDown') { setIdx(idxOf() - 1); e.preventDefault(); }
+      else if (k === 'Home') { setIdx(0); e.preventDefault(); }
+      else if (k === 'End') { setIdx(list.length - 1); e.preventDefault(); }
+    }
+    watch(() => props.modelValue, (nv) => animCoin(coinVal(nv)));
+    onMounted(() => { coin.value = coinVal(props.modelValue); });
+    return { t, ic, fmtTime, DIFFICULTIES: list, coin, curDiff, idxOf, pct, avgFor, bestFor, down, move, up, key, randomize };
+  },
+  template: `
+  <div class="diff-picker">
+    <div class="setup-hero">
+      <div class="diff-medallion">
+        <div class="dm-ring"></div>
+        <div class="dm-disc" :key="modelValue"><span class="dm-ic" v-html="ic(curDiff().emoji)"></span></div>
+      </div>
+      <div class="diff-eyebrow">{{ t('setup.step') }} {{ idxOf()+1 }} / {{ DIFFICULTIES.length }}</div>
+      <h3 class="diff-name" :key="'n-'+modelValue">{{ t('difficulty.'+modelValue) }}</h3>
+      <div class="diff-dim">{{ curDiff().dim.r }} × {{ curDiff().dim.c }}</div>
+      <div class="diff-stats">
+        <div class="ds-tile ds-coins">
+          <div class="ds-k">{{ t('setup.reward') }}</div>
+          <div class="ds-v"><span class="ei" v-html="ic('coin')"></span> {{ coin||0 }}</div>
+        </div>
+        <div class="ds-tile">
+          <div class="ds-k">{{ t('stats.avgTimeLabel') }}</div>
+          <div class="ds-v">{{ avgFor(modelValue)!=null ? fmtTime(avgFor(modelValue)) : '–:––' }}</div>
+        </div>
+        <div class="ds-tile">
+          <div class="ds-k">{{ t('stats.bestTimeLabel') }}</div>
+          <div class="ds-v">{{ bestFor(modelValue)!=null ? fmtTime(bestFor(modelValue)) : '–:––' }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="setup-controls">
+      <div class="diff-slabel"><span>{{ t('common.difficulty') }}</span>
+        <button type="button" class="diff-random" @click="randomize" :title="t('setup.randomTitle')" :aria-label="t('setup.randomTitle')">
+          <span class="ei" v-html="ic('dice')"></span> {{ t('setup.random') }}
+        </button>
+        <b>{{ idxOf()+1 }} / {{ DIFFICULTIES.length }}</b></div>
+      <div class="diff-track" tabindex="0" role="slider" :aria-valuemin="1" :aria-valuemax="DIFFICULTIES.length" :aria-valuenow="idxOf()+1" :aria-label="t('common.difficulty')" :aria-valuetext="t('difficulty.'+modelValue)"
+           @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up" @keydown="key">
+        <div class="dt-inner">
+          <div class="dt-rail"><div class="dt-fill" :style="{width: pct()+'%'}"></div></div>
+          <i v-for="(d,i) in DIFFICULTIES" :key="d.id" class="dt-tick" :class="{on:i<=idxOf(), cur:i===idxOf()}" :style="{left: (DIFFICULTIES.length>1 ? i/(DIFFICULTIES.length-1)*100 : 0)+'%', '--tk': d.accent}"></i>
+          <div class="dt-thumb" :style="{left: pct()+'%'}"></div>
+        </div>
+      </div>
+    </div>
+  </div>`,
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+//  KOMPONENTE / TEMPLATE
+// ════════════════════════════════════════════════════════════════════════════
+// ── BoardGrid: das Spielbrett als EIGENE Child-Komponente ─────────────────────
+// KERN-PERFORMANCEFIX: Vue trackt Render-Abhängigkeiten PRO KOMPONENTE. Solange
+// das Brett im App-Template lag, renderte JEDE reaktive Änderung der App (Tool-
+// Umschalter state.tool, Sekunden-Tick state.elapsed, HUD/Chat/Toasts, …) ALLE
+// ~200 Zellen mit (cellClasses/cellStyle/Aria ×196 auf 14×14) — auf älteren
+// Geräten im Spätspiel spürbare Tap-Latenz („Button reagiert nicht", Züge im
+// falschen Modus). Als Child-Komponente rendert das Brett NUR noch, wenn sich
+// ECHTE Brett-Abhängigkeiten ändern (marks/flash/justResolved/cellMeta/Skin/…).
+// Alle Helfer sind bewusst Modul-Scope — kein Props-Threading nötig.
+// boardRenderCount zählt Brett-Renders (localhost-Debug/E2E-Regressionstest).
+let boardRenderCount = 0;
+const BoardGrid = {
+  setup() {
+    return {
+      state, cellClasses, cellStyle, cellAriaLabel, onCellTap,
+      onCellPointerDown, onCellPointerMove, onCellPointerCancel,
+      rowResolvedR, colResolvedR, regionResolvedR, rowSumR, colSumR, rowSumMatch, colSumMatch,
+      skinBoardClasses, skinVars, gridStyle, boardFontClass, boardFrameClass,
+      countRender: () => { boardRenderCount++; return ''; },
+    };
+  },
+  template: `
+          <div class="board" :class="[skinBoardClasses, boardFontClass(), boardFrameClass(), { 'skin-freeze': state.paused || state.joinFreeze, 'mp-colors': state.coop.active || state.team.active, 'big-num': state.puzzle.bigNumbers, 'tutor-dim': !!state.hintTutor }]" :style="[gridStyle, skinVars]" :data-rc="countRender()">
+            <div class="corner"></div>
+            <div v-for="c in state.puzzle.cols" :key="'ch'+c" class="hdr col-hdr" :class="{resolved: colResolvedR(c-1), pulse: state.justResolved['col-'+(c-1)]}">
+              <template v-if="!colResolvedR(c-1)">
+                <span class="cur" :class="{match: colSumMatch(c-1)}">{{ colSumR(c-1) }}</span>
+                <span class="tgt">{{ state.puzzle.colTargets[c-1] }}</span>
+              </template>
+            </div>
+            <template v-for="r in state.puzzle.rows" :key="'r'+r">
+              <div class="hdr row-hdr" :class="{resolved: rowResolvedR(r-1), pulse: state.justResolved['row-'+(r-1)]}">
+                <template v-if="!rowResolvedR(r-1)">
+                  <span class="cur" :class="{match: rowSumMatch(r-1)}">{{ rowSumR(r-1) }}</span>
+                  <span class="tgt">{{ state.puzzle.rowTargets[r-1] }}</span>
+                </template>
+              </div>
+              <div v-for="c in state.puzzle.cols" :key="r+'-'+c"
+                   class="cell" :class="cellClasses(r-1,c-1)" :style="cellStyle(r-1,c-1)"
+                   role="button" tabindex="0" :aria-label="cellAriaLabel(r-1,c-1)"
+                   @click="onCellTap(r-1,c-1)"
+                   @keydown.enter.prevent="onCellTap(r-1,c-1)"
+                   @keydown.space.prevent="onCellTap(r-1,c-1)"
+                   @pointerdown="onCellPointerDown($event,r-1,c-1)"
+                   @pointermove="onCellPointerMove($event)"
+                   @pointerup="onCellPointerCancel"
+                   @pointerleave="onCellPointerCancel"
+                   @pointercancel="onCellPointerCancel"
+                   @contextmenu.prevent>
+                <span v-if="state.cellMeta[r-1][c-1].chip!=null && !regionResolvedR(state.cellMeta[r-1][c-1].region)" class="rchip">{{ state.cellMeta[r-1][c-1].chip }}</span>
+                <span class="cnum">{{ state.puzzle.values[r-1][c-1] }}</span>
+                <i v-if="state.marks[r-1][c-1]==='removed' && state.cellMeta[r-1][c-1].hintMark" class="hint-dot"></i>
+              </div>
+            </template>
+          </div>
+  `,
+};
+
+const App = {
+  components: { DifficultySlider, BoardGrid },
+  setup() {
+    const livesArr = computed(() => Array.from({ length: state.maxLives }, (_, i) => i < state.lives));
+    // Coop/Race/Team: zeigt der Coop-Screen gerade die Host-Schwierigkeitsauswahl?
+    // Dann bekommt die Section den Vollflächen-Slider-Look (setup-slider) wie Solo.
+    const isCoopDiffView = computed(() => state.coop.identityConfirmed && state.coop.role === 'host' && !state.coop.waitingForGuest);
+    // Gegner-Lebensanzeige im Wettkampf: dieselbe Herzen-Optik wie die eigene
+    // (state.maxLives ist symmetrisch, da beide Seiten dieselbe Schwierigkeit/
+    // Einstellung spielen) -- Fehler des Gegners zählen 1:1 wie eigene Fehler.
+    const opponentLivesArr = computed(() => {
+      const left = Math.max(0, state.maxLives - state.race.opponentMistakes);
+      return Array.from({ length: state.maxLives }, (_, i) => i < left);
+    });
+    const opponentTeamLivesArr = computed(() => {
+      const left = Math.max(0, state.maxLives - state.team.opponentMistakes);
+      return Array.from({ length: state.maxLives }, (_, i) => i < left);
+    });
+    // Welcher Spieler hat das Herz an Index i verbraucht? Herzen werden von links
+    // gefüllt angezeigt, verbraucht wird aber immer von rechts (höchster Index
+    // zuerst) — daher die Umrechnung über die Verlust-Reihenfolge.
+    function lifeLossColor(i) {
+      const lossNr = state.maxLives - i; // 1-basiert: 1. verlorenes Herz, 2., ...
+      const by = state.coop.lifeLossBy[lossNr - 1];
+      return by ? playerColor(by) : null;
+    }
+    const coopPerformance = computed(() => {
+      if (!state.coop.active || !state.puzzle || !state.coop.players.length) return [];
+      // Im Team-vs-Team-Modus nur das eigene Team auswerten -- die Gegenseite
+      // hat ohnehin nie Zugriff auf dieses Puzzle/diese markedBy-Daten bekommen.
+      const roster = state.team.active ? state.coop.players.filter(pl => pl.team === state.team.myTeam) : state.coop.players;
+      if (!roster.length) return [];
+      const p = state.puzzle;
+      const raw = roster.map(pl => {
+        let correctKept = 0, correctRemoved = 0;
+        for (let r = 0; r < p.rows; r++)
+          for (let c = 0; c < p.cols; c++) {
+            if (state.markedBy[r][c] !== pl.id) continue;
+            if (state.marks[r][c] === 'kept' && p.solution[r][c]) correctKept++;
+            else if (state.marks[r][c] === 'removed' && !p.solution[r][c]) correctRemoved++;
+          }
+        const mistakes = state.coop.mistakesByPlayer[pl.id] || 0;
+        return { id: pl.id, name: pl.name, username: pl.username, color: pl.color, correctKept, correctRemoved, mistakes, correct: correctKept + correctRemoved };
+      });
+      const totalCorrect = raw.reduce((s, pl) => s + pl.correct, 0);
+      return raw.map(pl => ({
+        ...pl,
+        contributionPct: totalCorrect > 0 ? Math.round((pl.correct / totalCorrect) * 100) : Math.round(100 / raw.length),
+        accuracyPct: (pl.correct + pl.mistakes) > 0 ? Math.round((pl.correct / (pl.correct + pl.mistakes)) * 100) : 100,
+      })).sort((a, b) => b.contributionPct - a.contributionPct || b.accuracyPct - a.accuracyPct);
+    });
+    // Kein MVP, wenn nur einer mitspielt oder alle exakt gleich gut beigetragen haben.
+    const mvpId = computed(() => {
+      const list = coopPerformance.value;
+      if (list.length < 2) return null;
+      const best = list[0];
+      if (list.every(pl => pl.contributionPct === best.contributionPct && pl.accuracyPct === best.accuracyPct)) return null;
+      return best.id;
+    });
+    // Einzel-Leben-Verlust pro Gegner-Spieler im 2v2-Modus (Punkt #18) -- nutzt
+    // state.team.opponentMistakesByPlayer, das übers teamProgress-Feld der
+    // Gegenseite mitwandert (siehe pushTeamProgress()/onTeamProgressUpdate()).
+    // Korrekt-Zahlen (correctKept/correctRemoved) gibt es hier bewusst nicht --
+    // die Gegenseite bekommt nie Zugriff auf das Gitter der anderen Seite.
+    const opponentTeamPerformance = computed(() => {
+      if (!state.team.active || !state.coop.players.length) return [];
+      const opponentTeam = state.team.myTeam === 'A' ? 'B' : 'A';
+      return state.coop.players
+        .filter(pl => pl.team === opponentTeam)
+        .map(pl => ({ id: pl.id, name: pl.name, username: pl.username, color: pl.color, mistakes: state.team.opponentMistakesByPlayer[pl.id] || 0 }));
+    });
+    const progress = computed(() => {
+      if (!state.puzzle) return { kept: 0, total: 0 };
+      let kept = 0, total = 0;
+      const p = state.puzzle;
+      for (let r = 0; r < p.rows; r++) for (let c = 0; c < p.cols; c++) {
+        if (p.solution[r][c]) { total++; if (state.marks[r][c] === 'kept') kept++; }
+      }
+      return { kept, total };
+    });
+    // Eigener Fortschritt (0-100) für die Fortschrittsanzeige im HUD -- reaktiver
+    // Wrapper um progressPct(), das dieselbe Berechnung schon fürs Team-/Race-
+    // Throttle-Pushing nutzt (siehe dort), hier aber ungedrosselt für die lokale UI.
+    const myProgressPct = computed(() => progressPct());
+    // gridStyle/skinVars/skinBoardClasses leben auf MODULEBENE (bei den übrigen
+    // Brett-Helfern), damit die BoardGrid-Child-Komponente sie direkt nutzt.
+    onMounted(init);
+    const coopAvailable = computed(() => Coop.isAvailable());
+    // Die "fehlerfrei"-Formulierung gilt nur, wenn die jeweilige Seite tatsächlich
+    // 0 Fehler hatte -- vorher war der Text unabhängig von state.mistakes/
+    // state.race.opponentMistakes immer als "fehlerfrei" formuliert.
+    // state.race.endReason verrät, WARUM das Match endete (Outcome der Seite, die
+    // es ausgelöst hat) -- ohne das wurde hier immer "fehlerfrei zuerst fertig"
+    // behauptet, selbst wenn der Sieg nur daraus kam, dass der Gegner alle Leben
+    // verloren oder aufgegeben hat (und umgekehrt bei der eigenen Niederlage).
+    const raceResultMsg = computed(() => {
+      const r = state.race;
+      const name = r.opponentName || t('common.defaultPlayerName');
+      // FFA (jeder gegen jeden): kein 1v1-„Du vs {name}"-Text, sondern Platz/
+      // Sieger unter N Spielern. `winner==='out'` = selbst ausgeschieden, Match
+      // läuft für die Übrigen weiter.
+      if (r.ffa) {
+        const n = r.opponents.length + 1;
+        if (r.winner === 'me') return t('race.ffaYouWon', { n, myPct: r.myPct });
+        if (r.winner === 'out') return t('race.ffaEliminated', { myPct: r.myPct });
+        return t('race.ffaYouLost', { name: r.winnerName || name, n, myPct: r.myPct });
+      }
+      if (r.winner === 'me') {
+        if (r.endReason === 'lost') return t('race.youWonByOpponentLives', { name, myPct: r.myPct, oppPct: r.opponentPct });
+        const key = state.mistakes === 0 ? 'race.youWonClean' : 'race.youWonMistakes';
+        return t(key, { name, myPct: r.myPct, oppPct: r.opponentPct });
+      }
+      if (r.endReason === 'lost') return t('race.youLostByLives', { name, myPct: r.myPct, oppPct: r.opponentPct });
+      const key = r.opponentMistakes === 0 ? 'race.youLostClean' : 'race.youLostMistakes';
+      return t(key, { name, myPct: r.myPct, oppPct: r.opponentPct });
+    });
+    // Analog zu raceResultMsg: state.team.endReason unterscheidet ein echtes
+    // Fertiglösen vom automatischen Sieg/der automatischen Niederlage durch
+    // Leben-Verlust/Aufgabe der jeweiligen Seite.
+    const teamResultMsg = computed(() => {
+      const tm = state.team;
+      const won = tm.winningTeam === tm.myTeam;
+      const oppTeam = tm.myTeam === 'A' ? 'B' : 'A';
+      const params = { myTeam: tm.myTeam, oppTeam, myPct: tm.myPct, oppPct: tm.opponentPct };
+      if (won) {
+        if (tm.endReason === 'lost') return t('team.weWonByOpponentLives', params);
+        return t('team.weWon', params);
+      }
+      if (tm.endReason === 'lost') return t('team.weLostByLives', params);
+      return t('team.weLost', params);
+    });
+    // Duell-Ergebnis als GRAFIK (Race 1v1/FFA + Team-vs-Team): ein Balken je
+    // Partei in Spielerfarbe, Sieger zuerst (Pokal), Ausgeschiedene ans Ende —
+    // ersetzt den reinen Prozent-Text im Sieg-/Niederlage-Dialog. `mistakes`
+    // (Fehler je Partei, soweit bekannt) erscheint als kleiner Zähler je Zeile.
+    const duelBars = computed(() => {
+      const bars = [];
+      if (state.race.active) {
+        const r = state.race;
+        bars.push({ id: 'me', name: myUsername() || t('common.you'), color: state.settings.coopMyColor, pct: r.myPct, me: true, winner: r.winner === 'me', out: r.winner === 'out', mistakes: state.mistakes });
+        if (r.ffa) {
+          for (const o of r.opponents) bars.push({ id: o.id, name: o.name, color: o.color, pct: o.pct, out: o.out, winner: r.winner === 'opponent' && !!r.winnerName && o.name === r.winnerName, mistakes: o.mistakes });
+        } else {
+          bars.push({ id: 'opp', name: r.opponentName || t('common.defaultPlayerName'), color: r.opponentColor, pct: r.opponentPct, winner: r.winner === 'opponent', mistakes: r.opponentMistakes });
+        }
+      } else if (state.team.active && state.team.winningTeam) {
+        const tm = state.team;
+        const oppTeam = tm.myTeam === 'A' ? 'B' : 'A';
+        bars.push({ id: 'my', name: t(tm.myTeam === 'A' ? 'team.labelA' : 'team.labelB'), pct: tm.myPct, me: true, winner: tm.winningTeam === tm.myTeam, mistakes: state.mistakes });
+        bars.push({ id: 'opp', name: t(oppTeam === 'A' ? 'team.labelA' : 'team.labelB'), pct: tm.opponentPct, winner: tm.winningTeam === oppTeam, mistakes: tm.opponentMistakes });
+      }
+      bars.sort((a, b) => ((b.winner ? 1 : 0) - (a.winner ? 1 : 0)) || ((a.out ? 1 : 0) - (b.out ? 1 : 0)) || (b.pct - a.pct));
+      return bars;
+    });
+    // Das WIN-Overlay zeigte bisher immer t('win.title') ("Gelöst!"), auch wenn
+    // der Sieg im Team-/Race-Modus nur daraus kam, dass die Gegenseite alle Leben
+    // verloren oder aufgegeben hat -- man hat dann selbst nichts "gelöst".
+    const winTitle = computed(() => {
+      if (state.race.active && state.race.endReason && state.race.endReason !== 'won') return t('race.winTitleAuto');
+      if (state.team.active && state.team.endReason && state.team.endReason !== 'won') return t('team.winTitleAuto');
+      return t('win.title');
+    });
+    const achievementsUnlockedCount = computed(() => Object.keys(state.achievements).length);
+
+    // ── Dynamischer Skin: skinUnlocked/skinActive/skinVars/skinBoardClasses
+    // leben auf MODULEBENE (s. Brett-Optik-Block) — hier nur die Editor-Vorschau.
+    // Editor-Vorschau: IMMER aktiv (unabhängig vom Master-Schalter), damit man die
+    // gerade eingestellte Optik sieht.
+    const skinPreviewVars = computed(() => buildSkinVars(state.settings));
+    const skinPreviewClasses = computed(() => buildSkinClasses(state.settings, true));
+
+    // "Was ist neu": alle Changelog-Einträge NEUER als die zuletzt gesehene Version
+    // (neueste oben — CHANGELOG ist bereits absteigend sortiert). Bei Erstinstallation
+    // (keine gesehene Version) nur den neuesten Eintrag, sonst würde die komplette
+    // Historie aufploppen.
+    const whatsNewEntries = computed(() => {
+      const since = state.whatsNewSince;
+      if (!since) return CHANGELOG.slice(0, 1);
+      return CHANGELOG.filter(e => cmpVersion(e.version, since) > 0);
+    });
+
+    // Modusübergreifender Überblick für den "Allgemein"-Reiter der Statistik.
+    const generalStats = computed(() => {
+      const s = state.stats;
+      const r1 = state.raceStats['1v1'], r2 = state.raceStats['2v2'];
+      const played = (s.played || 0) + (s.coopPlayed || 0) + (r1.racesPlayed || 0) + (r2.racesPlayed || 0);
+      const won = (s.won || 0) + (s.coopWon || 0) + (r1.racesWon || 0) + (r2.racesWon || 0);
+      // Lieblingslevel = meistgespielte Schwierigkeit (Solo + Coop zusammen).
+      let favId = null, favN = 0;
+      for (const d of DIFFICULTIES) {
+        const bd = s.byDifficulty[d.id]; if (!bd) continue;
+        const n = (bd.played || 0) + (bd.coopPlayed || 0);
+        if (n > favN) { favN = n; favId = d.id; }
+      }
+      return {
+        played, won,
+        winPct: played ? Math.round(won / played * 100) : 0,
+        timeMs: (s.totalTimeMs || 0) + (s.coopTotalTimeMs || 0),
+        perfect: (s.perfectWins || 0) + (s.coopPerfectWins || 0),
+        favId,
+      };
+    });
+
+    return {
+      generalStats, fmtDuration, whatsNewEntries,
+      state, BUILD, CHANGELOG, DIFFICULTIES, DIFF_BY_ID, ACHIEVEMENTS, achievementsUnlockedCount,
+      livesArr, lifeLossColor, opponentLivesArr, opponentTeamLivesArr, coopPerformance, mvpId, opponentTeamPerformance, progress, myProgressPct, gridStyle, coopAvailable,
+      navigate, navTo, goBack, newGame, setupStart, goNextPuzzle, startEndless, endlessAgain, endlessContinue, endlessTotalMs, closeEndlessSummary, resumeGame, resumeCoopGame, resumeEndlessGame, onCellTap,
+      openMissions, claimMissionReward, missionsClaimable, missionProgressVal, missionDone, missionClaimedUI, missionClaimableUI, onCellPointerDown, onCellPointerMove, onCellPointerCancel, undo, useHint, tutorNext, dismissTutor, tutorStepText, doCheck,
+      rowSum, colSum, regionSum, rowSumR, colSumR, rowResolved, colResolved, regionResolved, rowResolvedR, colResolvedR, regionResolvedR, rowSumMatch, colSumMatch,
+      fmtTime, toggleSetting, setSetting, doExport, doExportLog, doImport,
+      resetStats, doDeleteAllData, ask, confirmYes, confirmNo, dismissWhatsNew, dismissStreakLostNotice, dismissStreakExtended,
+      checkForUpdate, restartForUpdate, dismissUpdateDialog, safetyBackups, restoreSafetyBackup,
+      quitToHome, setZoom, resetZoom, pauseGame, resumeFromPause, openSettings, closeSettings, startCoopRound,
+      openShop, closeShop, openShopCategory, closeShopCategory, coinFor, streakBonusPct,
+      diffVars, isCoopDiffView,
+      openWalletLog, closeWalletLog, walletReasonLabel, walletEntryDetail, walletEntryFactors, walletEntryExpandable, toggleWalletEntry,
+      SHOP_CATS, shopCatItems, ownsShop, shopEquippedId, shopOwnedCount, equipShopItem, equipShopFree, buyShopItem, shopItemPrice, shopPreviewDots, shopCategoryTitle, previewSfxPack, boardFontClass, boardFrameClass, applySkinPreset,
+      settingsVisualCats, settingsSoundCats, settingsCatOptions, equipCatFromSettings,
+      shopPreviewIt, shopPreviewFree, shopDemoId, shopDemoActive, shopDemoCells, shopDemoClass, shopDemoSkin, shopDemoBadgeName, shopFreeDots, adminGrantAllItems, myBadge, lbBadge, badgeSvg, badgeDefs, badgeShown, ic,
+      openPrestige, closePrestige, prestigeList, isBadgeEquipped, earnedTier, equipBadge, unequipBadge, prestigeTierName,
+      dismissPrestigeUnlock, prestigeUnlockName,
+      masterInfo, isMasterEquipped, equipMaster, dismissMasterUnlock, MASTER_BADGE,
+      WIN_EFFECTS, effectPrice, ownsWinFx, winFxActive, activeWinFxId, ownedWinFx, buyWinFx, activateWinFx, previewWinFx, winFxStyle, winShape, winShapeDefs,
+      SETTINGS_SECTIONS, selectSettingsSection, toggleSettingsCard,
+      cellClasses, cellStyle, cellAriaLabel, toggleTool,
+      desktopKeyLabel, startDesktopKeyCapture, cancelDesktopKeyCapture, clearDesktopToolKey,
+      isMultiplayer, sendChat, openChat, closeChat, toggleChat, toggleMuteAll, onChatTyping, typingPlayers,
+      reclaimSession, dismissDeviceNotice,
+      resolveVersionMismatch, fmtMismatchTime, mismatchSubText,
+      openSaves, closeSaves, resumeSave, deleteSave, saveProgress, saveIsEndless, saveDifficulty, saveDim, saveIsCurrent, saveWhen, SAVES_MAX,
+      soloResume, resumeSolo, otherSavesCount, savesLabel, resumeSubline, saveLivesArr, saveLivesLeft,
+      goAiDuel, startAiDuel, aiTargetLabel, aiCalibrated, aiLevels: Object.keys(PRESET_LEVELS), cloneStatus,
+      friendClones, readyClones, learningClones, anyCloneReady, pickAiOpponent, setAiMode,
+      startHosting, startJoining, coopReset, avgTimeFor, coopAvgTimeFor, lobbyIsCompetition, lobbyAvgTimeFor, lobbyBestTimeMs, racePct,
+      doSignUp, doSignIn, doSignOut, doResetPassword, doChangePassword, doDeleteAccount, refreshAccount, doSyncNow, fmtSyncTime,
+      startUsernameEdit, doChangeUsername, onUsernameInput, canSaveUsername, playerLabel,
+      openAdminConsole, closeAdminConsole, adminFmtDate, adminItemOptions, adminFieldOptions, adminLoadUsers, filteredAdminUsers, openAdminEdit, closeAdminEdit, adminGrantSkin, adminRevokeSkin, adminToggleRole,
+      adminGiftCategories, openAdminGiftPicker, closeAdminGiftPicker, adminToggleGiftItem, adminGiftItemState, adminGiftPendingCount, adminGiftTotal, adminOwnedOfTotal,
+      adminDataSections, adminSectionLabel, adminFieldRows, toggleAdminSection, openAdminSection, adminFieldValue, adminInputField, adminToggleField, adminDirtyCount, adminSaveData, adminDiscardData, adminReloadData,
+      openAdminJson, closeAdminJson, saveAdminJson, adminChipValue, adminRevokeItemId, adminInventoryDisplay, adminPendingSummary,
+      adminBalanceCurrent, adminBalanceTarget, adminBalanceDelta, adminSetBalanceMode, adminApplyBalanceChange,
+      adminRowLabel, adminRowDesc, adminEnumOptions, adminItemLabel, adminProfileFieldLabel, adminPathLabel, adminRowTimestamp, adminIsDateField, adminMarkDirty,
+      adminSetBalance, adminChangeUsername, adminGrantAnyItem, adminRevokeAnyItem, adminSetField, adminResetPw, dismissAdminNotice, adminNoticeText,
+      openFriends, closeFriends, setFriendsTab, selectLeaderboardDiff, addFriend, openAddFriend, closeAddFriend, acceptFriend, declineFriend, removeFriendAsk,
+      friendsSorted, friendPresence, friendOnline, friendInGame, friendInRoom, anyFriendOnline, friendActivityText,
+      skinUnlocked, skinPresetOwned, skinActive, skinVars, skinBoardClasses, skinPreviewVars, skinPreviewClasses, redeemSkinCode, dismissSkinUnlock, openSkinEditor, skinSpeedToDuration,
+      startCoopMatch, canStartCoopMatch, COOP_MAX_PLAYERS, DONATE_URL, BRAND_LOGO,
+      assignTeam, randomizeTeams, canStartTeamMatch, startTeamMatch, goRace, canStartRaceMatch, startRaceMatch, rematchRace,
+      chipTextColor, confirmCoopIdentity, coopChooseHost, coopChooseGuest, playerColor, goCoop,
+      nonHostPlayers, readyCount, allGuestsReady, myReady, markReady, unmarkReady,
+      openInvitePicker, closeInvitePicker, inviteFriendToLobby, withdrawLobbyInvite, acceptLobbyInvite, declineLobbyInviteUI, lobbyModeLabel, raceResultMsg, teamResultMsg, winTitle, duelBars,
+      canInviteToSolo, canInviteMore, inviteCode, openInvite, inviteToSoloGame, cancelSoloInvite, bigNumbersAllowed,
+      canContinueSolo, continueSoloAlone, startResumeCountdown,
+      startTrainingGame, applyTrainingStep,
+      openHistoryDetail, closeHistoryDetail, historyGridStyle, historyCellClasses, historyCellStyle, replayHistoryEntry,
+      isOnline,
+      t, i18nState, SUPPORTED_LOCALES,
+    };
+  },
+  template: `
+  <div class="app" :class="{ generating: state.generating, 'modal-open': !!state.modal, 'app-game': state.screen === 'game', 'app-home': state.screen === 'home' }">
+
+    <!-- Gemeinsame SVG-Defs (Verläufe/Symbole) für alle Abzeichen-Medaillen, EINMAL im Dokument. -->
+    <span class="badge-defs-holder" v-html="badgeDefs()" aria-hidden="true"></span>
+    <span class="badge-defs-holder" v-html="winShapeDefs()" aria-hidden="true"></span>
+
+    <!-- ══ HOME ══ -->
+    <section v-if="state.screen==='home'" class="screen home">
+      <span v-if="!isOnline()" class="offline-chip" :title="t('offline.chipHint')"><span class="ei" v-html="ic('cloud')"></span> {{ t('offline.chip') }}</span>
+      <a class="icon-btn home-donate-btn" :href="DONATE_URL" target="_blank" rel="noopener" :aria-label="t('home.donate')" :title="t('home.donate')"><span class="ico-wrap" v-html="ic('coffee')"></span></a>
+      <!-- Missionen-Einstieg: rund + leicht abgehoben, sitzt UNTER der oberen
+           Icon-Leiste im Hauptbereich (nicht in der Kopfzeile, sonst würden
+           Zähler-Badge + Glüh-Ring am oberen Screenrand abgeschnitten). Zeigt
+           einen Zähler, sobald Belohnungen einlösbar sind. -->
+      <button class="icon-btn home-missions-btn" :class="{ 'has-claim': missionsClaimable() > 0 }" @click="openMissions" :aria-label="t('missions.title')" :title="t('missions.title')">
+        <span class="ico-wrap" v-html="ic('flag')"></span>
+        <span v-if="missionsClaimable() > 0" class="home-missions-badge">{{ missionsClaimable() }}</span>
+      </button>
+      <span v-if="state.streak.currentStreak>0" class="home-streak-badge"><span class="ico-lead" v-html="ic('flame')"></span>{{ state.streak.currentStreak }}</span>
+      <div class="home-topbar-right">
+        <button v-if="state.account.status==='in'" class="icon-btn home-friends-btn" @click="openFriends" :aria-label="t('friends.title')" :title="t('friends.title')"><span class="ico-wrap" v-html="ic('users')"></span><span v-if="state.friends.requests.length" class="friends-req-badge">{{ state.friends.requests.length }}</span><span v-if="anyFriendOnline()" class="friends-online-dot"></span></button>
+        <button class="icon-btn home-shop-btn" @click="openShop" :aria-label="t('shop.title')" :title="t('shop.title')"><span class="ico-wrap" v-html="ic('cart')"></span></button>
+        <button class="icon-btn home-settings-btn" @click="openSettings" :aria-label="t('home.settings')" :title="t('home.settings')"><span class="ico-wrap" v-html="ic('gear')"></span></button>
+      </div>
+      <div class="brand">
+        <img class="brand-logo" :src="BRAND_LOGO" decoding="sync" alt="" />
+        <h1 class="brand-title">Coop<br>Number Sums</h1>
+        <!-- Profil-Chip: öffnet den Prestige-Screen. Zeigt das ausgerüstete
+             verdiente Abzeichen (oder eine Einladung, eins zu verdienen). -->
+        <button class="home-profile-chip" :class="{ master: isMasterEquipped() }" @click="openPrestige">
+          <b v-if="myBadge()" class="badge-medal-inline hpc-medal" v-html="badgeSvg(myBadge())"></b>
+          <span v-else class="ico-wrap hpc-add" :title="t('prestige.title')" v-html="ic('medal')"></span>
+          <span class="hpc-name">{{ shopDemoBadgeName() }}</span>
+        </button>
+      </div>
+
+      <div class="home-actions">
+        <!-- Fortsetzen-Angebote stehen UNTEREINANDER und pro Bereich gibt es
+             GENAU EINES: ein Knopf fuer Solo (klassisch ODER Endlos — der
+             zuletzt gespielte gewinnt) und einer fuer Coop. Nebeneinander
+             wurden bei drei Angeboten alle drei schmal und unlesbar; alles
+             Weitere haengt jetzt am Erweiterungs-Knopf, der optisch am
+             Solo-Knopf klebt und benannt ist ("Weitere Spielstaende (N)")
+             statt als loser Textlink danebenzustehen. -->
+        <div v-if="soloResume || state.resumeAvailableCoop || state.saves.length" class="resume-stack">
+          <div v-if="soloResume" class="resume-group" :class="{ expandable: !!savesLabel }">
+            <button class="btn btn-resume" :class="{ endless: soloResume.endless }" @click="resumeSolo">
+              <span class="btn-ic"><span class="ei" v-html="ic(soloResume.endless ? 'meteor' : 'play')"></span></span>
+              <span class="btn-tx"><b>{{ soloResume.endless ? t('home.resumeEndless') : t('home.resume') }}</b>
+                <small>{{ resumeSubline(soloResume) }}</small>
+              </span>
+              <span v-if="soloResume.endless" class="badge-endless">{{ t('endless.badge') }}</span>
+            </button>
+            <button v-if="savesLabel" class="saves-expand attached" @click="openSaves" :aria-label="savesLabel">
+              <span class="ei se-ic" v-html="ic('save')"></span>
+              <span class="se-tx">{{ savesLabel }}</span>
+              <span class="ei se-chev" v-html="ic('chevron-right')"></span>
+            </button>
+          </div>
+          <!-- Ohne Solo-Knopf steht der Zugang fuer sich (voll gerundet). -->
+          <button v-else-if="savesLabel" class="saves-expand" @click="openSaves" :aria-label="savesLabel">
+            <span class="ei se-ic" v-html="ic('save')"></span>
+            <span class="se-tx">{{ savesLabel }}</span>
+            <span class="ei se-chev" v-html="ic('chevron-right')"></span>
+          </button>
+          <button v-if="state.resumeAvailableCoop" class="btn btn-resume coop" @click="resumeCoopGame">
+            <span class="btn-ic"><span class="ei" v-html="ic('users')"></span></span>
+            <span class="btn-tx"><b>{{ t('home.resumeCoop') }}</b>
+              <small>{{ t('difficulty.'+state.resumeAvailableCoop.difficulty) }} · {{ saveDim(state.resumeAvailableCoop) }} · {{ fmtTime(state.resumeAvailableCoop.elapsed||0) }}</small>
+            </span>
+          </button>
+        </div>
+        <button class="btn btn-primary" @click="coopReset(); navTo('setup')">
+          <span class="btn-ic"><span class="ei" v-html="ic('puzzle')"></span></span><span class="btn-tx"><b>{{ t('home.newGame') }}</b><small>{{ t('home.newGameHint') }}</small></span>
+        </button>
+        <button class="btn btn-coop" :disabled="!coopAvailable || !isOnline()" @click="goCoop">
+          <span class="btn-ic"><span class="ei" v-html="ic('users')"></span></span><span class="btn-tx"><b>{{ t('home.coopMode') }}</b><small>{{ t('home.coopHint') }}</small></span>
+          <span v-if="!isOnline()" class="badge-soon">{{ t('offline.badge') }}</span>
+          <span v-else-if="!coopAvailable" class="badge-soon">{{ t('home.comingSoon') }}</span>
+        </button>
+        <button class="btn btn-ghost race-btn" @click="state.modal='raceChoice'">
+          <span class="btn-ic"><span class="ei" v-html="ic('versus')"></span></span><span class="btn-tx"><b>{{ t('home.raceMode') }}</b><small>{{ t('home.raceHint') }}</small></span>
+        </button>
+        <div class="home-grid">
+          <button class="btn btn-ghost" @click="navTo('stats')"><span class="btn-ic"><span class="ei" v-html="ic('chart')"></span></span> {{ t('home.stats') }}</button>
+          <button class="btn btn-ghost" @click="navTo('history')"><span class="btn-ic"><span class="ei" v-html="ic('clock')"></span></span> {{ t('home.history') }}</button>
+        </div>
+      </div>
+      <button class="home-version" @click="checkForUpdate" :title="t('update.check')" :aria-label="t('update.check')">v{{ BUILD }}<span v-if="state.updateCheck === 'busy'" class="ei uc-spin" v-html="ic('refresh')"></span></button>
+    </section>
+
+
+    <!-- ══ SETUP (Slider-Schwierigkeitsauswahl mit morphendem Hintergrund) ══ -->
+    <!-- KI-Duell: Schwierigkeit (wie im Solo-Setup) + Gegnerstaerke. Der Bot
+         orientiert sich an den eigenen DURCHSCHNITTSzeiten (nicht Bestzeiten);
+         die feste Stufe und der Prozent-Regler wirken beide auf dieselbe
+         Zielzeit. Kein Raum/keine Lobby -> laeuft auch offline. -->
+    <section v-else-if="state.screen==='aiduel'" class="screen setup setup-slider" :style="diffVars(state.sel.difficulty)">
+      <div class="setup-aura" aria-hidden="true"><b></b><b></b><b></b></div>
+      <header class="topbar setup-top">
+        <button class="icon-btn" @click="goBack()">‹</button>
+        <h2><span class="ei" v-html="ic('robot')"></span> {{ t('aiduel.title') }}</h2>
+        <button class="icon-btn" @click="openSettings" :aria-label="t('home.settings')" :title="t('home.settings')"><span class="ico-wrap" v-html="ic('gear')"></span></button>
+      </header>
+
+      <difficulty-slider v-model="state.sel.difficulty" @randomstart="startAiDuel($event)"></difficulty-slider>
+
+      <div class="ai-setup">
+        <!-- Gegner: Standard-Stufen ODER der eigene Klon (Spielstil aus den
+             eigenen Partien). Der Klon ist erst ab genug aufgezeichneten
+             Partien spielbar — vorher zeigt der Knopf den Fortschritt, statt
+             einen halbgaren „Klon" vorzugaukeln. -->
+        <!-- Zwei Grundoptionen statt einer langen Knopfreihe: Standard-KI (feste
+             Stufen) ODER individuelle KI (Klone). Erst in der zweiten Sektion
+             geht es um einzelne Klone — und dort NUR um spielbereite. -->
+        <div class="ai-row">
+          <b class="ai-label">{{ t('aiduel.opponent') }}</b>
+          <div class="ai-levels">
+            <button class="ai-opp" :class="{ on: state.race.aiMode!=='individual' }" @click="setAiMode('preset')">{{ t('aiduel.modePreset') }}</button>
+            <button class="ai-opp" :class="{ on: state.race.aiMode==='individual' }" @click="setAiMode('individual')">{{ t('aiduel.modeIndividual') }}</button>
+          </div>
+        </div>
+
+        <div class="ai-row" v-if="state.race.aiMode!=='individual'">
+          <b class="ai-label">{{ t('aiduel.strength') }}</b>
+          <div class="ai-levels">
+            <button v-for="lv in aiLevels" :key="lv" class="ai-lv" :class="{ on: state.race.aiLevel===lv }"
+                    @click="state.race.aiLevel=lv">{{ t('aiduel.level.'+lv) }}</button>
+          </div>
+        </div>
+
+        <!-- Individuelle KI: NUR spielbereite Klone. Wer noch lernt, steckt in der
+             Extra-Übersicht — bei inaktiven Freunden wird der Klon nie fertig, die
+             würden sonst dauerhaft die Auswahl zustellen. -->
+        <div class="ai-row ai-clones" v-else>
+          <b class="ai-label">{{ t('aiduel.clone') }}</b>
+          <p class="ai-hint" v-if="state.race.clonesLoading">{{ t('aiduel.clonesLoading') }}</p>
+          <div class="ai-levels" v-else-if="anyCloneReady()">
+            <button v-if="cloneStatus().ready" class="ai-opp ai-clone" :class="{ on: state.race.aiClone }"
+                    @click="pickAiOpponent('clone')">{{ t('aiduel.oppClone') }}</button>
+            <button v-for="fc in readyClones()" :key="fc.uid" class="ai-opp ai-friend"
+                    :class="{ on: state.race.aiFriend===fc.uid }" @click="pickAiOpponent('friend', fc.uid)">{{ fc.name }}</button>
+          </div>
+          <p class="ai-hint" v-else>{{ t('aiduel.noClones', { need: cloneStatus().need }) }}</p>
+        </div>
+        <button v-if="state.race.aiMode==='individual' && !state.race.clonesLoading && (learningClones().length || !cloneStatus().ready)"
+                class="ai-learning-link" @click="state.modal='aiLearning'">
+          {{ t('aiduel.learningCount', { n: learningClones().length + (cloneStatus().ready ? 0 : 1) }) }}
+        </button>
+
+        <p class="ai-target">
+          <span class="ei" v-html="ic('hourglass')"></span>
+          {{ t('aiduel.expected', { time: aiTargetLabel(state.sel.difficulty) }) }}
+          <small>{{ aiCalibrated(state.sel.difficulty) ? t('aiduel.calibrated') : t('aiduel.default') }}</small>
+        </p>
+      </div>
+
+      <button class="btn btn-primary diff-start" @click="startAiDuel(state.sel.difficulty)">
+        <span class="ei" v-html="ic('versus')"></span> {{ t('aiduel.start') }}
+      </button>
+    </section>
+
+    <section v-else-if="state.screen==='setup'" class="screen setup setup-slider" :style="diffVars(state.sel.difficulty)">
+      <div class="setup-aura" aria-hidden="true"><b></b><b></b><b></b></div>
+      <header class="topbar setup-top">
+        <button class="icon-btn" @click="goBack()">‹</button>
+        <h2>{{ t('setup.title') }}</h2>
+        <button class="icon-btn" @click="openSettings" :aria-label="t('home.settings')" :title="t('home.settings')"><span class="ico-wrap" v-html="ic('gear')"></span></button>
+      </header>
+
+      <difficulty-slider v-model="state.sel.difficulty" @randomstart="setupStart($event)"></difficulty-slider>
+
+      <!-- „Big Numbers"-Modus: Zellwerte 10–19 statt 1–9. Ein anderer kognitiver
+           Reiz bei identischer Logik/Eindeutigkeit. Kombinierbar MIT Endlos
+           (gilt dann je Level, wo die Feldgröße es erlaubt). -->
+      <label v-if="bigNumbersAllowed(state.sel.difficulty)" class="mode-toggle" :class="{ on: state.sel.bigNumbers }">
+        <b class="mt-title">{{ t('setup.bigNumbers') }}</b>
+        <span class="mt-info" tabindex="0" role="button" :aria-label="t('setup.bigNumbersHint')" @click.stop.prevent @keydown.enter.stop.prevent @keydown.space.stop.prevent>
+          <span class="ei" v-html="ic('info')"></span>
+          <span class="mt-tip">{{ t('setup.bigNumbersHint') }}</span>
+        </span>
+        <input type="checkbox" v-model="state.sel.bigNumbers" />
+        <span class="bignum-switch" aria-hidden="true"></span>
+      </label>
+
+      <!-- „Endlos-Aufstieg": ein Lauf über immer schwerere Level (3 Leben, kein
+           Refill). Ignoriert die gewählte Schwierigkeit/Große Zahlen. -->
+      <label class="mode-toggle" :class="{ on: state.sel.endless }">
+        <b class="mt-title">{{ t('solo.endless') }}</b>
+        <span class="mt-info" tabindex="0" role="button" :aria-label="t('solo.endlessHint')" @click.stop.prevent @keydown.enter.stop.prevent @keydown.space.stop.prevent>
+          <span class="ei" v-html="ic('info')"></span>
+          <span class="mt-tip">{{ t('solo.endlessHint') }}</span>
+        </span>
+        <input type="checkbox" v-model="state.sel.endless" />
+        <span class="bignum-switch" aria-hidden="true"></span>
+      </label>
+
+      <div class="setup-startrow">
+        <button class="btn btn-primary btn-start diff-start" @click="setupStart(state.sel.difficulty)">
+          {{ state.sel.endless ? t('solo.endlessStart') : t('setup.start') }}
+        </button>
+      </div>
+    </section>
+
+    <!-- ══ GAME ══ -->
+    <!-- BLACKSCREEN-SCHUTZ: landet die App (z.B. durch ein fehlgeschlagenes
+         Coop-INIT oder Event-Timing) auf dem Spiel-Screen OHNE geladenes Brett,
+         crashte früher das Template an state.puzzle.* → komplett schwarzer
+         Bildschirm, Lobby unrettbar. Jetzt: freundlicher Warte-Screen mit
+         Ausweg; der Resync-Watchdog fordert parallel den Rundenstand beim Host
+         an (Selbstheilung, s. startCoopResyncWatchdog). -->
+    <section v-else-if="state.screen==='game' && !state.puzzle" class="screen game game-recover">
+      <div class="loading-overlay recover">
+        <div class="loading-card">
+          <div class="loading-bar"><span></span></div>
+          <p>{{ t('game.loading') }}</p>
+          <button class="btn btn-ghost" @click="quitToHome">{{ t('common.menu') }}</button>
+        </div>
+      </div>
+    </section>
+    <section v-else-if="state.screen==='game'" class="screen game" :class="{ 'race-mode': state.race.active, 'team-mode': state.team.active, 'training-mode': state.isTrainingGame }">
+      <!-- Aufgeräumte Spiel-Topbar: oben nur HUD (Leben/Zeit) + Pause. Aufgeben,
+           Einstellungen und Anleitung sind ins Pausenmenü gewandert (siehe unten);
+           "Zum Menü" gibt es dort ebenfalls (kein Zurück-Pfeil oben mehr). -->
+      <header class="topbar game-top">
+        <div class="hud">
+          <div class="hud-item lives">
+            <span v-for="(full,i) in livesArr" :key="i" class="heart" :class="{empty:!full}">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+              <i v-if="!full && state.coop.active && lifeLossColor(i)" class="heart-strike" :style="{background: lifeLossColor(i)}"></i>
+            </span>
+          </div>
+          <div class="hud-item timer" :title="state.endless.active ? t('endless.levelTime') : null"><span class="timer-icon"><span class="ei" v-html="ic('clock')"></span></span><span>{{ fmtTime(state.elapsed) }}</span></div>
+          <!-- Endlos: zusätzlich der GESAMT-Timer über den ganzen Lauf (Sanduhr). -->
+          <div v-if="state.endless.active" class="hud-item timer total" :title="t('endless.totalTime')"><span class="timer-icon"><span class="ei" v-html="ic('hourglass')"></span></span><span>{{ fmtTime(endlessTotalMs()) }}</span></div>
+          <div v-if="state.endless.active" class="hud-item endless-lvl" :title="t('solo.endless')"><span class="ei" v-html="ic('meteor')"></span><b>{{ state.endless.level }}</b></div>
+        </div>
+        <div class="top-actions">
+          <button class="icon-btn chat-btn" v-if="isMultiplayer()" @click="toggleChat" :aria-label="t('chat.title')" :title="typingPlayers().length ? t('chat.typing', { name: typingPlayers()[0].name }) : t('chat.title')">
+            <span class="ico-wrap" v-html="ic('chat')"></span>
+            <span v-if="state.chat.unread" class="chat-unread">{{ state.chat.unread }}</span>
+            <!-- Mitspieler tippt gerade → drei „wandernde" Punkte am Chat-Symbol. -->
+            <span v-else-if="typingPlayers().length" class="chat-typing-dots" :style="{ '--tp-col': typingPlayers()[0].color }"><i></i><i></i><i></i></span>
+          </button>
+          <button class="icon-btn" v-if="state.puzzle && !state.generating && state.status==='playing' && !state.coop.awaitingStart" @click="pauseGame" :title="t('game.pauseTitle')">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><rect x="6" y="5" width="4" height="14" rx="1.3"/><rect x="14" y="5" width="4" height="14" rx="1.3"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <div v-if="state.generating" class="loading loading-overlay">
+        <div class="loading-card">
+          <div class="spinner"></div>
+          <div class="loading-tx">{{ t('game.loading') }}</div>
+          <div class="loading-bar"><span></span></div>
+          <div class="loading-hint">{{ t('game.loadingHint') }}</div>
+        </div>
+      </div>
+
+      <template v-else-if="state.puzzle">
+        <!-- game-sidebar-top/-bottom sind im Hochformat unsichtbare Wrapper
+             (display:contents, siehe styles.css) -- ihre Kinder verhalten sich
+             dort exakt wie bisher als direkte Flex-Kinder von .screen.game.
+             Im Querformat werden sie zu echten Grid-Feldern neben dem
+             Spielfeld (siehe @media ... orientation:landscape). -->
+        <div class="game-sidebar-top">
+        <div class="game-meta">
+          <span class="chip"><span class="ei" v-html="ic(DIFF_BY_ID[state.puzzle.difficulty].emoji)"></span> {{ t('difficulty.'+state.puzzle.difficulty) }}</span>
+          <span class="chip">{{ state.puzzle.rows }}×{{ state.puzzle.cols }}</span>
+          <span v-if="state.coop.active" class="chip coop-chip" :class="(state.coop.connected && state.coop.online) ? 'coop-on' : 'coop-off'">
+            <span class="ei" v-html="ic('users')"></span> {{ t('game.coopTag') }}{{ (state.coop.connected && state.coop.online) ? '' : t('game.coopOfflineSuffix') }}
+          </span>
+          <span v-if="state.team.active" class="chip coop-chip"><span class="ei" v-html="ic('versus')"></span> {{ t('team.label'+state.team.myTeam) }}</span>
+          <span v-if="state.race.active" class="chip coop-chip"><span class="ei" v-html="ic('versus')"></span> {{ state.race.ffa ? t('race.ffaTag', { n: state.race.opponents.length + 1 }) : state.race.opponentName }}</span>
+          <span class="zoomctl">
+            <!-- Reset-Knopf bewusst LINKS: die Leiste ist rechtsbündig (margin-left:auto),
+                 d.h. ein links eingeschobener Knopf wächst nach links und lässt − / +
+                 an ihrer Position -- schnelles, wiederholtes Tippen auf + verrutscht so nicht. -->
+            <button v-if="state.zoom !== 1" class="zoom-btn zoom-reset" @click="resetZoom" :aria-label="t('game.zoomReset')" :title="t('game.zoomReset')">↺</button>
+            <button class="zoom-btn" @click="setZoom(-0.15)">−</button>
+            <button class="zoom-btn" @click="setZoom(0.15)">+</button>
+          </span>
+        </div>
+
+        <!-- Eigener Fortschritt (immer sichtbar); im Race-Modus zusätzlich der
+             Gegner-Balken direkt darunter, damit beide Balken auf einen Blick
+             verglichen werden können. -->
+        <div class="progress-row">
+          <div class="progress-line" :aria-label="t('game.progressLabel', { pct: myProgressPct })">
+            <span v-if="state.race.active" class="progress-label">{{ t('common.you') }}</span>
+            <span v-else-if="state.team.active" class="progress-label">{{ t('team.label'+state.team.myTeam) }}</span>
+            <span class="progress-pct">{{ myProgressPct }}%</span>
+            <span class="progress-bar"><span class="progress-bar-fill mine" :style="{ width: myProgressPct + '%' }"></span></span>
+          </div>
+          <!-- Team-vs-Team (2v2): Gegner-Team als Fortschrittsbalken + Leben-Zeile,
+               exakt wie im 1v1-Race (statt der früheren Chip-Anzeige). -->
+          <template v-if="state.team.active">
+            <div class="progress-line" :aria-label="t('team.opponentProgress', { pct: state.team.opponentPct })">
+              <span class="progress-label">{{ t('team.label'+(state.team.myTeam==='A'?'B':'A')) }}</span>
+              <span class="progress-pct">{{ state.team.opponentPct }}%</span>
+              <span class="progress-bar"><span class="progress-bar-fill opp" :style="{ width: state.team.opponentPct + '%' }"></span></span>
+            </div>
+            <div class="progress-line opponent-lives-line" :aria-label="t('win.mistakesCount', { count: state.team.opponentMistakes })">
+              <span class="progress-label"></span>
+              <span class="opponent-lives">
+                <span v-for="(full,i) in opponentTeamLivesArr" :key="i" class="heart" :class="{empty:!full}">
+                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                  <i v-if="!full" class="heart-strike opp-heart-strike"></i>
+                </span>
+              </span>
+            </div>
+          </template>
+          <!-- FFA (jeder gegen jeden): ein Fortschrittsbalken je Gegner. -->
+          <template v-if="state.race.active && state.race.ffa">
+            <div class="progress-line" v-for="o in state.race.opponents" :key="o.id" :class="{ 'ffa-out': o.out }" :aria-label="t('race.opponentProgress', { pct: o.pct })">
+              <span class="progress-label">{{ o.name }}<template v-if="o.out"> · {{ t('race.ffaOutTag') }}</template></span>
+              <span class="progress-pct">{{ o.pct }}%</span>
+              <span class="progress-bar"><span class="progress-bar-fill opp" :style="{ width: o.pct + '%', background: o.color }"></span></span>
+            </div>
+          </template>
+          <!-- Strikt 1v1: einzelner Gegner-Balken + Leben-Anzeige. -->
+          <div class="progress-line" v-if="state.race.active && !state.race.ffa" :aria-label="t('race.opponentProgress', { pct: state.race.opponentPct })">
+            <span class="progress-label">{{ state.race.opponentName }}</span>
+            <span class="progress-pct">{{ state.race.opponentPct }}%</span>
+            <span class="progress-bar"><span class="progress-bar-fill opp" :style="{ width: state.race.opponentPct + '%', background: state.race.opponentColor }"></span></span>
+          </div>
+          <div class="progress-line opponent-lives-line" v-if="state.race.active && !state.race.ffa" :aria-label="t('win.mistakesCount', { count: state.race.opponentMistakes })">
+            <span class="progress-label"></span>
+            <span class="opponent-lives">
+              <span v-for="(full,i) in opponentLivesArr" :key="i" class="heart" :class="{empty:!full}">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                <i v-if="!full" class="heart-strike opp-heart-strike"></i>
+              </span>
+            </span>
+          </div>
+        </div>
+
+        <div v-if="state.coop.active && state.coop.players.length" class="coop-roster">
+          <span v-for="p in (state.team.active ? state.coop.players.filter(pl=>pl.team===state.team.myTeam) : state.coop.players)" :key="p.id" class="player-chip"
+                :style="{ background: p.color, color: chipTextColor(p.color) }">
+            <span v-if="badgeShown(p.badge)" class="badge-medal-inline" v-html="badgeSvg(p.badge)"></span>{{ playerLabel(p) }}<template v-if="p.id===state.coop.myId">{{ t('common.youSuffix') }}</template>
+          </span>
+        </div>
+        </div>
+
+        <!-- Das Brett ist eine EIGENE Child-Komponente (BoardGrid): App-Renders
+             (Tool-Umschalter, Sekunden-Tick, HUD) rendern die ~200 Zellen NICHT
+             mehr mit — das Brett rendert nur bei echten Brett-Änderungen. -->
+        <div class="board-wrap" :class="{ blurred: state.paused || state.coop.awaitingStart }">
+          <board-grid></board-grid>
+        </div>
+
+        <div class="game-sidebar-bottom">
+        <!-- Kein Undo-Knopf mehr (Nutzerwunsch) — Fehlzüge werden ohnehin sofort
+             aufgedeckt und nie gesetzt; undo() bleibt nur für Coop-UNDO-Events
+             älterer Clients erhalten. -->
+        <div v-if="!state.isTrainingGame || state.trainingDone" class="toolbar">
+          <!-- Unsichtbarer Ausgleich in Hinweis-Knopf-Breite: hält den Werkzeug-
+               Umschalter EXAKT mittig, obwohl links kein Undo-Knopf mehr sitzt. -->
+          <span v-if="!state.isRaceGame && !state.team.active" class="toolbar-spacer" aria-hidden="true"></span>
+          <div class="tool-toggle" @click="toggleTool">
+            <div class="tool-pill" :class="{ pen: state.tool==='pen' }"></div>
+            <span class="tool-ic eraser" :class="{active: state.tool==='eraser'}" :title="t('game.eraserTitle')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 20H20"/><path d="m3.6 14.5 5.9 5.9 9.4-9.4a2 2 0 0 0 0-2.8l-3.1-3.1a2 2 0 0 0-2.8 0L3.6 11.7a2 2 0 0 0 0 2.8z"/><path d="m9 8.5 6.5 6.5"/></svg>
+            </span>
+            <span class="tool-ic pen" :class="{active: state.tool==='pen'}" :title="t('game.penTitle')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="11" cy="13" rx="8" ry="7"/><path d="m16.5 7.5 3.2-3.2a1.6 1.6 0 0 1 2.3 2.3l-3.2 3.2-2.3-2.3z"/></svg>
+            </span>
+          </div>
+          <button v-if="!state.isRaceGame && !state.team.active" class="round-btn" :disabled="state.hintsLeft<=0" @click="useHint" :title="t('game.hintTitle')" :aria-label="t('game.hintTitle')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 18h5"/><path d="M10 21.5h4"/><path d="M12 2.5a6.5 6.5 0 0 0-4 11.6c.8.7 1.2 1.3 1.3 2.4h5.4c.1-1.1.5-1.7 1.3-2.4A6.5 6.5 0 0 0 12 2.5z"/></svg>
+          </button>
+        </div>
+        </div>
+      </template>
+
+      <!-- Trainingsmodus: Erklär-Banner für den nächsten erzwungenen Schritt.
+           Bewusst kein Vollbild-Overlay (wie Pause/Coop-Lobby) -- das Feld
+           bleibt sichtbar, die betroffene Zelle ist per .training-highlight
+           markiert (siehe cellClasses), damit Erklärung und Zelle zusammen
+           erkennbar sind. -->
+      <div v-if="state.isTrainingGame && state.status==='playing' && !state.paused" class="training-banner">
+        <template v-if="state.trainingStep">
+          <div class="training-text">
+            <b>{{ t('training.group.'+state.trainingStep.group.kind, { n: state.trainingStep.group.ref+1 }) }} ({{ t('training.target', { n: state.trainingStep.group.target }) }})</b>
+            <span>{{ t('training.reason.'+state.trainingStep.reason) }}</span>
+          </div>
+          <button class="btn btn-primary btn-sm" @click="applyTrainingStep">{{ t('training.apply') }}</button>
+        </template>
+        <template v-else-if="state.trainingDone">
+          <div class="training-text">{{ t('training.doneMsg') }}</div>
+        </template>
+      </div>
+
+      <!-- Tipp-Tutor: erklärt Schritt für Schritt mit den KONKRETEN Zahlen,
+           warum der nächste Zug zwingend ist. Jeder Schritt highlightet seine
+           Zellen (hint-group, Rest des Bretts gedimmt) und wird per „Weiter"
+           bestätigt; der letzte Schritt führt den Zug aus. X bricht ab. -->
+      <div v-if="state.hintTutor && !state.isTrainingGame && state.status==='playing' && !state.paused" class="hint-banner tutor-card">
+        <div class="hint-text">
+          <b><span class="ei" v-html="ic('bulb')"></span> {{ t('tutor.title') }} <span class="tutor-progress">{{ state.hintTutor.i + 1 }}/{{ state.hintTutor.steps.length }}</span></b>
+          <span>{{ tutorStepText() }}</span>
+        </div>
+        <button class="btn btn-primary btn-sm" @click="tutorNext">{{ state.hintTutor.i < state.hintTutor.steps.length - 1 ? t('tutor.next') : t('tutor.apply') }}</button>
+        <button class="hint-dismiss" @click="dismissTutor" :aria-label="t('hint.dismiss')" :title="t('hint.dismiss')"><span class="ico-wrap" v-html="ic('close')"></span></button>
+      </div>
+
+      <!-- Coop-Lobby: Rätsel ist da, Zeit läuft erst nach "Starten" -->
+      <div v-if="state.coop.awaitingStart" class="overlay coop-lobby-overlay">
+        <div class="result-card">
+          <div class="result-emoji"><span class="ei" v-html="ic('users')"></span></div>
+          <h2>{{ t('coop.lobbyTitle') }}</h2>
+          <p class="result-msg">{{ state.coop.generating ? t('coop.generating') : t('coop.lobbyMsg') }}</p>
+          <div class="coop-roster" v-if="nonHostPlayers().length">
+            <span v-for="p in nonHostPlayers()" :key="p.id" class="player-chip" :class="{ 'ready-chip': p.ready }"
+                  :style="{ background: p.color, color: chipTextColor(p.color) }">
+              <span v-if="badgeShown(p.badge)" class="badge-medal-inline" v-html="badgeSvg(p.badge)"></span>{{ playerLabel(p) }}<template v-if="p.id===state.coop.myId">{{ t('common.youSuffix') }}</template>
+              <span class="ei" v-html="ic(p.ready ? 'check' : 'hourglass')"></span>
+            </span>
+          </div>
+          <!-- Solange das eigene Rätsel noch generiert wird: laufender Ladebalken
+               statt Start/Bereit-Knopf -- so kann niemand starten/sich bereit
+               melden, bevor bei ihm wirklich ein Rätsel bereitliegt. -->
+          <template v-if="state.coop.generating">
+            <div class="loading-bar"><span></span></div>
+          </template>
+          <template v-else-if="state.coop.role === 'host'">
+            <p class="coop-subtext">{{ t('coop.readyCount', { n: readyCount(), total: nonHostPlayers().length }) }}</p>
+            <button class="btn btn-primary" :disabled="!allGuestsReady()" @click="startCoopRound">{{ t('coop.lobbyStart') }}</button>
+          </template>
+          <template v-else>
+            <button v-if="!myReady()" class="btn btn-primary" @click="markReady">{{ t('coop.markReady') }}</button>
+            <template v-else>
+              <p class="coop-subtext">{{ t('coop.waitingForHostFinalStart') }}</p>
+              <button class="btn btn-ghost" @click="unmarkReady">{{ t('coop.unmarkReady') }}</button>
+            </template>
+          </template>
+          <button class="btn btn-ghost" @click="quitToHome">{{ t('common.menu') }}</button>
+        </div>
+      </div>
+
+      <!-- Pause -->
+      <div v-if="state.paused" class="overlay pause-overlay">
+        <!-- Resume-Countdown: „Fortsetzen" lässt erst 1 s lang einen Balken ablaufen
+             („Weiter geht's", keine Ziffern), das Spiel bleibt solange pausiert —
+             kein versehentlicher Tap ins Brett direkt nach dem Fortsetzen. -->
+        <div v-if="state.resumeCountdown" class="result-card resume-count-card">
+          <p class="resume-count-label">{{ t('pause.resuming') }}</p>
+          <div class="resume-count-bar"><span></span></div>
+        </div>
+        <div v-else class="result-card">
+          <div class="result-emoji"><span class="ei" v-html="ic('pause')"></span></div>
+          <h2>{{ t('pause.title') }}</h2>
+          <div class="pause-time"><span class="ei" v-html="ic('clock')"></span> {{ fmtTime(state.elapsed) }}</div>
+          <p class="result-msg">{{ t('pause.msg') }}</p>
+          <button class="btn btn-primary" @click="startResumeCountdown">{{ t('pause.resume') }}</button>
+          <!-- Aus dem Pausenmenü erreichbar: Einstellungen (öffnet das Menü, Spiel
+               bleibt pausiert), Anleitung und Aufgeben. So läuft beim Öffnen der
+               Einstellungen im Spiel exakt dieselbe Pausenmechanik wie über den
+               Pause-Knopf (für alle Coop-Spieler synchron pausiert). -->
+          <!-- Solo → Coop: mitten in der Solo-Partie einen Mitspieler einladen
+               (z.B. wenn man Hilfe braucht) — das Spiel wird beim Beitritt live
+               zum Coop. Bleibt auch NACH der Umwandlung sichtbar (canInviteMore):
+               der Host kann jederzeit weitere Mitspieler holen, bis der Raum voll
+               ist. -->
+          <button v-if="canInviteToSolo() || canInviteMore() || state.soloInvite.status==='hosting' || state.soloInvite.status==='connecting'"
+                  class="btn btn-ghost" @click="openInvite()">
+            <span class="btn-ic"><span class="ei" v-html="ic('users')"></span></span>
+            {{ state.soloInvite.status==='hosting' ? t('soloInvite.buttonPending') : t('soloInvite.button') }}
+          </button>
+          <!-- Coop-Verbindung tot? → Brett als eigenständiges Solo-Spiel retten
+               und sofort allein weiterspielen (Coop-Offline-Rettung). -->
+          <button v-if="canContinueSolo()" class="btn btn-ghost" @click="continueSoloAlone(); startResumeCountdown();">
+            <span class="btn-ic"><span class="ei" v-html="ic('play')"></span></span>
+            {{ t('coop.continueSolo') }}
+          </button>
+          <button class="btn btn-ghost" @click="openSettings"><span class="btn-ic"><span class="ei" v-html="ic('gear')"></span></span> {{ t('home.settings') }}</button>
+          <button class="btn btn-ghost" @click="state.modal='howto'"><span class="btn-ic"><span class="ei" v-html="ic('book')"></span></span> {{ t('home.howto') }}</button>
+          <button class="btn btn-ghost" @click="quitToHome">{{ t('common.menu') }}</button>
+        </div>
+      </div>
+
+      <!-- Gewonnen / Verloren — kompakte Karte, die IMMER auf den Bildschirm passt:
+           Kopfzeile (Icon + Titel + Schwierigkeit) statt gestapeltem Riesen-Emoji,
+           Badges/Münzen als Chip-Zeilen, Duell-GRAFIK statt Prozent-Text,
+           Team-Verteilung als EIN gestapelter Balken + eine Zeile je Spieler
+           (bis 4 Spieler), Aktionen nebeneinander. Identischer Aufbau in allen
+           Modi — jede Sektion erscheint nur, wenn relevant. -->
+      <div v-if="state.status==='won'" class="overlay">
+        <div class="result-card win rc" :class="{ perfect: state.perfectWin }">
+          <div class="rc-head">
+            <div class="result-emoji"><span class="ei" v-html="ic(state.endless.active ? 'meteor' : 'party')"></span></div>
+            <div class="rc-headtx">
+              <h2>{{ state.endless.active ? t('endless.levelDone', { n: state.endless.score }) : winTitle }}</h2>
+              <div v-if="state.puzzle" class="result-diff">{{ t('difficulty.' + state.puzzle.difficulty) }} · {{ state.puzzle.rows }}×{{ state.puzzle.cols }}</div>
+            </div>
+          </div>
+          <div v-if="state.perfectWin || state.newHighscore || state.wouldHaveBeenBest" class="rc-badges">
+            <div v-if="state.perfectWin" class="perfect-badge">{{ t('win.perfectBadge') }}</div>
+            <div v-if="state.newHighscore" class="highscore-badge">{{ t('win.newHighscore') }}</div>
+            <div v-else-if="state.wouldHaveBeenBest" class="highscore-badge missed">
+              {{ t('win.missedPrefix') }}
+              <template v-if="state.mistakes>0 && state.hintsUsed>0"> {{ t('win.missedBoth') }}</template>
+              <template v-else-if="state.mistakes>0"> {{ t('win.missedMistakes') }}</template>
+              <template v-else> {{ t('win.missedHints') }}</template>.
+            </div>
+          </div>
+          <div v-if="duelBars.length" class="duel-graph">
+            <div v-for="b in duelBars" :key="b.id" class="duel-row" :class="{ winner: b.winner, out: b.out, mine: b.me }">
+              <span class="duel-name"><span v-if="b.winner" class="ei duel-trophy" v-html="ic('trophy')"></span>{{ b.name }}</span>
+              <span class="duel-bar"><span class="duel-fill" :class="{ mine: b.me && !b.color }" :style="{ width: Math.max(b.pct, 2) + '%', background: b.color || null }"></span></span>
+              <span class="duel-mist" :title="t('win.mistakesLabel')"><span class="ei" v-html="ic('heart-broken')"></span>{{ b.mistakes ?? 0 }}</span>
+              <span class="duel-pct">{{ b.pct }}%</span>
+            </div>
+            <p class="duel-msg">{{ state.team.active ? teamResultMsg : raceResultMsg }}</p>
+          </div>
+          <div v-if="state.lastCoinReward > 0" class="coin-reward"><span class="ei" v-html="ic('coin')"></span> +{{ state.lastCoinReward }} <span v-if="state.lastCoinMult > 1" class="coin-mult">×{{ state.lastCoinMult }}</span> <span class="coin-total">({{ t('wallet.total', { n: state.wallet.balance }) }})</span></div>
+          <div v-if="state.lastStreakUsed > 0" class="coin-streak-bonus"><span class="ei" v-html="ic('flame')"></span> {{ t('wallet.streakBonus', { days: state.lastStreakUsed, pct: streakBonusPct(state.lastStreakUsed) }) }}</div>
+          <div class="result-stats">
+            <div><b>{{ fmtTime(state.elapsed) }}</b><small>{{ t('win.timeLabel') }}</small></div>
+            <div><b>{{ state.mistakes }}</b><small>{{ t('win.mistakesLabel') }}</small></div>
+            <div><b>{{ state.hintsUsed }}</b><small>{{ t('win.hintsLabel') }}</small></div>
+          </div>
+          <!-- Endlos: verbleibende/verlorene Leben (Coop mit farbigem Strich = wer). -->
+          <div v-if="state.endless.active" class="endless-lives-row">
+            <span class="endless-lives-cap">{{ t('endless.livesLabel') }}</span>
+            <div class="hud-item lives">
+              <span v-for="(full,i) in livesArr" :key="i" class="heart" :class="{empty:!full}">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                <i v-if="!full && state.coop.active && lifeLossColor(i)" class="heart-strike" :style="{background: lifeLossColor(i)}"></i>
+              </span>
+            </div>
+          </div>
+          <div v-if="coopPerformance.length" class="coop-performance">
+            <div class="perf-title">{{ t('win.teamPerformance') }}</div>
+            <div class="perf-stack"><span v-for="pl in coopPerformance" :key="pl.id" :style="{ width: pl.contributionPct + '%', background: pl.color }"></span></div>
+            <div v-for="pl in coopPerformance" :key="pl.id" class="perf-line" :class="{mvp: pl.id===mvpId}">
+              <div class="perf-head">
+                <span class="perf-dot" :style="{background: pl.color}"></span>
+                <span class="perf-name" :style="{color: pl.color}">{{ playerLabel(pl) }}</span>
+                <span v-if="pl.id===mvpId" class="perf-mvp"><span class="ei" v-html="ic('crown')"></span>{{ t('win.mvp') }}</span>
+              </div>
+              <div class="perf-stats">
+                <span class="pm good"><span class="ei" v-html="ic('check')"></span>{{ pl.correctKept + pl.correctRemoved }}</span>
+                <span class="pm bad"><span class="ei" v-html="ic('heart-broken')"></span>{{ pl.mistakes }}</span>
+                <span class="perf-pct">{{ pl.contributionPct }}%</span>
+              </div>
+            </div>
+          </div>
+          <div v-if="opponentTeamPerformance.length" class="opponent-team-performance">
+            <div class="perf-title">{{ t('team.opponentLivesLostPerPlayer') }}</div>
+            <div class="opp-chips"><span v-for="pl in opponentTeamPerformance" :key="pl.id" class="chip" :style="{color: pl.color}">{{ playerLabel(pl) }}: {{ t('win.mistakesCount', { count: pl.mistakes }) }}</span></div>
+          </div>
+          <div class="rc-actions">
+            <button class="btn btn-ghost" @click="quitToHome">{{ t('common.menu') }}</button>
+            <!-- Endlos: „Fortsetzen" (Solo direkt, Coop nur Host; Gast wartet auf Host). -->
+            <template v-if="state.endless.active">
+              <button v-if="!state.endless.coop || state.coop.role==='host'" class="btn btn-primary" @click="endlessContinue">{{ t('endless.continue') }}</button>
+              <p v-else class="result-msg rc-wait">{{ t('win.waitingForHost') }}</p>
+            </template>
+            <template v-else>
+              <button class="btn btn-primary" v-if="state.isTrainingGame" @click="startTrainingGame">{{ t('training.another') }}</button>
+              <button class="btn btn-primary" v-else-if="!state.team.active && !state.race.active && (!state.coop.active || state.coop.role==='host')" @click="goNextPuzzle">{{ t('win.nextPuzzle') }}</button>
+              <p v-else-if="!state.team.active && !state.race.active && state.coop.active && state.coop.role!=='host'" class="result-msg rc-wait">{{ t('win.waitingForHost') }}</p>
+              <button class="btn btn-primary" v-else-if="state.race.active && state.coop.role==='host'" @click="rematchRace">{{ t('race.rematch') }}</button>
+              <p v-else-if="state.race.active" class="result-msg rc-wait">{{ t('win.waitingForHost') }}</p>
+            </template>
+          </div>
+        </div>
+      </div>
+      <div v-if="state.status==='lost' && !state.endlessSummary" class="overlay">
+        <div class="result-card lose rc">
+          <div class="rc-head">
+            <div class="result-emoji"><span class="ei" v-html="ic('heart-broken')"></span></div>
+            <div class="rc-headtx">
+              <h2>{{ state.team.active ? t('team.lossTitleAuto') : state.race.active ? t('race.lossTitleAuto') : t('loss.title') }}</h2>
+              <div v-if="state.puzzle" class="result-diff">{{ t('difficulty.' + state.puzzle.difficulty) }} · {{ state.puzzle.rows }}×{{ state.puzzle.cols }}</div>
+            </div>
+          </div>
+          <p v-if="!state.team.active && !state.race.active" class="result-msg">{{ t('loss.msg') }}</p>
+          <div v-if="duelBars.length" class="duel-graph">
+            <div v-for="b in duelBars" :key="b.id" class="duel-row" :class="{ winner: b.winner, out: b.out, mine: b.me }">
+              <span class="duel-name"><span v-if="b.winner" class="ei duel-trophy" v-html="ic('trophy')"></span>{{ b.name }}</span>
+              <span class="duel-bar"><span class="duel-fill" :class="{ mine: b.me && !b.color }" :style="{ width: Math.max(b.pct, 2) + '%', background: b.color || null }"></span></span>
+              <span class="duel-mist" :title="t('win.mistakesLabel')"><span class="ei" v-html="ic('heart-broken')"></span>{{ b.mistakes ?? 0 }}</span>
+              <span class="duel-pct">{{ b.pct }}%</span>
+            </div>
+            <p class="duel-msg">{{ state.team.active ? teamResultMsg : raceResultMsg }}</p>
+          </div>
+          <!-- Eigene Runden-Statistik auch bei der Niederlage — gleicher Aufbau
+               wie der Sieg-Screen (identische Karte in allen Modi). -->
+          <div class="result-stats">
+            <div><b>{{ fmtTime(state.elapsed) }}</b><small>{{ t('win.timeLabel') }}</small></div>
+            <div><b>{{ state.mistakes }}</b><small>{{ t('win.mistakesLabel') }}</small></div>
+            <div><b>{{ state.hintsUsed }}</b><small>{{ t('win.hintsLabel') }}</small></div>
+          </div>
+          <div v-if="coopPerformance.length" class="coop-performance">
+            <div class="perf-title">{{ t('win.teamPerformance') }}</div>
+            <div class="perf-stack"><span v-for="pl in coopPerformance" :key="pl.id" :style="{ width: pl.contributionPct + '%', background: pl.color }"></span></div>
+            <div v-for="pl in coopPerformance" :key="pl.id" class="perf-line" :class="{mvp: pl.id===mvpId}">
+              <div class="perf-head">
+                <span class="perf-dot" :style="{background: pl.color}"></span>
+                <span class="perf-name" :style="{color: pl.color}">{{ playerLabel(pl) }}</span>
+                <span v-if="pl.id===mvpId" class="perf-mvp"><span class="ei" v-html="ic('crown')"></span>{{ t('win.mvp') }}</span>
+              </div>
+              <div class="perf-stats">
+                <span class="pm good"><span class="ei" v-html="ic('check')"></span>{{ pl.correctKept + pl.correctRemoved }}</span>
+                <span class="pm bad"><span class="ei" v-html="ic('heart-broken')"></span>{{ pl.mistakes }}</span>
+                <span class="perf-pct">{{ pl.contributionPct }}%</span>
+              </div>
+            </div>
+          </div>
+          <div v-if="opponentTeamPerformance.length" class="opponent-team-performance">
+            <div class="perf-title">{{ t('team.opponentLivesLostPerPlayer') }}</div>
+            <div class="opp-chips"><span v-for="pl in opponentTeamPerformance" :key="pl.id" class="chip" :style="{color: pl.color}">{{ playerLabel(pl) }}: {{ t('win.mistakesCount', { count: pl.mistakes }) }}</span></div>
+          </div>
+          <div class="rc-actions">
+            <button class="btn btn-ghost" @click="quitToHome">{{ t('common.menu') }}</button>
+            <button class="btn btn-primary" v-if="state.isTrainingGame" @click="startTrainingGame">{{ t('training.another') }}</button>
+            <button class="btn btn-primary" v-else-if="!state.team.active && !state.race.active && (!state.coop.active || state.coop.role==='host')" @click="goNextPuzzle">{{ t('common.newGame') }}</button>
+            <p v-else-if="!state.team.active && !state.race.active && state.coop.active && state.coop.role!=='host'" class="result-msg rc-wait">{{ t('win.waitingForHost') }}</p>
+            <button class="btn btn-primary" v-else-if="state.race.active && state.coop.role==='host'" @click="rematchRace">{{ t('race.rematch') }}</button>
+            <p v-else-if="state.race.active" class="result-msg rc-wait">{{ t('win.waitingForHost') }}</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Endlos: Ergebnis-Screen am Laufende (Leben aufgebraucht) -->
+      <div v-if="state.endlessSummary" class="overlay">
+        <div class="result-card rc" :class="{ 'endless-record': state.endlessSummary.newBest }">
+          <div class="rc-head">
+            <div class="result-emoji"><span class="ei" v-html="ic('meteor')"></span></div>
+            <div class="rc-headtx">
+              <h2>{{ t('endless.overTitle') }}</h2>
+              <div class="endless-reached">{{ t('endless.reached', { n: state.endlessSummary.score }) }}</div>
+            </div>
+          </div>
+          <div v-if="state.endlessSummary.totalMs > 0" class="result-diff"><span class="ei" v-html="ic('hourglass')"></span> {{ t('endless.totalTime') }}: {{ fmtTime(state.endlessSummary.totalMs) }}</div>
+          <div v-if="state.endlessSummary.newBest" class="rc-badges"><div class="highscore-badge">{{ t('endless.record') }}</div></div>
+          <div v-else class="result-msg">{{ t('endless.best', { n: state.endlessSummary.best }) }}</div>
+          <div v-if="state.endlessSummary.coins > 0" class="coin-reward"><span class="ei" v-html="ic('coin')"></span> +{{ state.endlessSummary.coins }} <span class="coin-total">({{ t('wallet.total', { n: state.wallet.balance }) }})</span></div>
+          <div class="rc-actions">
+            <button class="btn btn-ghost" @click="closeEndlessSummary">{{ t('common.menu') }}</button>
+            <button v-if="!state.endlessSummary.coop" class="btn btn-primary" @click="endlessAgain">{{ t('common.newGame') }}</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ STATS ══ -->
+    <section v-else-if="state.screen==='stats'" class="screen stats">
+      <header class="topbar"><button class="icon-btn" @click="goBack()">‹</button><h2>{{ t('stats.title') }}</h2><button class="icon-btn" @click="openSettings" :aria-label="t('home.settings')" :title="t('home.settings')"><span class="ico-wrap" v-html="ic('gear')"></span></button></header>
+      <div class="stats-body">
+        <button class="btn btn-ghost shop-entry-btn" @click="openShop">
+          <span class="btn-ic"><span class="ei" v-html="ic('cart')"></span></span>
+          <span class="btn-tx"><b>{{ t('shop.title') }}</b><small>{{ t('shop.entryHint') }}</small></span>
+        </button>
+        <div class="seg stats-tabs">
+          <button :class="{ active: state.statsTab==='allgemein' }" @click="state.statsTab='allgemein'">{{ t('stats.tabGeneral') }}</button>
+          <button :class="{ active: state.statsTab==='solo' }" @click="state.statsTab='solo'">{{ t('stats.solo') }}</button>
+          <button :class="{ active: state.statsTab==='coop' }" @click="state.statsTab='coop'">{{ t('stats.coop') }}</button>
+        </div>
+
+        <!-- Reiter: Allgemein -->
+        <template v-if="state.statsTab==='allgemein'">
+          <div class="stats-overview">
+            <div class="stat-tile"><span class="stat-emoji"><span class="ei" v-html="ic('controller')"></span></span><b>{{ generalStats.played }}</b><small>{{ t('stats.ovPlayed') }}</small></div>
+            <div class="stat-tile"><span class="stat-emoji"><span class="ei" v-html="ic('medal')"></span></span><b>{{ generalStats.won }} · {{ generalStats.winPct }}%</b><small>{{ t('stats.wonPlayedLabel') }}</small></div>
+            <div class="stat-tile"><span class="stat-emoji"><span class="ei" v-html="ic('clock')"></span></span><b>{{ fmtDuration(generalStats.timeMs) }}</b><small>{{ t('stats.ovTime') }}</small></div>
+            <div class="stat-tile"><span class="stat-emoji"><span class="ei" v-html="ic('sparkles')"></span></span><b>{{ generalStats.perfect }}</b><small>{{ t('stats.ovPerfect') }}</small></div>
+            <div class="stat-tile"><span class="stat-emoji"><span class="ei" v-html="ic('flame')"></span></span><b>{{ state.streak.currentStreak }} / {{ state.streak.bestStreak }}</b><small>{{ t('stats.ovStreak') }}</small></div>
+            <div class="stat-tile"><span class="stat-emoji"><span class="ei" v-html="ic('star')"></span></span><b><template v-if="generalStats.favId"><span class="ei" v-html="ic(DIFF_BY_ID[generalStats.favId].emoji)"></span> {{ t('difficulty.'+generalStats.favId) }}</template><template v-else>–</template></b><small>{{ t('stats.ovFav') }}</small></div>
+            <div class="stat-tile clickable" @click="navTo('achievements')"><span class="stat-emoji"><span class="ei" v-html="ic('medal')"></span></span><b>{{ achievementsUnlockedCount }} / {{ ACHIEVEMENTS.length }}</b><small>{{ t('stats.ovAchievements') }}</small></div>
+            <div class="stat-tile"><span class="stat-emoji"><span class="ei" v-html="ic('coin')"></span></span><b>{{ state.wallet.balance }}</b><small>{{ t('wallet.coins') }}</small></div>
+          </div>
+          <button class="btn btn-ghost achievements-top-btn" @click="navTo('achievements')">{{ t('stats.achievementsButton') }} ({{ achievementsUnlockedCount }}/{{ ACHIEVEMENTS.length }})</button>
+        </template>
+
+        <!-- Reiter: Solo -->
+        <template v-else-if="state.statsTab==='solo'">
+          <div v-for="d in DIFFICULTIES" :key="d.id" class="diff-row">
+            <div class="diff-row-top"><span class="diff-name"><span class="ei" v-html="ic(d.emoji)"></span> {{ t('difficulty.'+d.id) }}</span></div>
+            <div class="diff-row-sub">
+              <span class="chip"><span class="ei" v-html="ic('medal')"></span> {{ (state.stats.byDifficulty[d.id]?.won)||0 }} / {{ (state.stats.byDifficulty[d.id]?.played)||0 }}<span class="chip-label">{{ t('stats.wonPlayedLabel') }}</span></span>
+              <span class="chip best-time-chip"><span class="ei" v-html="ic('trophy')"></span> {{ state.stats.byDifficulty[d.id]?.bestTimeMs!=null ? fmtTime(state.stats.byDifficulty[d.id].bestTimeMs) : '-:--' }}<span class="chip-label">{{ t('stats.bestTimeLabel') }}</span></span>
+              <span class="chip">⌀ {{ avgTimeFor(d.id)!=null ? fmtTime(avgTimeFor(d.id)) : '-:--' }}<span class="chip-label">{{ t('stats.avgTimeLabel') }}</span></span>
+              <span class="chip"><span class="ei" v-html="ic('heart-broken')"></span> {{ (state.stats.byDifficulty[d.id]?.lost)||0 }}<span class="chip-label">{{ t('stats.lostLabel') }}</span></span>
+            </div>
+          </div>
+        </template>
+
+        <!-- Reiter: Coop (inkl. Wettkampf/Duell) -->
+        <template v-else>
+          <div v-for="d in DIFFICULTIES" :key="d.id" class="diff-row">
+            <div class="diff-row-top"><span class="diff-name"><span class="ei" v-html="ic(d.emoji)"></span> {{ t('difficulty.'+d.id) }}</span></div>
+            <div class="diff-row-sub">
+              <span class="chip coop-chip"><span class="ei" v-html="ic('medal')"></span> {{ (state.stats.byDifficulty[d.id]?.coopWon)||0 }} / {{ (state.stats.byDifficulty[d.id]?.coopPlayed)||0 }}<span class="chip-label">{{ t('stats.wonPlayedLabel') }}</span></span>
+              <span class="chip coop-chip best-time-chip"><span class="ei" v-html="ic('trophy')"></span> {{ state.stats.byDifficulty[d.id]?.coopBestTimeMs!=null ? fmtTime(state.stats.byDifficulty[d.id].coopBestTimeMs) : '-:--' }}<span class="chip-label">{{ t('stats.bestTimeLabel') }}</span></span>
+              <span class="chip coop-chip">⌀ {{ coopAvgTimeFor(d.id)!=null ? fmtTime(coopAvgTimeFor(d.id)) : '-:--' }}<span class="chip-label">{{ t('stats.avgTimeLabel') }}</span></span>
+              <span class="chip coop-chip"><span class="ei" v-html="ic('heart-broken')"></span> {{ (state.stats.byDifficulty[d.id]?.coopLost)||0 }}<span class="chip-label">{{ t('stats.lostLabel') }}</span></span>
+            </div>
+          </div>
+          <div class="stats-section-title">{{ t('stats.raceSection') }}</div>
+          <div class="diff-row">
+            <div class="diff-sub">
+              <div class="diff-sub-label">{{ t('stats.race1v1') }}</div>
+              <div class="diff-row-sub">
+                <span class="chip"><span class="ei" v-html="ic('medal')"></span> {{ state.raceStats['1v1'].racesWon }} / {{ state.raceStats['1v1'].racesPlayed }}<span class="chip-label">{{ t('stats.wonPlayedLabel') }}</span></span>
+                <span class="chip"><span class="ei" v-html="ic('chart-up')"></span> {{ racePct(state.raceStats['1v1']) }}%<span class="chip-label">{{ t('stats.winPctLabel') }}</span></span>
+                <span class="chip best-time-chip"><span class="ei" v-html="ic('trophy')"></span> {{ state.raceStats['1v1'].fastestWinMs!=null ? fmtTime(state.raceStats['1v1'].fastestWinMs) : '-:--' }}<span class="chip-label">{{ t('stats.bestTimeLabel') }}</span></span>
+              </div>
+            </div>
+            <!-- KI-Duell: EIGENE Kategorie, damit die 1v1-Zeile eine reine
+                 Menschen-Bilanz bleibt. Fuer Achievements/Prestige zaehlen beide
+                 zusammen (duelWins in js/prestige.js). -->
+            <div class="diff-sub">
+              <div class="diff-sub-label">{{ t('stats.raceAi') }}</div>
+              <div class="diff-row-sub">
+                <span class="chip"><span class="ei" v-html="ic('robot')"></span> {{ state.raceStats['ai'].racesWon }} / {{ state.raceStats['ai'].racesPlayed }}<span class="chip-label">{{ t('stats.wonPlayedLabel') }}</span></span>
+                <span class="chip"><span class="ei" v-html="ic('chart-up')"></span> {{ racePct(state.raceStats['ai']) }}%<span class="chip-label">{{ t('stats.winPctLabel') }}</span></span>
+                <span class="chip best-time-chip"><span class="ei" v-html="ic('trophy')"></span> {{ state.raceStats['ai'].fastestWinMs!=null ? fmtTime(state.raceStats['ai'].fastestWinMs) : '-:--' }}<span class="chip-label">{{ t('stats.bestTimeLabel') }}</span></span>
+              </div>
+            </div>
+            <div class="diff-sub">
+              <div class="diff-sub-label coop">{{ t('stats.race2v2') }}</div>
+              <div class="diff-row-sub">
+                <span class="chip coop-chip"><span class="ei" v-html="ic('medal')"></span> {{ state.raceStats['2v2'].racesWon }} / {{ state.raceStats['2v2'].racesPlayed }}<span class="chip-label">{{ t('stats.wonPlayedLabel') }}</span></span>
+                <span class="chip coop-chip"><span class="ei" v-html="ic('chart-up')"></span> {{ racePct(state.raceStats['2v2']) }}%<span class="chip-label">{{ t('stats.winPctLabel') }}</span></span>
+                <span class="chip coop-chip best-time-chip"><span class="ei" v-html="ic('trophy')"></span> {{ state.raceStats['2v2'].fastestWinMs!=null ? fmtTime(state.raceStats['2v2'].fastestWinMs) : '-:--' }}<span class="chip-label">{{ t('stats.bestTimeLabel') }}</span></span>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <button class="btn btn-danger-ghost" @click="resetStats">{{ t('stats.reset') }}</button>
+      </div>
+    </section>
+
+    <!-- ══ ACHIEVEMENTS ══ -->
+    <section v-else-if="state.screen==='achievements'" class="screen achievements">
+      <header class="topbar"><button class="icon-btn" @click="goBack()">‹</button><h2>{{ t('achievements.title') }}</h2><button class="icon-btn" @click="openSettings" :aria-label="t('home.settings')" :title="t('home.settings')"><span class="ico-wrap" v-html="ic('gear')"></span></button></header>
+      <div class="achievements-body">
+        <div class="achievements-progress">
+          <span class="achievements-progress-label">{{ t('achievements.progress', { unlocked: achievementsUnlockedCount, total: ACHIEVEMENTS.length }) }}</span>
+          <div class="progress-bar"><span class="progress-bar-fill" :style="{ width: (achievementsUnlockedCount / ACHIEVEMENTS.length * 100) + '%' }"></span></div>
+        </div>
+        <div v-for="a in ACHIEVEMENTS" :key="a.id" class="achievement-row" :class="{ unlocked: !!state.achievements[a.id] }">
+          <span class="achievement-icon" :class="{ locked: !state.achievements[a.id] }" v-html="state.achievements[a.id] ? ic(a.icon) : ic('lock')"></span>
+          <div class="achievement-text">
+            <div class="achievement-name">{{ t('achievements.'+a.id+'.title') }}</div>
+            <div class="achievement-desc">{{ t('achievements.'+a.id+'.desc') }}</div>
+            <div v-if="state.achievements[a.id]" class="achievement-date">{{ t('achievements.unlockedOn', { date: new Date(state.achievements[a.id]).toLocaleDateString('de-DE') }) }}</div>
+            <div v-else class="achievement-date locked">{{ t('achievements.locked') }}</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ VERLAUF ══ -->
+    <section v-else-if="state.screen==='history'" class="screen history">
+      <header class="topbar"><button class="icon-btn" @click="goBack()">‹</button><h2>{{ t('history.title') }}</h2><button class="icon-btn" @click="openSettings" :aria-label="t('home.settings')" :title="t('home.settings')"><span class="ico-wrap" v-html="ic('gear')"></span></button></header>
+      <div class="history-body">
+        <div v-if="!state.puzzleHistory.length" class="empty">{{ t('history.empty') }}</div>
+        <div v-for="h in state.puzzleHistory" :key="h.ts" class="history-row">
+          <div class="history-row-main">
+            <span class="history-outcome" :class="'outcome-'+h.outcome"><span class="ei" v-html="ic(h.outcome==='won' ? 'trophy' : (h.outcome==='lost' ? 'heart-broken' : 'flag'))"></span></span>
+            <span class="diff-name"><span class="ei" v-html="ic(DIFF_BY_ID[h.difficulty]?.emoji)"></span> {{ t('difficulty.'+h.difficulty) }}</span>
+            <span class="chip">{{ h.dim.r }}×{{ h.dim.c }}</span>
+            <span v-if="h.coop" class="chip coop-chip"><span class="ei" v-html="ic('users')"></span></span>
+          </div>
+          <div class="history-row-sub">
+            <span>{{ t('history.outcome.'+h.outcome) }} · {{ fmtTime(h.timeMs) }}</span>
+            <span class="history-date">{{ new Date(h.ts).toLocaleString('de-DE') }}</span>
+          </div>
+          <div class="history-row-actions">
+            <button class="btn btn-ghost btn-sm" @click="openHistoryDetail(h)">{{ t('history.view') }}</button>
+            <button class="btn btn-primary btn-sm" @click="replayHistoryEntry(h)">{{ t('history.replay') }}</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ COOP ══ -->
+    <section v-else-if="state.screen==='coop'" class="screen coop-screen" :class="{ 'setup-slider': isCoopDiffView }" :style="isCoopDiffView ? diffVars(state.coop.lobbyDiffId) : null">
+      <div v-if="isCoopDiffView" class="setup-aura" aria-hidden="true"><b></b><b></b><b></b></div>
+      <header class="topbar setup-top">
+        <button class="icon-btn" @click="goBack()">‹</button>
+        <h2>{{ t('coop.title') }}</h2>
+        <button class="icon-btn" @click="openSettings" :aria-label="t('home.settings')" :title="t('home.settings')"><span class="ico-wrap" v-html="ic('gear')"></span></button>
+      </header>
+
+      <!-- Namens-Gate: bevor irgendetwas anderes möglich ist, Name + eigene Farbe festlegen
+           (jedes Mal erneut, aber mit dem zuletzt gespeicherten Namen vorbefüllt) -->
+      <div v-if="!state.coop.identityConfirmed" class="coop-body">
+        <p class="coop-tagline">{{ t('coop.identityPrompt') }}</p>
+        <input class="text-input" v-model="state.coop.nameDraft" maxlength="32" :placeholder="t('common.namePlaceholder')"
+               @keydown.enter="confirmCoopIdentity" />
+        <div class="setup-label">{{ t('coop.yourColor') }}</div>
+        <div class="coop-swatches">
+          <input type="color" class="swatch-custom" v-model="state.settings.coopMyColor" :title="t('common.pickColorTitle')" />
+        </div>
+        <button class="btn btn-primary" :disabled="!state.coop.nameDraft.trim()" @click="confirmCoopIdentity">{{ t('coop.continue') }}</button>
+      </div>
+
+      <!-- Auswahl: Hosten oder Beitreten? -->
+      <div v-else-if="state.coop.role === null" class="coop-body">
+        <p class="coop-tagline">{{ t('coop.tagline') }}</p>
+        <button class="btn btn-primary" @click="coopChooseHost()">
+          <span class="btn-ic"><span class="ei" v-html="ic('signal')"></span></span>
+          <span class="btn-tx"><b>{{ t('coop.host') }}</b><small>{{ t('coop.hostHint') }}</small></span>
+        </button>
+        <button class="btn btn-ghost" @click="coopChooseGuest()">
+          <span class="btn-ic"><span class="ei" v-html="ic('link')"></span></span>
+          <span class="btn-tx"><b>{{ t('coop.join') }}</b><small>{{ t('coop.joinHint') }}</small></span>
+        </button>
+      </div>
+
+      <!-- Host: Code + Schwierigkeit — identischer Vollflächen-Slider wie Solo,
+           Raumcode INNERHALB des Screens integriert (setup-slider auf der Section). -->
+      <template v-else-if="state.coop.role === 'host' && !state.coop.waitingForGuest">
+        <div class="setup-coderow">
+          <label for="coopcode">{{ t('coop.setCode') }}</label>
+          <input id="coopcode" class="setup-codeinput" v-model="state.coop.code" maxlength="6" inputmode="numeric" pattern="[0-9]*"
+                 :placeholder="t('common.codePlaceholder')" @input="state.coop.code=state.coop.code.replace(/\D/g,'')" />
+        </div>
+        <difficulty-slider v-model="state.coop.lobbyDiffId" :coop="true" @randomstart="startHosting()"></difficulty-slider>
+        <!-- „Große Zahlen" (10–19) für die Mehrspieler-Runde: gilt für alle
+             Mitspieler (Host generiert/sendet den Modus mit). -->
+        <label v-if="bigNumbersAllowed(state.coop.lobbyDiffId)" class="mode-toggle" :class="{ on: state.coop.lobbyBigNumbers }">
+          <b class="mt-title">{{ t('setup.bigNumbers') }}</b>
+          <span class="mt-info" tabindex="0" role="button" :aria-label="t('setup.bigNumbersHint')" @click.stop.prevent @keydown.enter.stop.prevent @keydown.space.stop.prevent>
+            <span class="ei" v-html="ic('info')"></span>
+            <span class="mt-tip">{{ t('setup.bigNumbersHint') }}</span>
+          </span>
+          <input type="checkbox" v-model="state.coop.lobbyBigNumbers" />
+          <span class="bignum-switch" aria-hidden="true"></span>
+        </label>
+        <!-- „Endlos-Aufstieg" gemeinsam: geteilte Leben (3), kein Refill. Nur für
+             reines Coop (nicht Race/Team). Die Schwierigkeit wird dabei ignoriert. -->
+        <label v-if="!state.coop.raceMode && !state.coop.teamMode" class="mode-toggle" :class="{ on: state.coop.lobbyEndless }">
+          <b class="mt-title">{{ t('coopEndless.toggle') }}</b>
+          <span class="mt-info" tabindex="0" role="button" :aria-label="t('coopEndless.toggleHint')" @click.stop.prevent @keydown.enter.stop.prevent @keydown.space.stop.prevent>
+            <span class="ei" v-html="ic('info')"></span>
+            <span class="mt-tip">{{ t('coopEndless.toggleHint') }}</span>
+          </span>
+          <input type="checkbox" v-model="state.coop.lobbyEndless" />
+          <span class="bignum-switch" aria-hidden="true"></span>
+        </label>
+        <div class="setup-startrow">
+          <p v-if="state.coop.error" class="coop-error">{{ state.coop.error }}</p>
+          <button class="btn btn-primary btn-start diff-start" @click="startHosting">{{ t('coop.startHosting') }}</button>
+        </div>
+      </template>
+
+      <!-- Host: warten auf Gast -->
+      <div v-else-if="state.coop.role === 'host'" class="coop-body">
+        <template v-if="true">
+          <div class="coop-code-label">{{ t('coop.yourCode') }}</div>
+          <div class="coop-code">{{ state.coop.code }}</div>
+          <p class="coop-subtext">{{ t('coop.shareCode') }}</p>
+          <button class="btn btn-ghost btn-sm" @click="openInvitePicker"><span class="ei" v-html="ic('users')"></span> {{ t('coop.inviteFriends') }}</button>
+          <!-- Die Freunde-Auswahl erscheint als Vollbild-Modal ÜBER allen Screens
+               (siehe .invite-modal weiter unten), nicht mehr inline hier. -->
+          <p v-if="state.coop.teamMode" class="coop-subtext">{{ t('team.assignHint') }}</p>
+          <button v-if="state.coop.teamMode && state.coop.role==='host'" class="btn btn-ghost btn-sm randomize-teams-btn" :disabled="state.coop.players.length<2" @click="randomizeTeams"><span class="ei" v-html="ic('shuffle')"></span> {{ t('team.randomize') }}</button>
+          <div class="team-picker" v-if="state.coop.teamMode && state.coop.players.length">
+            <div class="team-picker-header team-picker-header-a">{{ t('team.labelA') }}</div>
+            <div class="team-picker-header team-picker-header-mid"></div>
+            <div class="team-picker-header team-picker-header-b">{{ t('team.labelB') }}</div>
+            <template v-for="p in state.coop.players" :key="p.id">
+              <div class="team-slot team-slot-a">
+                <span v-if="p.team==='A'" class="player-chip" :style="{ background: p.color, color: chipTextColor(p.color) }">
+                  {{ playerLabel(p) }}<template v-if="p.id===state.coop.myId">{{ t('common.youSuffix') }}</template>
+                </span>
+              </div>
+              <div class="team-slot team-slot-mid">
+                <template v-if="!p.team">
+                  <span class="team-mid-name">{{ playerLabel(p) }}<template v-if="p.id===state.coop.myId">{{ t('common.youSuffix') }}</template></span>
+                  <button type="button" class="team-arrow-btn" :disabled="state.coop.role!=='host'" @click="assignTeam(p.id,'A')" :aria-label="t('team.moveTo',{team:t('team.labelA')})">◀</button>
+                  <button type="button" class="team-arrow-btn" :disabled="state.coop.role!=='host'" @click="assignTeam(p.id,'B')" :aria-label="t('team.moveTo',{team:t('team.labelB')})">▶</button>
+                </template>
+                <template v-else>
+                  <button type="button" class="team-arrow-btn team-swap-btn" :disabled="state.coop.role!=='host'"
+                          @click="assignTeam(p.id, p.team==='A' ? 'B' : 'A')"
+                          :aria-label="t('team.moveTo',{team:t('team.label'+(p.team==='A'?'B':'A'))})">{{ p.team==='A' ? '▶' : '◀' }}</button>
+                  <button type="button" class="team-arrow-btn team-unassign-btn" :disabled="state.coop.role!=='host'" @click="assignTeam(p.id,null)" :aria-label="t('team.unassign')"><span class="ico-wrap" v-html="ic('close')"></span></button>
+                </template>
+              </div>
+              <div class="team-slot team-slot-b">
+                <span v-if="p.team==='B'" class="player-chip" :style="{ background: p.color, color: chipTextColor(p.color) }">
+                  {{ playerLabel(p) }}<template v-if="p.id===state.coop.myId">{{ t('common.youSuffix') }}</template>
+                </span>
+              </div>
+            </template>
+          </div>
+          <div class="coop-roster" v-if="!state.coop.teamMode && state.coop.players.length">
+            <span v-for="p in state.coop.players" :key="p.id" class="player-chip"
+                  :style="{ background: p.color, color: chipTextColor(p.color) }">
+              <span v-if="badgeShown(p.badge)" class="badge-medal-inline" v-html="badgeSvg(p.badge)"></span>{{ playerLabel(p) }}<template v-if="p.id===state.coop.myId">{{ t('common.youSuffix') }}</template>
+            </span>
+          </div>
+          <!-- Race-Lobby zeigt die Schwierigkeitsauswahl ein zweites Mal NUR
+               nach einem beendeten Match (rematchRace() setzt rematchPending),
+               damit "nochmal spielen" ohne erneutes Hosten/Beitreten eine neue
+               Schwierigkeit wählen kann. Beim allerersten Hosten wurde die
+               Schwierigkeit bereits in der Ansicht davor gewählt -- ein
+               zweites Grid hier würde nur unnötig Platz verbrauchen/scrollen. -->
+          <template v-if="state.coop.raceMode && state.race.rematchPending">
+            <div class="setup-label">{{ t('common.difficulty') }}</div>
+            <div class="diff-card" :style="diffVars(state.coop.lobbyDiffId)">
+              <div class="setup-aura" aria-hidden="true"><b></b><b></b><b></b></div>
+              <difficulty-slider v-model="state.coop.lobbyDiffId" :coop="true" @randomstart="startRaceMatch()"></difficulty-slider>
+            </div>
+            <label v-if="bigNumbersAllowed(state.coop.lobbyDiffId)" class="mode-toggle" :class="{ on: state.coop.lobbyBigNumbers }">
+              <b class="mt-title">{{ t('setup.bigNumbers') }}</b>
+              <span class="mt-info" tabindex="0" role="button" :aria-label="t('setup.bigNumbersHint')" @click.stop.prevent @keydown.enter.stop.prevent @keydown.space.stop.prevent>
+                <span class="ei" v-html="ic('info')"></span>
+                <span class="mt-tip">{{ t('setup.bigNumbersHint') }}</span>
+              </span>
+              <input type="checkbox" v-model="state.coop.lobbyBigNumbers" />
+              <span class="bignum-switch" aria-hidden="true"></span>
+            </label>
+          </template>
+          <p class="coop-subtext">{{ t('coop.playersCount', { n: state.coop.players.length, max: (state.coop.raceMode && !state.coop.ffaMode) ? 2 : COOP_MAX_PLAYERS }) }}</p>
+          <button v-if="state.coop.teamMode" class="btn btn-primary" :disabled="!canStartTeamMatch()" @click="startTeamMatch">{{ t('team.startMatch') }}</button>
+          <button v-else-if="state.coop.raceMode" class="btn btn-primary" :disabled="!canStartRaceMatch()" @click="startRaceMatch">{{ t('race.startMatch') }}</button>
+          <button v-else class="btn btn-primary" :disabled="!canStartCoopMatch()" @click="startCoopMatch">{{ t('coop.startMatch') }}</button>
+          <div v-if="state.coop.teamMode ? !canStartTeamMatch() : (state.coop.raceMode ? !canStartRaceMatch() : !canStartCoopMatch())" class="coop-waiting">
+            <div class="spinner"></div>
+            <div class="loading-tx">{{ t(state.coop.teamMode ? 'team.waitingForTeams' : (state.coop.raceMode ? (state.coop.ffaMode ? 'race.waitingForPlayers' : 'race.waitingForOpponent') : 'coop.waitingForGuest')) }}</div>
+          </div>
+        </template>
+        <p v-if="state.coop.error" class="coop-error">{{ state.coop.error }}</p>
+        <button class="btn btn-ghost" style="margin-top:8px" @click="goBack()">{{ t('common.back') }}</button>
+      </div>
+
+      <!-- Gast: Code eingeben → verbinden → Lobby (warten auf Hoststart) -->
+      <div v-else-if="state.coop.role === 'guest'" class="coop-body">
+        <div class="coop-code-label">{{ t('coop.enterHostCode') }}</div>
+        <input class="coop-input" v-model="state.coop.code" maxlength="6" inputmode="numeric" pattern="[0-9]*"
+               :placeholder="t('common.codePlaceholder')" :disabled="state.coop.waitingForGuest"
+               @input="state.coop.code=state.coop.code.replace(/\D/g,'')"
+               @keydown.enter="startJoining" />
+        <button class="btn btn-primary" :disabled="state.coop.waitingForGuest || state.coop.code.length!==6" @click="startJoining">
+          <span v-if="state.coop.waitingForGuest && !state.coop.myId"><span class="spinner-inline"></span> {{ t('coop.connecting') }}</span>
+          <span v-else-if="state.coop.waitingForGuest">{{ t('coop.waitingForHostStart') }}</span>
+          <span v-else>{{ t('coop.connect') }}</span>
+        </button>
+        <div class="coop-roster" v-if="state.coop.waitingForGuest && state.coop.myId && state.coop.players.length">
+          <span v-for="p in state.coop.players" :key="p.id" class="player-chip"
+                :style="{ background: p.color, color: chipTextColor(p.color) }">
+            {{ playerLabel(p) }}<template v-if="p.id===state.coop.myId">{{ t('common.youSuffix') }}</template>
+            <b v-if="state.coop.teamMode">{{ p.team ? t('team.label'+p.team) : t('team.unassigned') }}</b>
+          </span>
+        </div>
+        <p v-if="state.coop.waitingForGuest && state.coop.myId" class="coop-subtext">{{ t('coop.playersCount', { n: state.coop.players.length, max: (state.coop.raceMode && !state.coop.ffaMode) ? 2 : COOP_MAX_PLAYERS }) }}</p>
+        <p v-if="state.coop.error" class="coop-error">{{ state.coop.error }}</p>
+        <button class="btn btn-ghost" style="margin-top:4px" @click="goBack()">{{ t('common.back') }}</button>
+      </div>
+
+    </section>
+
+    <!-- ══ SHOP (Work in Progress) ══ -->
+    <section v-else-if="state.screen==='shop'" class="screen shop">
+      <header class="topbar">
+        <!-- Zurück: aus einer Kategorie erst zur Kategorien-Übersicht, dann raus. -->
+        <button class="icon-btn" @click="state.shopCategory ? closeShopCategory() : closeShop()">‹</button>
+        <h2>{{ state.shopCategory ? shopCategoryTitle(state.shopCategory) : t('shop.title') }}</h2>
+        <!-- Guthaben-Chip öffnet den Geldverlauf (Transaktionshistorie). -->
+        <button class="coin-chip coin-chip-btn" @click="openWalletLog" :aria-label="t('wallet.historyTitle')" :title="t('wallet.historyTitle')"><span class="ico-lead" v-html="ic('coin')"></span>{{ state.wallet.balance || 0 }}</button>
+      </header>
+
+      <!-- Kategorie: 🎉 Sieganimationen (kaufen/aktivieren/Vorschau) -->
+      <div v-if="state.shopCategory === 'winfx'" class="shop-body">
+        <p class="shop-sec-hint">{{ t('shop.winFxHint') }}</p>
+        <div class="shop-grid">
+          <div v-for="e in WIN_EFFECTS" :key="e.id" class="shop-card fx" :class="{ owned: ownsWinFx(e.id), fxactive: winFxActive(e.id) }">
+            <button class="shop-fx-preview" @click="previewWinFx(e.id)" :aria-label="t('shop.preview')" :title="t('shop.preview')">▶</button>
+            <span class="shop-card-ic" v-html="ic(e.icon)"></span>
+            <span class="shop-card-name">{{ t('shop.effect.'+e.id) }}</span>
+            <button v-if="!ownsWinFx(e.id)" class="btn btn-primary btn-sm shop-buy-btn" :disabled="(state.wallet.balance||0) < effectPrice(e.id)" @click="buyWinFx(e.id)"><span class="ei" v-html="ic('coin')"></span> {{ effectPrice(e.id) }}</button>
+            <span v-else-if="winFxActive(e.id)" class="shop-fx-state on"><span class="ei" v-html="ic('check')"></span> {{ t('shop.active') }}</span>
+            <button v-else class="btn btn-ghost btn-sm shop-buy-btn" @click="activateWinFx(e.id)">{{ t('shop.activate') }}</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Generische Artikel-Kategorie (Paletten & künftige): Gratis-Standard +
+           Kaufkarten mit kategoriespezifischer Vorschau. -->
+      <div v-if="state.shopCategory && state.shopCategory !== 'winfx'" class="shop-body">
+        <p class="shop-sec-hint">{{ t('shop.catHint.' + state.shopCategory) }}</p>
+
+        <!-- Live-Demo: Brett-Kategorien zeigen das per ▶ gewählte Item sofort -->
+        <div v-if="['palette','font','frame','skinpreset'].includes(state.shopCategory)" class="shop-demo-wrap">
+          <div class="board shop-demo" :class="[shopDemoClass('font') && state.shopCategory==='font' ? shopDemoClass('font') : '', shopDemoClass('frame') && state.shopCategory==='frame' ? shopDemoClass('frame') : '', state.shopCategory==='skinpreset' ? shopDemoSkin().classes : '']" :style="state.shopCategory==='skinpreset' ? shopDemoSkin().vars : null">
+            <template v-if="state.shopCategory==='palette'">
+              <div v-for="(c, i) in shopDemoCells()" :key="i" class="cell" :style="{ background: c }"><span class="cnum">{{ [3,8,5,9][i] }}</span></div>
+            </template>
+            <template v-else-if="state.shopCategory==='skinpreset'">
+              <div class="cell kept coop-mark" :style="{ '--markcol': state.settings.coopMyColor }"><span class="cnum">5</span></div>
+              <div class="cell removed coop-mark-removed" :style="{ '--markcol': state.settings.coopMyColor }"><span class="cnum">3</span></div>
+            </template>
+            <template v-else>
+              <div v-for="(n, i) in [3,8,5,9]" :key="i" class="cell"><span class="cnum">{{ n }}</span></div>
+            </template>
+          </div>
+          <small class="shop-demo-hint">{{ t('shop.demoHint') }}</small>
+        </div>
+
+        <div class="shop-grid">
+          <!-- Gratis-Standard (entfällt bei Anwenden-Kategorien wie Skin-Vorlagen) -->
+          <div v-if="SHOP_CATS[state.shopCategory].free" class="shop-card fx" :class="{ fxactive: shopEquippedId(state.shopCategory) === SHOP_CATS[state.shopCategory].free }">
+            <span class="shop-card-ic"><span class="ei" v-html="ic('check')"></span></span>
+            <button class="shop-fx-preview" :class="{ prevon: state.shopPreview && state.shopPreview.id === SHOP_CATS[state.shopCategory].free }" @click="shopPreviewFree(state.shopCategory)" :aria-label="t('shop.preview')" :title="t('shop.preview')">▶</button>
+            <span v-if="state.shopCategory === 'font'" class="font-demo">123</span>
+            <span v-if="state.shopCategory === 'frame'" class="frame-demo"></span>
+            <span v-if="shopFreeDots(state.shopCategory)" class="shop-pal-dots"><i v-for="(c, di) in shopFreeDots(state.shopCategory)" :key="di" :style="{ background: c }"></i></span>
+            <span class="shop-card-name">{{ t('shop.free.' + state.shopCategory) }}</span>
+            <span v-if="shopEquippedId(state.shopCategory) === SHOP_CATS[state.shopCategory].free" class="shop-fx-state on"><span class="ei" v-html="ic('check')"></span> {{ t('shop.active') }}</span>
+            <button v-else class="btn btn-ghost btn-sm shop-buy-btn" @click="equipShopFree(state.shopCategory)">{{ t('shop.activate') }}</button>
+          </div>
+          <div v-for="it in shopCatItems(state.shopCategory)" :key="it.id" class="shop-card fx" :class="{ owned: ownsShop(it), fxactive: shopEquippedId(state.shopCategory) === it.id }">
+            <span class="shop-card-ic" v-html="ic(it.icon)"></span>
+            <button class="shop-fx-preview" :class="{ prevon: shopDemoActive(it) }" @click="shopPreviewIt(it)" :aria-label="t('shop.preview')" :title="t('shop.preview')">▶</button>
+            <span v-if="it.cat === 'font'" class="font-demo" :class="'font-' + it.id">123</span>
+            <span v-if="it.cat === 'frame'" class="frame-demo" :class="'frame-' + it.id"></span>
+            <span v-if="shopPreviewDots(it)" class="shop-pal-dots"><i v-for="(c, di) in shopPreviewDots(it)" :key="di" :style="{ background: c }"></i></span>
+            <span class="shop-card-name">{{ t('shop.it.' + it.id) }}</span>
+            <button v-if="!ownsShop(it)" class="btn btn-primary btn-sm shop-buy-btn" :disabled="(state.wallet.balance||0) < shopItemPrice(it)" @click="buyShopItem(it)"><span class="ei" v-html="ic('coin')"></span> {{ shopItemPrice(it) }}</button>
+            <button v-else-if="it.cat === 'skinpreset'" class="btn btn-ghost btn-sm shop-buy-btn" @click="applySkinPreset(it)">{{ t('shop.apply') }}</button>
+            <span v-else-if="shopEquippedId(state.shopCategory) === it.id" class="shop-fx-state on"><span class="ei" v-html="ic('check')"></span> {{ t('shop.active') }}</span>
+            <button v-else class="btn btn-ghost btn-sm shop-buy-btn" @click="equipShopItem(it)">{{ t('shop.activate') }}</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Kategorien-Übersicht: erst die Kategorie wählen, dann die Artikel. -->
+      <div v-if="!state.shopCategory" class="shop-body">
+        <p class="shop-intro">{{ t('shop.intro') }}</p>
+        <div class="shop-grid">
+          <button class="shop-card shop-cat" @click="openShopCategory('winfx')">
+            <span class="shop-card-ic" v-html="ic('party')"></span>
+            <span class="shop-card-name">{{ t('shop.winFxTitle') }}</span>
+            <span class="shop-cat-count">{{ ownedWinFx().length }}/{{ WIN_EFFECTS.length }} ›</span>
+          </button>
+          <button class="shop-card shop-cat" @click="openShopCategory('palette')">
+            <span class="shop-card-ic" v-html="ic('rainbow')"></span>
+            <span class="shop-card-name">{{ t('shop.item.boardPalettes') }}</span>
+            <span class="shop-cat-count">{{ shopOwnedCount('palette') + 1 }}/{{ shopCatItems('palette').length + 1 }} ›</span>
+          </button>
+          <button class="shop-card shop-cat" @click="openShopCategory('sfx')">
+            <span class="shop-card-ic" v-html="ic('music')"></span>
+            <span class="shop-card-name">{{ t('shop.item.soundPacks') }}</span>
+            <span class="shop-cat-count">{{ shopOwnedCount('sfx') + 1 }}/{{ shopCatItems('sfx').length + 1 }} ›</span>
+          </button>
+          <button class="shop-card shop-cat" @click="openShopCategory('music')">
+            <span class="shop-card-ic" v-html="ic('music')"></span>
+            <span class="shop-card-name">{{ t('shop.item.musicPacks') }}</span>
+            <span class="shop-cat-count">{{ shopOwnedCount('music') + 1 }}/{{ shopCatItems('music').length + 1 }} ›</span>
+          </button>
+          <button class="shop-card shop-cat" @click="openShopCategory('font')">
+            <span class="shop-card-ic" v-html="ic('digits')"></span>
+            <span class="shop-card-name">{{ t('shop.item.numberFonts') }}</span>
+            <span class="shop-cat-count">{{ shopOwnedCount('font') + 1 }}/{{ shopCatItems('font').length + 1 }} ›</span>
+          </button>
+          <button class="shop-card shop-cat" @click="openShopCategory('frame')">
+            <span class="shop-card-ic" v-html="ic('frame')"></span>
+            <span class="shop-card-name">{{ t('shop.item.boardFrames') }}</span>
+            <span class="shop-cat-count">{{ shopOwnedCount('frame') + 1 }}/{{ shopCatItems('frame').length + 1 }} ›</span>
+          </button>
+          <button class="shop-card shop-cat" @click="openShopCategory('theme')">
+            <span class="shop-card-ic" v-html="ic('palette')"></span>
+            <span class="shop-card-name">{{ t('shop.item.appThemes') }}</span>
+            <span class="shop-cat-count">{{ shopOwnedCount('theme') + 1 }}/{{ shopCatItems('theme').length + 1 }} ›</span>
+          </button>
+          <button class="shop-card shop-cat" @click="openShopCategory('skinpreset')">
+            <span class="shop-card-ic" v-html="ic('brush')"></span>
+            <span class="shop-card-name">{{ t('shop.item.skinPresets') }}</span>
+            <span class="shop-cat-count">{{ shopOwnedCount('skinpreset') }}/{{ shopCatItems('skinpreset').length }} ›</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ SETTINGS ══ -->
+    <section v-else-if="state.screen==='settings'" class="screen settings">
+      <header class="topbar">
+        <button class="icon-btn" @click="closeSettings" :aria-label="t('common.back')">‹</button>
+        <h2>{{ t('settings.title') }}</h2>
+        <span class="topbar-spacer"></span>
+      </header>
+
+      <!-- EINE scrollbare Seite mit Accordion-Karten (Look des Admin-Editors):
+           alle Bereiche sind als Karten-Köpfe immer sichtbar — nichts versteckt
+           sich mehr hinter einem Drawer oder unterhalb eines scheinbar vollen
+           Bildschirms. state.settingsTab = aktuell aufgeklappte Karte (Deep-Links
+           wie „Konto" von Home setzen sie weiterhin direkt). -->
+      <div class="settings-body settings-cards">
+
+        <!-- 🎮 Spiel -->
+        <div class="admin-acc">
+          <button class="admin-acc-head" @click="toggleSettingsCard('spiel')">
+            <span><span class="ico-lead" v-html="ic('controller')"></span>{{ t('settings.tabGame') }}</span>
+            <span class="admin-acc-chev" :class="{ open: state.settingsTab==='spiel' }">▾</span>
+          </button>
+          <div v-if="state.settingsTab==='spiel'" class="admin-acc-body">
+          <button class="btn btn-ghost set-howto-btn" @click="state.modal='howto'"><span class="btn-ic"><span class="ei" v-html="ic('book')"></span></span> {{ t('home.howto') }}</button>
+          <div class="set-row col">
+            <span class="set-row-label">{{ t('settings.eraseStyle') }}</span>
+            <div class="seg">
+              <button :class="{active:state.settings.eraseStyle==='hide'}" @click="setSetting('eraseStyle','hide')">{{ t('settings.hide') }}</button>
+              <button :class="{active:state.settings.eraseStyle==='strike'}" @click="setSetting('eraseStyle','strike')">{{ t('settings.strike') }}</button>
+            </div>
+          </div>
+          <div class="set-row" @click="toggleSetting('coopRemovedOutline')">
+            <span>{{ t('settings.coopRemovedOutline') }}</span><span class="switch" :class="{on:state.settings.coopRemovedOutline}"><i></i></span>
+          </div>
+          <small class="set-hint">{{ t('settings.coopRemovedOutlineHint') }}</small>
+          </div>
+        </div>
+
+        <!-- 🖥️ Desktop (Tastatur-Kürzel) -->
+        <div class="admin-acc">
+          <button class="admin-acc-head" @click="toggleSettingsCard('desktop')">
+            <span><span class="ico-lead" v-html="ic('keyboard')"></span>{{ t('settings.secDesktop') }}</span>
+            <span class="admin-acc-chev" :class="{ open: state.settingsTab==='desktop' }">▾</span>
+          </button>
+          <div v-if="state.settingsTab==='desktop'" class="admin-acc-body">
+            <div class="set-row col">
+              <span class="set-row-label">{{ t('settings.desktop.toolKey') }}</span>
+              <div class="desktop-key-row">
+                <button class="btn btn-ghost btn-sm desktop-key-cap" :class="{ capturing: state.desktopKeyCapture }" @click="startDesktopKeyCapture">
+                  {{ state.desktopKeyCapture ? t('settings.desktop.press') : desktopKeyLabel(state.settings.desktopToolKey) }}
+                </button>
+                <button v-if="state.desktopKeyCapture" class="btn-link" @click="cancelDesktopKeyCapture">{{ t('common.cancel') }}</button>
+                <button v-else-if="state.settings.desktopToolKey" class="btn-link" @click="clearDesktopToolKey">{{ t('settings.desktop.off') }}</button>
+              </div>
+              <small class="set-hint">{{ t('settings.desktop.hint') }}</small>
+            </div>
+          </div>
+        </div>
+
+        <!-- 🌓 Darstellung (Theme, Sprache, Barrierefreiheit) -->
+        <div class="admin-acc">
+          <button class="admin-acc-head" @click="toggleSettingsCard('darstellung')">
+            <span><span class="ico-lead" v-html="ic('theme')"></span>{{ t('settings.secAppearance') }}</span>
+            <span class="admin-acc-chev" :class="{ open: state.settingsTab==='darstellung' }">▾</span>
+          </button>
+          <div v-if="state.settingsTab==='darstellung'" class="admin-acc-body">
+          <div class="set-row col">
+            <span class="set-row-label">{{ t('settings.theme') }}</span>
+            <div class="seg">
+              <button :class="{active:state.settings.themeMode==='auto'}" @click="setSetting('themeMode','auto')">{{ t('settings.themeAuto') }}</button>
+              <button :class="{active:state.settings.themeMode==='light'}" @click="setSetting('themeMode','light')"><span class="ei" v-html="ic('sun')"></span> {{ t('settings.themeLight') }}</button>
+              <button :class="{active:state.settings.themeMode==='dark'}" @click="setSetting('themeMode','dark')"><span class="ei" v-html="ic('moon')"></span> {{ t('settings.themeDark') }}</button>
+            </div>
+            <small class="set-hint">{{ t('settings.themeHint') }}</small>
+          </div>
+          <div class="set-row col">
+            <span class="set-row-label">{{ t('settings.language') }}</span>
+            <!-- lang-select: eindeutiger Anker für E2E-Tests (die Darstellung-Sektion
+                 enthält inzwischen mehrere Selects, u.a. die Sieganimation). -->
+            <select class="text-input lang-select" :value="state.settings.language" @change="setSetting('language', $event.target.value)">
+              <option v-for="l in SUPPORTED_LOCALES" :key="l.id" :value="l.id">{{ l.label }}</option>
+            </select>
+          </div>
+
+          <!-- 🎉 Sieganimation: Auswahl aller GEKAUFTEN Effekte (Kauf im Shop) + ▶ Vorschau -->
+          <div class="set-row col">
+            <span class="set-row-label"><span class="ei" v-html="ic('party')"></span> {{ t('settings.winEffect') }}</span>
+            <div class="set-fx-row">
+              <select class="text-input" :value="activeWinFxId()" @change="activateWinFx($event.target.value)">
+                <option v-for="e in ownedWinFx()" :key="e.id" :value="e.id">{{ t('shop.effect.'+e.id) }}</option>
+              </select>
+              <button class="shop-fx-preview set-fx-preview" @click="previewWinFx(activeWinFxId())" :aria-label="t('shop.preview')" :title="t('shop.preview')">▶</button>
+            </div>
+            <small class="set-hint">{{ t('settings.winEffectHint') }} <button class="btn-link" @click="openShop('winfx')">{{ t('shop.title') }} ›</button></small>
+          </div>
+
+          <!-- Alle erworbenen Optik-Cosmetics ausrüsten (Theme/Palette/Font/Rahmen) -->
+          <div class="set-row col" v-for="cat in settingsVisualCats()" :key="cat">
+            <span class="set-row-label"><span class="ei" v-html="ic(SHOP_CATS[cat].icon)"></span> {{ shopCategoryTitle(cat) }}</span>
+            <select class="text-input" :value="shopEquippedId(cat)" @change="equipCatFromSettings(cat, $event.target.value)">
+              <option v-for="o in settingsCatOptions(cat)" :key="o.id" :value="o.id">{{ o.name }}</option>
+            </select>
+          </div>
+
+          <div class="set-group-title">{{ t('settings.a11y') }}</div>
+          <div class="set-row" @click="toggleSetting('colorBlindMode')">
+            <span>{{ t('settings.colorBlindMode') }}</span><span class="switch" :class="{on:state.settings.colorBlindMode}"><i></i></span>
+          </div>
+          <small class="set-hint">{{ t('settings.colorBlindModeHint') }}</small>
+          </div>
+        </div>
+
+        <!-- 🎨 Farbe & Anpassung (eigene Farbe + dynamischer Skin) -->
+        <div class="admin-acc">
+          <button class="admin-acc-head" @click="toggleSettingsCard('farbe')">
+            <span><span class="ico-lead" v-html="ic('palette')"></span>{{ t('settings.secColors') }}</span>
+            <span class="admin-acc-chev" :class="{ open: state.settingsTab==='farbe' }">▾</span>
+          </button>
+          <div v-if="state.settingsTab==='farbe'" class="admin-acc-body">
+          <div class="set-group-title">{{ t('settings.myColor') }}</div>
+          <div class="set-row col">
+            <div class="coop-swatches">
+              <input type="color" class="swatch-custom" v-model="state.settings.coopMyColor" :title="t('common.pickColorTitle')" />
+            </div>
+            <small class="set-hint">{{ t('settings.colorHint') }}</small>
+          </div>
+
+          <!-- Dynamischer Skin (1.0): Code-Einlösung immer sichtbar; Editor nur, wenn freigeschaltet -->
+          <div class="set-group-title skin-editor">{{ t('skin.title') }}</div>
+          <!-- Vorschau + An/Aus: für Besitzer des exklusiven Skins ODER einer
+               gekauften Skin-Vorlage. Der freie EDITOR darunter bleibt exklusiv. -->
+          <template v-if="skinUnlocked || skinPresetOwned">
+            <div class="skin-preview-wrap">
+              <div class="board skin-preview" :class="skinPreviewClasses" :style="skinPreviewVars">
+                <div class="cell kept coop-mark" :style="{ '--markcol': state.settings.coopMyColor }"><span class="cnum">5</span></div>
+                <div class="cell removed coop-mark-removed" :style="{ '--markcol': state.settings.coopMyColor }"><span class="cnum">3</span></div>
+              </div>
+            </div>
+            <div class="set-row" @click="toggleSetting('skinEnabled')">
+              <span>{{ t('skin.enabled') }}</span><span class="switch" :class="{on:state.settings.skinEnabled}"><i></i></span>
+            </div>
+            <small v-if="!skinUnlocked" class="set-hint">{{ t('skin.presetOnlyHint') }} <button class="btn-link" @click="openShop('skinpreset')">{{ t('shop.title') }} ›</button></small>
+          </template>
+          <template v-if="skinUnlocked">
+            <div class="set-row col">
+              <span class="set-row-label">{{ t('skin.style') }}</span>
+              <div class="seg">
+                <button :class="{active:state.settings.skinStyle==='solid'}" @click="setSetting('skinStyle','solid')">{{ t('skin.styleSolid') }}</button>
+                <button :class="{active:state.settings.skinStyle==='gradient'}" @click="setSetting('skinStyle','gradient')">{{ t('skin.styleGradient') }}</button>
+                <button :class="{active:state.settings.skinStyle==='rainbow'}" @click="setSetting('skinStyle','rainbow')">{{ t('skin.styleRainbow') }}</button>
+              </div>
+            </div>
+            <div class="set-row col" v-if="state.settings.skinStyle==='gradient'">
+              <span class="set-row-label">{{ t('skin.colors') }}</span>
+              <div class="coop-swatches">
+                <input type="color" class="swatch-custom" :value="state.settings.skinColor1 || state.settings.coopMyColor" @input="setSetting('skinColor1', $event.target.value)" />
+                <input type="color" class="swatch-custom" :value="state.settings.skinColor2 || '#ffffff'" @input="setSetting('skinColor2', $event.target.value)" />
+                <input type="color" class="swatch-custom" :value="state.settings.skinColor3 || '#000000'" @input="setSetting('skinColor3', $event.target.value)" />
+                <button class="btn-link" @click="setSetting('skinColor1',''); setSetting('skinColor2',''); setSetting('skinColor3','')">{{ t('skin.resetColors') }}</button>
+              </div>
+              <small class="set-hint">{{ t('skin.colorsHint') }}</small>
+            </div>
+            <div class="set-row col">
+              <span class="set-row-label">{{ t('skin.speed') }}</span>
+              <input type="range" class="set-range" min="0" max="12" step="1" :value="state.settings.skinSpeed"
+                     :style="{ '--rangePct': Math.round(state.settings.skinSpeed/12*100) + '%' }"
+                     @input="setSetting('skinSpeed', parseFloat($event.target.value))" />
+              <small class="set-hint">{{ state.settings.skinSpeed>0 ? t('skin.speedOn', { s: skinSpeedToDuration(state.settings.skinSpeed).toFixed(1) }) : t('skin.speedOff') }}</small>
+            </div>
+            <div class="set-row" v-if="state.settings.skinSpeed>0" @click="setSetting('skinDirection', state.settings.skinDirection==='cw' ? 'ccw' : 'cw')">
+              <span>{{ t('skin.direction') }}</span><span class="account-role">{{ state.settings.skinDirection==='ccw' ? t('skin.ccw') : t('skin.cw') }}</span>
+            </div>
+            <div class="set-row col">
+              <span class="set-row-label">{{ t('skin.glow') }}</span>
+              <input type="range" class="set-range" min="0" max="16" step="1" :value="state.settings.skinGlow"
+                     :style="{ '--rangePct': Math.round(state.settings.skinGlow/16*100) + '%' }"
+                     @input="setSetting('skinGlow', parseFloat($event.target.value))" />
+            </div>
+            <div class="set-row col">
+              <span class="set-row-label">{{ t('skin.thickness') }}</span>
+              <input type="range" class="set-range" min="1" max="5" step="0.5" :value="state.settings.skinThickness"
+                     :style="{ '--rangePct': Math.round((state.settings.skinThickness-1)/4*100) + '%' }"
+                     @input="setSetting('skinThickness', parseFloat($event.target.value))" />
+            </div>
+            <div class="set-row col">
+              <span class="set-row-label">{{ t('skin.applyTo') }}</span>
+              <div class="seg">
+                <button :class="{active:state.settings.skinApplyTo==='kept'}" @click="setSetting('skinApplyTo','kept')">{{ t('skin.applyKept') }}</button>
+                <button :class="{active:state.settings.skinApplyTo==='removed'}" @click="setSetting('skinApplyTo','removed')">{{ t('skin.applyRemoved') }}</button>
+                <button :class="{active:state.settings.skinApplyTo==='both'}" @click="setSetting('skinApplyTo','both')">{{ t('skin.applyBoth') }}</button>
+              </div>
+              <small class="set-hint">{{ t('skin.applyHint') }}</small>
+            </div>
+          </template>
+          <template v-else>
+            <small class="set-hint">{{ t('skin.lockedHint') }}</small>
+            <div class="account-search">
+              <input class="text-input" v-model="state.skinCodeInput" :placeholder="t('skin.codePlaceholder')" @keydown.enter="redeemSkinCode" />
+              <button class="btn btn-primary" @click="redeemSkinCode">{{ t('skin.redeem') }}</button>
+            </div>
+          </template>
+          </div>
+        </div>
+
+        <!-- 🔊 Ton (Musik + Aktions-Sounds) -->
+        <div class="admin-acc">
+          <button class="admin-acc-head" @click="toggleSettingsCard('ton')">
+            <span><span class="ico-lead" v-html="ic('sound')"></span>{{ t('settings.tabSound') }}</span>
+            <span class="admin-acc-chev" :class="{ open: state.settingsTab==='ton' }">▾</span>
+          </button>
+          <div v-if="state.settingsTab==='ton'" class="admin-acc-body">
+          <!-- „Ton": POSITIVER Ein-Schalter (an = Ton hörbar, aus = alles stumm).
+               Intern weiterhin muteAll (invertiert dargestellt) — toggleMuteAll
+               kippt den Zustand + ruft Music.setMuted; der Schalter ist AN, wenn
+               NICHT stumm. So heißt es „Ton aktivieren" statt „Alles stumm". -->
+          <div class="set-row" @click="toggleMuteAll">
+            <span>{{ t('settings.soundOn') }}</span><span class="switch" :class="{on:!state.settings.muteAll}"><i></i></span>
+          </div>
+          <!-- Erworbene Sound-/Musik-Pakete ausrüsten (mit ▶ Hör-Vorschau) -->
+          <div class="set-row col" v-for="cat in settingsSoundCats()" :key="cat">
+            <span class="set-row-label"><span class="ei" v-html="ic(SHOP_CATS[cat].icon)"></span> {{ shopCategoryTitle(cat) }}</span>
+            <div class="set-fx-row">
+              <select class="text-input" :value="shopEquippedId(cat)" @change="equipCatFromSettings(cat, $event.target.value)">
+                <option v-for="o in settingsCatOptions(cat)" :key="o.id" :value="o.id">{{ o.name }}</option>
+              </select>
+              <button class="shop-fx-preview set-fx-preview" @click="shopPreviewIt({ cat, id: shopEquippedId(cat) })" :aria-label="t('shop.preview')" :title="t('shop.preview')">▶</button>
+            </div>
+          </div>
+          <div class="set-row col">
+            <span class="set-row-label">{{ t('settings.musicVolume') }}</span>
+            <input type="range" class="set-range" min="0" max="1" step="0.01" :value="state.settings.musicVolume"
+                   :style="{ '--rangePct': Math.round(state.settings.musicVolume*100) + '%' }"
+                   @input="setSetting('musicVolume', parseFloat($event.target.value))" />
+          </div>
+          <small class="set-hint">{{ t('settings.soundHint') }}</small>
+          <div class="set-row" @click="toggleSetting('musicMenu')">
+            <span>{{ t('settings.musicMenu') }}</span><span class="switch" :class="{on:state.settings.musicMenu}"><i></i></span>
+          </div>
+          <div class="set-row" @click="toggleSetting('musicSolo')">
+            <span>{{ t('settings.musicSolo') }}</span><span class="switch" :class="{on:state.settings.musicSolo}"><i></i></span>
+          </div>
+          <div class="set-row" @click="toggleSetting('musicCoop')">
+            <span>{{ t('settings.musicCoop') }}</span><span class="switch" :class="{on:state.settings.musicCoop}"><i></i></span>
+          </div>
+          <div class="set-row" @click="toggleSetting('musicCompetition')">
+            <span>{{ t('settings.musicCompetition') }}</span><span class="switch" :class="{on:state.settings.musicCompetition}"><i></i></span>
+          </div>
+          <div class="set-row" @click="toggleSetting('musicTraining')">
+            <span>{{ t('settings.musicTraining') }}</span><span class="switch" :class="{on:state.settings.musicTraining}"><i></i></span>
+          </div>
+          <small class="set-hint">{{ t('settings.sfxHintText') }}</small>
+          <div class="set-row" @click="toggleSetting('sfxComplete')">
+            <span>{{ t('settings.sfxComplete') }}</span><span class="switch" :class="{on:state.settings.sfxComplete}"><i></i></span>
+          </div>
+          <div class="set-row" @click="toggleSetting('sfxKeep')">
+            <span>{{ t('settings.sfxKeep') }}</span><span class="switch" :class="{on:state.settings.sfxKeep}"><i></i></span>
+          </div>
+          <div class="set-row" @click="toggleSetting('sfxRemove')">
+            <span>{{ t('settings.sfxRemove') }}</span><span class="switch" :class="{on:state.settings.sfxRemove}"><i></i></span>
+          </div>
+          <div class="set-row" @click="toggleSetting('sfxError')">
+            <span>{{ t('settings.sfxError') }}</span><span class="switch" :class="{on:state.settings.sfxError}"><i></i></span>
+          </div>
+          <div class="set-row" @click="toggleSetting('sfxHint')">
+            <span>{{ t('settings.sfxHint') }}</span><span class="switch" :class="{on:state.settings.sfxHint}"><i></i></span>
+          </div>
+          <div class="set-row" @click="toggleSetting('sfxToolSwitch')">
+            <span>{{ t('settings.sfxToolSwitch') }}</span><span class="switch" :class="{on:state.settings.sfxToolSwitch}"><i></i></span>
+          </div>
+          <div class="set-row" @click="toggleSetting('sfxUndo')">
+            <span>{{ t('settings.sfxUndo') }}</span><span class="switch" :class="{on:state.settings.sfxUndo}"><i></i></span>
+          </div>
+          <div class="set-row" @click="toggleSetting('sfxWin')">
+            <span>{{ t('settings.sfxWin') }}</span><span class="switch" :class="{on:state.settings.sfxWin}"><i></i></span>
+          </div>
+          <div class="set-row" @click="toggleSetting('sfxLose')">
+            <span>{{ t('settings.sfxLose') }}</span><span class="switch" :class="{on:state.settings.sfxLose}"><i></i></span>
+          </div>
+          </div>
+        </div>
+
+        <!-- 👤 Konto (Profil/Anzeigename + optionaler Account + Cloud-Sync) -->
+        <div class="admin-acc">
+          <button class="admin-acc-head" @click="toggleSettingsCard('konto')">
+            <span><span class="ico-lead" v-html="ic('user')"></span>{{ t('settings.tabAccount') }}<span v-if="state.account.status==='in'" class="admin-acc-count">{{ state.account.username }}</span></span>
+            <span class="admin-acc-chev" :class="{ open: state.settingsTab==='konto' }">▾</span>
+          </button>
+          <div v-if="state.settingsTab==='konto'" class="admin-acc-body">
+          <!-- Profil: Anzeigename (auch ohne Konto nutzbar, z.B. für Coop) -->
+          <div class="set-group-title">{{ t('settings.profile') }}</div>
+          <div class="set-row col">
+            <span class="set-row-label">{{ t('settings.displayName') }}</span>
+            <input class="text-input" v-model="state.settings.coopName" maxlength="32" :placeholder="t('common.namePlaceholder')" />
+            <small class="set-hint">{{ t('settings.displayNameHint') }}</small>
+          </div>
+
+          <div class="set-group-title">{{ t('account.title') }}</div>
+          <small class="set-hint">{{ t('account.intro') }}</small>
+
+          <!-- Eingeloggt -->
+          <template v-if="state.account.status==='in'">
+            <div class="account-card">
+              <div class="account-row"><span class="account-label">{{ t('account.username') }}</span>
+                <span class="account-username">
+                  <b>{{ state.account.username }}</b>
+                  <button v-if="!state.account.usernameEditing" class="btn-link" @click="startUsernameEdit">{{ t('account.changeUsername') }}</button>
+                </span>
+              </div>
+              <div v-if="state.account.usernameEditing" class="account-username-form">
+                <input class="text-input" :class="{ 'input-invalid': ['taken','invalid'].includes(state.account.usernameCheck), 'input-valid': ['available'].includes(state.account.usernameCheck) }" v-model="state.account.usernameDraft" maxlength="20" autocapitalize="none" autocomplete="off" :placeholder="t('account.newUsername')" @input="onUsernameInput" @keydown.enter="doChangeUsername" />
+                <small v-if="state.account.usernameCheck==='checking'" class="username-status checking">{{ t('account.usernameChecking') }}</small>
+                <small v-else-if="state.account.usernameCheck==='available'" class="username-status ok"><span class="ei" v-html="ic('check')"></span> {{ t('account.usernameAvailable') }}</small>
+                <small v-else-if="state.account.usernameCheck==='taken'" class="username-status err"><span class="ei" v-html="ic('close')"></span> {{ t('account.usernameTaken') }}</small>
+                <small v-else-if="state.account.usernameCheck==='invalid'" class="username-status err"><span class="ei" v-html="ic('close')"></span> {{ t('account.usernameInvalid') }}</small>
+                <div class="account-username-actions">
+                  <button class="btn btn-primary btn-sm" :disabled="state.account.busy || !canSaveUsername()" @click="doChangeUsername">
+                    <span v-if="state.account.busy"><span class="spinner-inline"></span></span><span v-else>{{ t('account.save') }}</span>
+                  </button>
+                  <button class="btn-link" @click="state.account.usernameEditing=false; state.account.usernameCheck='idle'">{{ t('common.cancel') }}</button>
+                </div>
+                <small class="set-hint">{{ t('account.usernameHint') }}</small>
+              </div>
+              <div class="account-row" v-if="state.account.email"><span class="account-label">{{ t('account.email') }}</span><span>{{ state.account.email }}</span></div>
+              <div class="account-row"><span class="account-label">{{ t('account.role') }}</span><span class="account-role" :class="{ admin: state.account.role==='admin' }"><span v-if="state.account.role==='admin'" class="ei" v-html="ic('crown')"></span> {{ state.account.role==='admin' ? t('account.roleAdmin') : t('account.roleUser') }}</span></div>
+              <div class="account-sync" :class="'sync-'+state.account.syncState">
+                <template v-if="state.account.syncState==='syncing'"><span class="spinner-inline"></span> {{ t('account.syncing') }}</template>
+                <template v-else-if="state.account.syncState==='error'"><span class="ei" v-html="ic('warning')"></span> {{ state.account.syncErrorMsg || t('account.syncError') }}</template>
+                <template v-else-if="state.account.lastSyncAt">{{ t('account.syncedAt', { time: fmtSyncTime(state.account.lastSyncAt) }) }}</template>
+                <template v-else><span class="ei" v-html="ic('cloud')"></span> {{ t('account.syncOn') }}</template>
+              </div>
+              <button class="btn btn-ghost btn-sm" :disabled="state.account.syncState==='syncing'" @click="doSyncNow"><span class="ei" v-html="ic('refresh')"></span> {{ t('account.syncNow') }}</button>
+            </div>
+            <!-- Passwort ändern: neues Passwort 2× + Speichern (ohne altes Passwort) -->
+            <div class="admin-acc">
+              <button class="admin-acc-head" @click="state.account.pwFormOpen = !state.account.pwFormOpen">
+                <span><span class="ei" v-html="ic('key')"></span> {{ t('account.changePw') }}</span>
+                <span class="admin-acc-chev" :class="{ open: state.account.pwFormOpen }">▾</span>
+              </button>
+              <div v-if="state.account.pwFormOpen" class="admin-acc-body">
+                <input class="text-input" type="password" autocomplete="new-password" v-model="state.account.pwNew1" :placeholder="t('account.pwNew')" />
+                <input class="text-input" type="password" autocomplete="new-password" v-model="state.account.pwNew2" :placeholder="t('account.pwRepeat')" @keydown.enter="doChangePassword" />
+                <button class="btn btn-primary" :disabled="state.account.busy || !state.account.pwNew1 || !state.account.pwNew2" @click="doChangePassword">
+                  <span v-if="state.account.busy"><span class="spinner-inline"></span></span>
+                  <span v-else>{{ t('account.save') }}</span>
+                </button>
+              </div>
+            </div>
+            <button class="btn btn-ghost" :disabled="state.account.busy" @click="doSignOut">{{ t('account.signOut') }}</button>
+            <button class="btn btn-danger-ghost" :disabled="state.account.busy" @click="doDeleteAccount">{{ t('account.deleteAccount') }}</button>
+
+            <!-- Admin-Bereich (nur bei Rolle 'admin'; Rules erzwingen die Rechte serverseitig) -->
+            <template v-if="state.account.role==='admin'">
+              <div class="set-group-title">{{ t('admin.title') }}</div>
+              <small class="set-hint">{{ t('admin.intro') }}</small>
+              <button class="btn btn-primary" @click="openAdminConsole"><span class="ei" v-html="ic('users')"></span> {{ t('admin.openConsole') }}</button>
+            </template>
+          </template>
+
+          <!-- Nicht eingeloggt: Anmelden/Registrieren -->
+          <template v-else>
+            <div class="seg">
+              <button :class="{active:state.account.mode==='in'}" @click="state.account.mode='in'; state.account.error=null; state.account.notice=null">{{ t('account.signIn') }}</button>
+              <button :class="{active:state.account.mode==='up'}" @click="state.account.mode='up'; state.account.error=null; state.account.notice=null">{{ t('account.signUp') }}</button>
+            </div>
+
+            <template v-if="state.account.mode==='in'">
+              <input class="text-input" type="email" inputmode="email" autocomplete="username" v-model="state.account.email_in" :placeholder="t('account.email')" />
+              <input class="text-input" type="password" autocomplete="current-password" v-model="state.account.pw_in" :placeholder="t('account.password')" @keydown.enter="doSignIn" />
+              <button class="btn btn-primary" :disabled="state.account.busy" @click="doSignIn">
+                <span v-if="state.account.busy"><span class="spinner-inline"></span> {{ t('account.working') }}</span><span v-else>{{ t('account.signIn') }}</span>
+              </button>
+              <button class="btn-link" @click="doResetPassword">{{ t('account.forgot') }}</button>
+            </template>
+            <template v-else>
+              <input class="text-input" type="email" inputmode="email" autocomplete="email" v-model="state.account.email_up" :placeholder="t('account.email')" />
+              <input class="text-input" v-model="state.account.username_up" maxlength="20" autocomplete="username" :placeholder="t('account.usernamePlaceholder')" />
+              <input class="text-input" type="password" autocomplete="new-password" v-model="state.account.pw_up" :placeholder="t('account.passwordNew')" @keydown.enter="doSignUp" />
+              <button class="btn btn-primary" :disabled="state.account.busy" @click="doSignUp">
+                <span v-if="state.account.busy"><span class="spinner-inline"></span> {{ t('account.working') }}</span><span v-else>{{ t('account.createAccount') }}</span>
+              </button>
+              <small class="set-hint">{{ t('account.usernameHint') }}</small>
+            </template>
+          </template>
+
+          <p v-if="state.account.error" class="coop-error">{{ state.account.error }}</p>
+          <p v-if="state.account.notice" class="account-notice">{{ state.account.notice }}</p>
+          </div>
+        </div>
+
+        <!-- 💾 Daten & Sicherung (Export/Import, Recht, Löschen) — bewusst zuletzt -->
+        <div class="admin-acc">
+          <button class="admin-acc-head" @click="toggleSettingsCard('daten')">
+            <span><span class="ico-lead" v-html="ic('save')"></span>{{ t('settings.tabData') }}</span>
+            <span class="admin-acc-chev" :class="{ open: state.settingsTab==='daten' }">▾</span>
+          </button>
+          <div v-if="state.settingsTab==='daten'" class="admin-acc-body">
+          <button class="btn btn-ghost" @click="doExport">{{ t('settings.exportBackup') }}</button>
+          <label class="btn btn-ghost file-btn">{{ t('settings.importBackup') }}
+            <input type="file" accept="application/json" @change="doImport" hidden>
+          </label>
+          <button class="btn btn-ghost" @click="doExportLog">{{ t('settings.exportLog') }}</button>
+          <button class="btn btn-ghost" @click="state.modal='changelog'">{{ t('settings.changelog') }}</button>
+          <a class="btn btn-ghost" href="./privacy.html" target="_blank" rel="noopener">{{ t('settings.privacyPolicy') }}</a>
+          <a class="btn btn-ghost" href="./imprint.html" target="_blank" rel="noopener">{{ t('settings.imprint') }}</a>
+          <button class="btn btn-danger-ghost" @click="doDeleteAllData">{{ t('settings.deleteAllData') }}</button>
+          <div class="backup-section">
+            <h4 class="backup-title">{{ t('backups.title') }}</h4>
+            <p v-if="!safetyBackups().length" class="backup-empty">{{ t('backups.empty') }}</p>
+            <div v-for="b in safetyBackups()" :key="b.kind" class="backup-row">
+              <div class="backup-info"><b>{{ b.label }}</b><small>{{ b.info }}</small></div>
+              <button class="btn btn-ghost" @click="restoreSafetyBackup(b)">{{ t('backups.restore') }}</button>
+            </div>
+          </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ TOAST ══ -->
+    <transition name="toast">
+      <div v-if="state.toast" class="toast" :class="state.toast.type">{{ state.toast.msg }}</div>
+    </transition>
+
+    <!-- ══ MULTI-DEVICE-HINWEIS ══ Cross-Device-Ereignisse (Partie woanders beendet /
+         auf anderem Gerät übernommen / neue Version). Fixed Banner, immer sichtbar. -->
+    <transition name="toast">
+      <div v-if="state.deviceNotice" class="device-notice" :class="'dn-' + state.deviceNotice.kind">
+        <span class="dn-ico ico-wrap" v-html="ic(state.deviceNotice.kind === 'takeover' ? 'signal' : state.deviceNotice.kind === 'reload' ? 'refresh' : 'cloud')"></span>
+        <div class="dn-body">
+          <div class="dn-title">{{ t('device.' + state.deviceNotice.kind + '.title') }}</div>
+          <div class="dn-text">{{ t('device.' + state.deviceNotice.kind + '.text') }}</div>
+        </div>
+        <div class="dn-actions">
+          <button v-if="state.deviceNotice.kind === 'takeover'" class="btn btn-sm" @click="reclaimSession">{{ t('device.takeover.resume') }}</button>
+          <button class="btn btn-sm btn-ghost" @click="dismissDeviceNotice">{{ t('common.ok') }}</button>
+        </div>
+      </div>
+    </transition>
+
+    <!-- ══ VERSIONS-MISMATCH ══ Offline gespielt UND woanders online → Auswahl
+         lokal vs. Cloud (die unterlegene Seite wird als Backup gesichert). -->
+    <div v-if="state.versionMismatch" class="modal-overlay mismatch-overlay">
+      <div class="modal mismatch-modal">
+        <h2 class="mismatch-title"><span class="ei" v-html="ic('warning')"></span> {{ t('mismatch.title') }}</h2>
+        <p class="mismatch-sub">{{ mismatchSubText() }}</p>
+        <div class="mismatch-cards">
+          <button class="mismatch-card" :disabled="state.versionMismatch.busy" @click="resolveVersionMismatch('local')">
+            <div class="mc-head">{{ t('mismatch.local') }}</div>
+            <div class="mc-time">{{ fmtMismatchTime(state.versionMismatch.local.ts) }}</div>
+            <div class="mc-stats"><span><span class="ei" v-html="ic('coin')"></span> {{ state.versionMismatch.local.coins }}</span><span><span class="ei" v-html="ic('trophy')"></span> {{ state.versionMismatch.local.wins }}</span></div>
+            <div class="mc-pick">{{ t('mismatch.keepLocal') }}</div>
+          </button>
+          <button class="mismatch-card" :disabled="state.versionMismatch.busy" @click="resolveVersionMismatch('cloud')">
+            <div class="mc-head">{{ t('mismatch.cloud') }}</div>
+            <div class="mc-time">{{ fmtMismatchTime(state.versionMismatch.cloud.ts) }}</div>
+            <div class="mc-stats"><span><span class="ei" v-html="ic('coin')"></span> {{ state.versionMismatch.cloud.coins }}</span><span><span class="ei" v-html="ic('trophy')"></span> {{ state.versionMismatch.cloud.wins }}</span></div>
+            <div class="mc-pick">{{ t('mismatch.keepCloud') }}</div>
+          </button>
+        </div>
+        <p class="mismatch-note">{{ t('mismatch.note') }}</p>
+      </div>
+    </div>
+
+    <!-- Sieganimation: global (fixed Overlay), damit die Shop-Vorschau auf jedem
+         Screen funktioniert — nicht nur im Spiel. MUSS ein eigenständiges Element
+         sein (NICHT im <transition> des Toasts): eine Vue-<transition> rendert nur
+         EIN Kind — mit-verschachtelt wurde die komplette Sieganimation verschluckt
+         (sie war praktisch nie im DOM). -->
+    <div v-if="state.winFx" class="winfx" :class="['fx-' + state.winFx.id, { perfect: state.perfectWin }]" :key="state.winFx.seq">
+      <i v-for="p in state.winFx.pieces" :key="p.id" :class="[p.creature ? 'cr' : '', p.shape ? 'sv' : '', p.txt ? 'tx' : '', p.kind ? 'k' + p.kind : '', p.corner != null ? 'c' + p.corner : '', p.band != null ? 'b' + p.band : '']" :style="winFxStyle(p)" v-html="p.creature || (p.shape ? winShape(p.shape, p.hue) : (p.txt || ''))"></i>
+      <b v-if="state.winFx.id==='arcade'" class="winfx-label">YOU WIN</b>
+    </div>
+    <!-- Top-Banner statt Toast: verdeckt nie das Spielfeld, sitzt am oberen Rand. -->
+    <transition name="toast">
+      <div v-if="state.bestTimeNotice" class="best-time-banner"><span class="ei" v-html="ic('clock')"></span> {{ state.bestTimeNotice }}</div>
+    </transition>
+
+    <!-- ══ MODALS ══ -->
+    <!-- Admin-Konsole: vollständige, editierbare Nutzer-Tabelle (Vollbild-Modal) -->
+    <div v-if="state.account.adminConsoleOpen" class="modal-bg" @click.self="closeAdminConsole">
+      <div class="modal admin-console-modal">
+        <header class="friends-head">
+          <h3><span class="ei" v-html="ic('crown')"></span> {{ t('admin.consoleTitle') }}</h3>
+          <button class="icon-btn" @click="closeAdminConsole" :aria-label="t('common.close')"><span class="ico-wrap" v-html="ic('close')"></span></button>
+        </header>
+        <div class="admin-console-toolbar">
+          <input class="text-input" v-model="state.account.adminFilter" :placeholder="t('admin.filterPlaceholder')" autocapitalize="none" />
+          <button class="btn btn-ghost btn-sm" :disabled="state.account.adminBusy" @click="adminLoadUsers" :aria-label="t('admin.reload')">
+            <span v-if="state.account.adminBusy" class="spinner-inline"></span>
+            <span v-else><span class="ei" v-html="ic('refresh')"></span></span>
+          </button>
+        </div>
+        <p class="set-hint admin-console-count">{{ t('admin.userCount', { n: filteredAdminUsers().length, total: state.account.adminUsers.length }) }}</p>
+        <p v-if="state.account.adminError" class="coop-error">{{ state.account.adminError }}</p>
+        <div v-if="state.account.adminBusy && !state.account.adminUsers.length" class="admin-console-empty"><span class="spinner-inline"></span> {{ t('account.working') }}</div>
+        <div v-else class="admin-console-table">
+          <div class="admin-tbl-head">
+            <span class="admin-col-user">{{ t('admin.colUser') }}</span>
+            <span class="admin-col-bal"><span class="ei" v-html="ic('coin')"></span></span>
+            <span class="admin-col-skin"><span class="ei" v-html="ic('palette')"></span></span>
+          </div>
+          <button v-for="u in filteredAdminUsers()" :key="u.uid" class="admin-tbl-row" @click="openAdminEdit(u)">
+            <span class="admin-col-user">
+              <span class="admin-tbl-name">
+                <b>{{ u.username || '—' }}</b>
+                <span v-if="u.role==='admin'" class="account-role admin admin-role-tag"><span class="ei" v-html="ic('crown')"></span></span>
+              </span>
+              <small class="admin-tbl-sub">{{ u.email || t('admin.noEmail') }}</small>
+              <small class="admin-tbl-sub admin-tbl-uid">{{ u.uid }}</small>
+            </span>
+            <span class="admin-col-bal">{{ u.balance }}</span>
+            <span class="admin-col-skin"><span v-if="u.hasSkin" class="ei" v-html="ic('check')"></span><span v-else>—</span></span>
+          </button>
+          <p v-if="!filteredAdminUsers().length && !state.account.adminBusy" class="set-hint admin-console-empty">{{ t('admin.noMatch') }}</p>
+        </div>
+        <button class="btn btn-primary" @click="closeAdminConsole">{{ t('admin.done') }}</button>
+      </div>
+    </div>
+    <!-- Admin: User bearbeiten — vollständiger Daten-Editor -->
+    <div v-if="state.account.adminEditUser" class="modal-bg" @click.self="closeAdminEdit">
+      <div class="modal admin-edit-modal">
+        <header class="admin-edit-head">
+          <span class="admin-avatar">{{ (state.account.adminEditUser.username || state.account.adminEditUser.uid || '?').slice(0,1).toUpperCase() }}</span>
+          <div class="admin-edit-title">
+            <span class="admin-edit-name">
+              <b>{{ state.account.adminEditUser.username || '—' }}</b>
+              <span class="account-role" :class="{ admin: state.account.adminEditUser.role==='admin' }">{{ state.account.adminEditUser.role==='admin' ? t('account.roleAdmin') : t('account.roleUser') }}</span>
+            </span>
+            <small class="admin-uid">{{ state.account.adminEditUser.uid }}</small>
+          </div>
+          <button class="icon-btn" @click="closeAdminEdit" :aria-label="t('common.close')"><span class="ico-wrap" v-html="ic('close')"></span></button>
+        </header>
+
+        <!-- Kennzahlen-Chips (live aus dem frischen Snapshot, inkl. ungespeicherter Werte).
+ Antippen springt in die passende Sektion — z.B. öffnet die Wallet. -->
+        <div class="admin-chips">
+          <button class="admin-chip admin-chip-btn" @click="openAdminSection('wallet')"><span class="ei" v-html="ic('coin')"></span> {{ adminChipValue('wallet/balance', state.account.adminEditUser.balance ?? 0) }}</button>
+          <button class="admin-chip admin-chip-btn" @click="openAdminSection('daily')"><span class="ei" v-html="ic('flame')"></span> {{ adminChipValue('daily/currentStreak', 0) }}</button>
+          <button class="admin-chip admin-chip-btn" @click="openAdminSection('stats')"><span class="ei" v-html="ic('trophy')"></span> {{ adminChipValue('stats/won', 0) }}</button>
+          <button class="admin-chip admin-chip-btn" @click="openAdminSection('_inventory')"><span class="ei" v-html="ic('palette')"></span> {{ state.account.adminEditUser.itemCount || 0 }}</button>
+        </div>
+
+        <!-- JSON-Untereditor (tiefe Strukturen) ersetzt den Inhalt, solange offen -->
+        <template v-if="state.account.adminJsonPath">
+          <b class="admin-json-title">{ } {{ adminPathLabel(state.account.adminJsonPath) }}</b>
+          <textarea class="text-input admin-json-area" v-model="state.account.adminJsonDraft" spellcheck="false" autocapitalize="none"></textarea>
+          <p v-if="state.account.adminJsonError" class="coop-error">{{ state.account.adminJsonError }}</p>
+          <div class="admin-field-row">
+            <button class="btn btn-ghost" @click="closeAdminJson">{{ t('common.back') }}</button>
+            <button class="btn btn-primary admin-json-save" @click="saveAdminJson">{{ t('account.save') }}</button>
+          </div>
+        </template>
+
+        <template v-else>
+          <div class="admin-edit-scroll">
+            <!-- ⚡ Konto-Aktionen (echte Knoten: Rolle, Username, Reset — kein Snapshot) -->
+            <div class="admin-acc">
+              <button class="admin-acc-head" @click="toggleAdminSection('_actions')">
+                <span><span class="ei" v-html="ic('bolt')"></span> {{ t('admin.accountActions') }}</span>
+                <span class="admin-acc-chev" :class="{ open: state.account.adminDataSection==='_actions' }">▾</span>
+              </button>
+              <div v-if="state.account.adminDataSection==='_actions'" class="admin-acc-body">
+                <div class="account-row"><span class="account-label">{{ t('account.email') }}</span><span class="admin-uid">{{ state.account.adminEditUser.email || t('admin.noEmail') }}</span></div>
+                <div class="account-row"><span class="account-label">{{ t('admin.createdAt') }}</span><span>{{ adminFmtDate(state.account.adminEditUser.createdAt) }}</span></div>
+                <div class="admin-actions">
+                  <button class="btn btn-ghost btn-sm" :disabled="state.account.adminBusy" @click="adminToggleRole">{{ state.account.adminEditUser.role==='admin' ? t('admin.makeUser') : t('admin.makeAdmin') }}</button>
+                  <button class="btn btn-ghost btn-sm" :disabled="state.account.adminBusy" @click="adminResetPw"><span class="ei" v-html="ic('mail')"></span> {{ t('admin.resetPw') }}</button>
+                </div>
+                <!-- Haken: Betroffenen über Geschenk/Entzug/Guthaben benachrichtigen -->
+                <div class="set-row" @click="state.account.adminNotify = !state.account.adminNotify">
+                  <span><span class="ei" v-html="ic('bell')"></span> {{ t('admin.notifyUser') }}</span><span class="switch" :class="{on:state.account.adminNotify}"><i></i></span>
+                </div>
+                <div class="admin-field-row">
+                  <input class="text-input" v-model="state.account.adminUsername" maxlength="20" autocapitalize="none" :placeholder="t('account.newUsername')" />
+                  <button class="btn btn-ghost btn-sm" :disabled="state.account.adminBusy" @click="adminChangeUsername">{{ t('account.save') }}</button>
+                </div>
+                <div class="admin-field-row">
+                  <select class="text-input admin-select" v-model="state.account.adminFieldKey">
+                    <option value="" disabled>{{ t('admin.profileField') }}: {{ t('admin.choose') }}</option>
+                    <option v-for="k in adminFieldOptions()" :key="k" :value="k">{{ adminProfileFieldLabel(k) }}</option>
+                  </select>
+                  <input class="text-input" v-model="state.account.adminFieldVal" :placeholder="t('admin.fieldValue')" />
+                  <button class="btn btn-ghost btn-sm" :disabled="state.account.adminBusy || !state.account.adminFieldKey" @click="adminSetField">{{ t('account.save') }}</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 🎒 Inventar (autoritativer Union-Knoten, nicht der Snapshot) -->
+            <div class="admin-acc">
+              <button class="admin-acc-head" @click="toggleAdminSection('_inventory')">
+                <span><span class="ei" v-html="ic('backpack')"></span> {{ t('admin.inventory') }} <small class="admin-acc-count">{{ adminOwnedOfTotal(state.account.adminEditUser) }} / {{ adminGiftTotal() }}</small></span>
+                <span class="admin-acc-chev" :class="{ open: state.account.adminDataSection==='_inventory' }">▾</span>
+              </button>
+              <div v-if="state.account.adminDataSection==='_inventory'" class="admin-acc-body">
+                <div class="admin-item-chips">
+                  <span v-for="it in adminInventoryDisplay()" :key="it.id" class="admin-item-chip" :class="{ 'chip-pending-add': it.pending==='grant', 'chip-pending-remove': it.pending==='revoke' }">
+                    {{ it.label }}
+                    <button class="admin-item-x" :disabled="state.account.adminBusy" @click="adminRevokeItemId(it.id)" :aria-label="t('admin.revokeSkin')"><span class="ico-wrap" v-html="ic('close')"></span></button>
+                  </span>
+                  <span v-if="!adminInventoryDisplay().length" class="set-hint">—</span>
+                </div>
+                <button class="btn btn-gift btn-sm admin-gift-open" :disabled="state.account.adminBusy" @click="openAdminGiftPicker"><span class="ei" v-html="ic('gift')"></span> {{ t('admin.giftPick') }}</button>
+                <button class="btn btn-gift btn-sm admin-grant-all" :disabled="state.account.adminBusy" @click="adminGrantAllItems"><span class="ei" v-html="ic('gift')"></span> {{ t('admin.grantAll') }}</button>
+                <p v-if="adminPendingSummary()" class="set-hint admin-pending-hint">{{ adminPendingSummary() }}</p>
+              </div>
+            </div>
+
+            <!-- Daten-Sektionen: JEDES Feld des Snapshots typisiert editierbar -->
+            <div v-if="state.account.adminDataLoading" class="admin-console-empty"><span class="spinner-inline"></span> {{ t('account.working') }}</div>
+            <template v-else>
+              <div v-for="sec in adminDataSections()" :key="sec.key" class="admin-acc">
+                <button class="admin-acc-head" @click="toggleAdminSection(sec.key)">
+                  <span><span class="ei" v-html="ic(sec.ic)"></span> {{ adminSectionLabel(sec.key) }}</span>
+                  <span class="admin-acc-chev" :class="{ open: state.account.adminDataSection===sec.key }">▾</span>
+                </button>
+                <div v-if="state.account.adminDataSection===sec.key" class="admin-acc-body">
+                  <!-- Guthaben: spenden (+) / abziehen (−) / Zielwert (=) statt Fix-Setzen.
+                       Der berechnete Zielwert wird als wallet/balance gestaged (Speichern
+                       sendet); der Empfänger sieht die Differenz im Geldverlauf. -->
+                  <div v-if="sec.key==='wallet'" class="admin-balance-ctl">
+                    <div class="admin-balance-modes">
+                      <button v-for="m in ['donate','subtract','target']" :key="m" class="admin-bmode" :class="{ active: state.account.adminBalanceMode===m }" @click="adminSetBalanceMode(m)">{{ t('admin.balMode.'+m) }}</button>
+                    </div>
+                    <div class="admin-field-row">
+                      <input class="text-input" type="number" inputmode="numeric" min="0" v-model="state.account.adminBalanceAmount" :placeholder="t('admin.balAmount')" />
+                      <button class="btn btn-gift btn-sm" :disabled="!state.account.adminBalanceAmount" @click="adminApplyBalanceChange"><span class="ei" v-html="ic('coin')"></span> {{ t('admin.balApply') }}</button>
+                    </div>
+                    <p v-if="state.account.adminBalanceAmount" class="set-hint admin-bal-preview">{{ t('admin.balPreview', { cur: adminBalanceCurrent(), next: adminBalanceTarget(), delta: (adminBalanceDelta()>=0?'+':'') + adminBalanceDelta() }) }}</p>
+                  </div>
+                  <div v-for="row in adminFieldRows(sec.key)" :key="row.path" class="admin-field-block" :class="{ dirty: row.path in state.account.adminDataDirty }">
+                    <div class="admin-row">
+                      <span class="admin-row-label">{{ adminRowLabel(row) }}</span>
+                      <span v-if="row.type==='boolean'" class="switch" :class="{ on: adminFieldValue(row) }" @click="adminToggleField(row)"><i></i></span>
+                      <select v-else-if="adminEnumOptions(row)" class="text-input admin-row-input admin-select" :value="adminFieldValue(row)" @change="adminMarkDirty(row.path, $event.target.value)">
+                        <option v-for="o in adminEnumOptions(row)" :key="o.v" :value="o.v">{{ o.label }}</option>
+                      </select>
+                      <input v-else-if="adminIsDateField(row)" class="text-input admin-row-input" type="date" :value="adminFieldValue(row)" @change="adminInputField(row, $event)" />
+                      <input v-else-if="row.type==='number'" class="text-input admin-row-input" type="number" inputmode="numeric" step="any" :value="adminFieldValue(row)" @change="adminInputField(row, $event)" />
+                      <input v-else-if="row.type==='string'" class="text-input admin-row-input" :value="adminFieldValue(row)" @change="adminInputField(row, $event)" autocapitalize="none" />
+                      <button v-else class="btn btn-ghost btn-sm" @click="openAdminJson(row)">{ } JSON</button>
+                    </div>
+                    <small v-if="adminRowTimestamp(row)" class="admin-row-desc"><span class="ei" v-html="ic('clock')"></span> {{ adminRowTimestamp(row) }}</small>
+                    <small v-if="adminRowDesc(row)" class="admin-row-desc">{{ adminRowDesc(row) }}</small>
+                  </div>
+                  <p v-if="!adminFieldRows(sec.key).length" class="set-hint">—</p>
+                </div>
+              </div>
+            </template>
+            <small class="set-hint">{{ t('admin.dataHint') }}</small>
+          </div>
+
+          <p v-if="state.account.adminError" class="coop-error">{{ state.account.adminError }}</p>
+          <!-- Sammel-Speichern: erscheint nur bei ungespeicherten Änderungen -->
+          <div v-if="adminDirtyCount()" class="admin-save-bar">
+            <button class="btn btn-ghost btn-sm" :disabled="state.account.adminBusy" @click="adminDiscardData">{{ t('admin.discard') }}</button>
+            <button class="btn btn-primary admin-save-btn" :disabled="state.account.adminBusy" @click="adminSaveData">
+              <span v-if="state.account.adminBusy"><span class="spinner-inline"></span></span>
+              <span v-else><span class="ei" v-html="ic('save')"></span> {{ t('admin.saveN', { n: adminDirtyCount() }) }}</span>
+            </button>
+          </div>
+          <button v-else class="btn btn-primary" @click="closeAdminEdit">{{ t('admin.done') }}</button>
+        </template>
+      </div>
+    </div>
+
+    <!-- Geschenk-Auswahl: kategorisierter Popup-Screen (wie der Shop) statt roher
+         Dropdown-Liste. Antippen wählt einen Artikel zum Verschenken vor (grüner
+         Haken); besessene Artikel sind markiert/deaktiviert. „Fertig" schließt,
+         die Vorauswahl landet als Chip im Editor und wird per „Speichern" gesendet. -->
+    <div v-if="state.account.adminGiftPickerOpen" class="modal-bg admin-gift-bg" @click.self="closeAdminGiftPicker">
+      <div class="modal admin-gift-modal">
+        <header class="admin-gift-head">
+          <h3><span class="ei" v-html="ic('gift')"></span> {{ t('admin.giftTitle') }}</h3>
+          <button class="icon-btn" @click="closeAdminGiftPicker" :aria-label="t('common.close')"><span class="ico-wrap" v-html="ic('close')"></span></button>
+        </header>
+        <div class="admin-gift-scroll">
+          <button class="btn btn-gift btn-sm admin-grant-all" :disabled="state.account.adminBusy" @click="adminGrantAllItems"><span class="ei" v-html="ic('gift')"></span> {{ t('admin.grantAll') }}</button>
+          <div v-for="cat in adminGiftCategories()" :key="cat.key" class="admin-gift-cat">
+            <div class="admin-gift-cat-head"><span class="ei" v-html="ic(cat.icon)"></span> {{ cat.title }}</div>
+            <div class="admin-gift-grid">
+              <button v-for="it in cat.items" :key="it.id" type="button" class="admin-gift-item"
+                      :class="{ owned: adminGiftItemState(it.id)==='owned', staged: adminGiftItemState(it.id)==='grant' }"
+                      :disabled="adminGiftItemState(it.id)==='owned'" @click="adminToggleGiftItem(it.id)">
+                <span class="agi-ic" v-html="ic(it.icon)"></span>
+                <span class="agi-label">{{ it.label }}</span>
+                <span v-if="adminGiftItemState(it.id)==='owned'" class="agi-state">{{ t('admin.giftOwned') }}</span>
+                <span v-else-if="adminGiftItemState(it.id)==='grant'" class="agi-check" v-html="ic('check')"></span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <footer class="admin-gift-foot">
+          <button class="btn btn-primary" @click="closeAdminGiftPicker">{{ t('admin.giftDone') }}<template v-if="adminGiftPendingCount()"> ({{ adminGiftPendingCount() }})</template></button>
+        </footer>
+      </div>
+    </div>
+
+    <!-- Freund hinzufügen: kleines Popup über dem Freunde-Dialog (➕ im Kopf) -->
+    <div v-if="state.friends.addOpen" class="modal-bg friends-add-bg" @click.self="closeAddFriend">
+      <div class="modal modal-sm friends-add-modal">
+        <h3><span class="ei" v-html="ic('plus')"></span> {{ t('friends.addTitle') }}</h3>
+        <input class="text-input" v-model="state.friends.addName" maxlength="20" autocapitalize="none" autocomplete="off" :placeholder="t('friends.addPlaceholder')" @keydown.enter="addFriend" />
+        <p v-if="state.friends.addError" class="coop-error">{{ state.friends.addError }}</p>
+        <button class="btn btn-primary" :disabled="state.friends.addBusy || !state.friends.addName.trim()" @click="addFriend">
+          <span v-if="state.friends.addBusy"><span class="spinner-inline"></span></span>
+          <span v-else>{{ t('friends.add') }}</span>
+        </button>
+        <button class="btn-link" @click="closeAddFriend">{{ t('common.cancel') }}</button>
+      </div>
+    </div>
+
+    <!-- ══ FREUNDE ══ -->
+    <div v-if="state.friends.open" class="modal-bg" @click.self="closeFriends">
+      <div class="modal friends-modal">
+        <header class="friends-head">
+          <h3><span class="ico-wrap" v-html="ic('users')"></span> {{ t('friends.title') }}</h3>
+          <span class="friends-head-actions">
+            <button class="icon-btn" @click="openAddFriend" :aria-label="t('friends.addTitle')" :title="t('friends.addTitle')">＋</button>
+            <button class="icon-btn" @click="closeFriends" :aria-label="t('common.close')"><span class="ico-wrap" v-html="ic('close')"></span></button>
+          </span>
+        </header>
+        <div class="friends-tabs">
+          <button class="friends-tab" :class="{ active: state.friends.tab==='friends' }" @click="setFriendsTab('friends')">{{ t('friends.tabFriends') }}<span v-if="state.friends.requests.length" class="friends-req-badge">{{ state.friends.requests.length }}</span></button>
+          <button class="friends-tab" :class="{ active: state.friends.tab==='leaderboard' }" @click="setFriendsTab('leaderboard')">{{ t('friends.tabLeaderboard') }}</button>
+        </div>
+
+        <!-- Tab: Freunde -->
+        <div v-if="state.friends.tab==='friends'" class="friends-body">
+          <!-- Eingehende Anfragen -->
+          <template v-if="state.friends.requests.length">
+            <div class="friends-section-title">{{ t('friends.requestsTitle') }}</div>
+            <div v-for="req in state.friends.requests" :key="req.uid" class="friends-req-row">
+              <span class="friends-name">{{ req.username || req.uid }}</span>
+              <span class="friends-req-actions">
+                <button class="btn btn-primary btn-sm" @click="acceptFriend(req)">{{ t('friends.accept') }}</button>
+                <button class="btn-link" @click="declineFriend(req)">{{ t('friends.decline') }}</button>
+              </span>
+            </div>
+          </template>
+
+          <!-- Freundesliste -->
+          <div class="friends-section-title">{{ t('friends.listTitle') }} ({{ state.friends.list.length }})</div>
+          <p v-if="!state.friends.list.length" class="set-hint">{{ t('friends.empty') }}</p>
+          <div v-for="fr in friendsSorted()" :key="fr.uid" class="friends-row">
+            <span class="friends-dot" :class="{ online: friendOnline(fr.uid), ingame: friendInGame(fr.uid) }"></span>
+            <span class="friends-info">
+              <span class="friends-name"><span v-if="badgeShown(friendPresence(fr.uid)?.badge)" class="badge-medal-inline" v-html="badgeSvg(friendPresence(fr.uid)?.badge)"></span>{{ fr.username || fr.uid }}</span>
+              <small class="friends-activity">{{ friendActivityText(fr.uid) }}</small>
+              <span v-if="friendInGame(fr.uid)" class="friends-progress"><span class="friends-progress-fill" :style="{ width: (friendPresence(fr.uid).game.pct||0) + '%' }"></span></span>
+            </span>
+            <button class="icon-btn friends-remove" @click="removeFriendAsk(fr)" :aria-label="t('friends.remove')" :title="t('friends.remove')"><span class="ei" v-html="ic('trash')"></span></button>
+          </div>
+        </div>
+
+        <!-- Tab: Bestenliste — schnellste (perfekte) Solo-Zeiten je Schwierigkeit -->
+        <div v-else class="friends-body friends-leaderboard">
+          <div class="lb-diff-chips">
+            <button v-for="d in DIFFICULTIES" :key="d.id" class="lb-diff-chip" :class="{ active: state.leaderboard.diff===d.id }" @click="selectLeaderboardDiff(d.id)"><span class="ei" v-html="ic(d.emoji)"></span></button>
+          </div>
+          <div class="lb-scroll">
+            <p v-if="state.leaderboard.loading" class="set-hint lb-state">{{ t('friends.lbLoading') }}</p>
+            <p v-else-if="!state.leaderboard.entries.length" class="set-hint lb-state">{{ t('friends.lbEmpty') }}</p>
+            <div v-else class="lb-list">
+              <div v-for="(e,i) in state.leaderboard.entries" :key="e.uid" class="lb-row" :class="{ me: e.uid===state.account.uid }">
+                <span class="lb-rank">{{ i+1 }}</span>
+                <span class="lb-name"><span v-if="badgeShown(lbBadge(e))" class="badge-medal-inline" v-html="badgeSvg(lbBadge(e))"></span>{{ e.username || e.uid }}</span>
+                <span class="lb-time">{{ fmtTime(e.timeMs) }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Eingehende Lobby-Einladung eines Freundes: annehmen (beitreten) oder ablehnen -->
+    <!-- Admin-Benachrichtigung: „X hat dir Y geschenkt/entzogen" -->
+    <div v-if="state.adminNotice" class="modal-bg">
+      <div class="modal modal-sm">
+        <div class="whatsnew-badge"><span class="ei" v-html="ic(state.adminNotice.kind === 'gift' ? 'gift' : state.adminNotice.kind === 'currency' ? 'coin' : 'crown')"></span> Admin</div>
+        <p class="result-msg">{{ adminNoticeText(state.adminNotice) }}</p>
+        <button class="btn btn-primary" @click="dismissAdminNotice">{{ t('common.ok') }}</button>
+      </div>
+    </div>
+
+    <div v-if="state.pendingLobbyInvite" class="modal-bg">
+      <div class="modal">
+        <div class="whatsnew-badge"><span class="ei" v-html="ic('users')"></span> {{ t('coop.inviteTitle') }}</div>
+        <p class="result-msg">{{ t('coop.inviteBody', { name: state.pendingLobbyInvite.username || state.pendingLobbyInvite.fromUid, mode: lobbyModeLabel(state.pendingLobbyInvite.mode) }) }}</p>
+        <button class="btn btn-primary" @click="acceptLobbyInvite(state.pendingLobbyInvite)">{{ t('coop.inviteAccept') }}</button>
+        <button class="btn btn-ghost btn-sm" @click="declineLobbyInviteUI(state.pendingLobbyInvite)">{{ t('coop.inviteDecline') }}</button>
+      </div>
+    </div>
+
+    <div v-if="state.modal==='howto'" class="modal-bg" @click.self="state.modal=null">
+      <div class="modal">
+        <h3>{{ t('howto.title') }}</h3>
+        <ol class="rules">
+          <li v-html="t('howto.rule1')"></li>
+          <li v-html="t('howto.rule2')"></li>
+          <li v-html="t('howto.rule3')"></li>
+          <li v-html="t('howto.rule4')"></li>
+          <li v-html="t('howto.rule5')"></li>
+          <li v-html="t('howto.rule6')"></li>
+          <li v-if="state.coop.active" v-html="t('howto.rule7Coop')"></li>
+          <li v-html="t('howto.rule9')"></li>
+        </ol>
+        <button class="btn btn-ghost training-btn" @click="state.modal=null; startTrainingGame()">
+          <span class="btn-ic"><span class="ei" v-html="ic('graduation')"></span></span>
+          <span class="btn-tx"><b>{{ t('home.trainingMode') }}</b><small>{{ t('home.trainingHint') }}</small></span>
+        </button>
+        <button class="btn btn-primary" @click="state.modal=null">{{ t('howto.understood') }}</button>
+      </div>
+    </div>
+
+    <div v-if="state.modal==='raceChoice'" class="modal-bg" @click.self="state.modal=null">
+      <div class="modal">
+        <h3>{{ t('home.raceMode') }}</h3>
+        <p class="coop-tagline">{{ t('race.choiceHint') }}</p>
+        <button class="btn btn-primary" :disabled="!coopAvailable || !isOnline()" @click="goRace('1v1')">
+          <span class="btn-ic"><span class="ei" v-html="ic('versus')"></span></span><span class="btn-tx"><b>{{ t('race.choice1v1') }}</b><small>{{ t('home.raceHint') }}</small></span>
+        </button>
+        <button class="btn btn-ghost" :disabled="!coopAvailable || !isOnline()" @click="goRace('ffa')">
+          <span class="btn-ic"><span class="ei" v-html="ic('swords')"></span></span><span class="btn-tx"><b>{{ t('race.choiceFfa') }}</b><small>{{ t('race.choiceFfaHint') }}</small></span>
+        </button>
+        <button class="btn btn-ghost" :disabled="!coopAvailable || !isOnline()" @click="goRace('2v2')">
+          <span class="btn-ic"><span class="ei" v-html="ic('users')"></span></span><span class="btn-tx"><b>{{ t('race.choice2v2') }}</b><small>{{ t('team.assignHint') }}</small></span>
+        </button>
+        <button class="btn btn-ghost" @click="goAiDuel">
+          <span class="btn-ic"><span class="ei" v-html="ic('robot')"></span></span><span class="btn-tx"><b>{{ t('aiduel.title') }}</b><small>{{ t('aiduel.hint') }}</small></span>
+        </button>
+        <button class="btn btn-ghost" style="margin-top:8px" @click="state.modal=null">{{ t('common.cancel') }}</button>
+      </div>
+    </div>
+
+    <div v-if="state.modal==='changelog'" class="modal-bg" @click.self="state.modal=null">
+      <div class="modal">
+        <h3>{{ t('changelog.title') }}</h3>
+        <p v-if="i18nState.locale!=='de'" class="set-hint">{{ t('changelog.germanOnlyNote') }}</p>
+        <div class="changelog">
+          <div v-for="e in CHANGELOG" :key="e.version" class="cl-entry">
+            <div class="cl-head"><b>v{{ e.version }}</b><span>{{ e.date }}</span></div>
+            <ul><li v-for="(it,i) in e.changes" :key="i">{{ it }}</li></ul>
+          </div>
+        </div>
+        <button class="btn btn-primary" @click="state.modal=null">{{ t('common.close') }}</button>
+      </div>
+    </div>
+
+    <!-- Missionen-Übersicht (Wochen-Aufträge) als Pop-up. -->
+    <!-- Übersicht „Klone in Ausbildung". Bewusst eine EIGENE Ansicht: in der
+         Auswahl würden unfertige Klone nur Platz kosten, und bei inaktiven
+         Freunden bliebe der Fortschritt für immer stehen. -->
+    <!-- Bibliothek gespeicherter Partien. Bewusst als Bottom-Sheet: die Liste kann
+         lang werden, und der Daumen erreicht die Eintraege unten am besten.
+         Jede Zeile beantwortet in einem Blick „welcher Stand ist das und lohnt
+         er sich?" — Schwierigkeit, Groesse, FORTSCHRITT als Balken, Restleben,
+         Spielzeit und wie lange er schon liegt. -->
+    <div v-if="state.savesOpen" class="modal-bg saves-bg" @click.self="closeSaves">
+      <div class="modal saves-modal">
+        <h3><span class="ei" v-html="ic('save')"></span> {{ t('saves.title') }}</h3>
+        <p class="saves-intro">{{ t('saves.intro', { max: SAVES_MAX }) }}</p>
+        <div class="saves-list">
+          <div v-for="g in state.saves" :key="g.id" class="save-row" :class="{ current: saveIsCurrent(g) }" :style="diffVars(saveDifficulty(g))">
+            <button class="save-main" @click="resumeSave(g)">
+              <!-- Medaillon in der Leitfarbe der Schwierigkeit statt eines nackten
+                   Punktes — dieselbe Bildsprache wie die Schwierigkeitsauswahl. -->
+              <span class="save-medal"><span class="ei" v-html="ic(DIFF_BY_ID[saveDifficulty(g)]?.emoji)"></span></span>
+              <span class="save-body">
+                <span class="save-head">
+                  <b class="save-name">{{ t('difficulty.' + saveDifficulty(g)) }}</b>
+                  <span class="save-dim">{{ saveDim(g) }}</span>
+                  <span v-if="saveIsEndless(g)" class="save-badge"><span class="ei" v-html="ic('meteor')"></span>{{ t('endless.levelShort', { n: (g.endless && g.endless.level) || 1 }) }}</span>
+                  <span v-if="saveIsCurrent(g)" class="save-badge now">{{ t('saves.running') }}</span>
+                </span>
+                <span class="save-barline">
+                  <span class="save-bar"><i :style="{ width: saveProgress(g) + '%' }"></i></span>
+                  <span class="save-pct">{{ saveProgress(g) }}%</span>
+                </span>
+                <span class="save-meta">
+                  <!-- LEBEN, nicht Fehler: „noch 2 von 3 Herzen" sagt direkt, wie
+                       brenzlig der Stand ist. Gleiche Herz-Optik wie im Spiel-HUD. -->
+                  <span class="save-hearts" :aria-label="t('saves.livesLeft', { n: saveLivesLeft(g), max: saveLivesArr(g).length })">
+                    <span v-for="(full,i) in saveLivesArr(g)" :key="i" class="heart" :class="{ empty: !full }">
+                      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                    </span>
+                  </span>
+                  <span v-if="!g.pending" class="save-time"><span class="ei" v-html="ic('clock')"></span>{{ fmtTime(g.elapsed || 0) }}</span>
+                  <span class="save-when">{{ saveWhen(g) }}</span>
+                </span>
+              </span>
+            </button>
+            <button class="save-del" @click.stop="deleteSave(g)" :aria-label="t('saves.delete')" :title="t('saves.delete')">
+              <span class="ei" v-html="ic('trash')"></span>
+            </button>
+          </div>
+          <p v-if="!state.saves.length" class="saves-empty">{{ t('saves.empty') }}</p>
+        </div>
+        <button class="btn btn-primary" @click="closeSaves">{{ t('common.close') }}</button>
+      </div>
+    </div>
+
+    <div v-if="state.modal==='aiLearning'" class="modal-bg" @click.self="state.modal=null">
+      <div class="modal modal-learning">
+        <h3><span class="ei" v-html="ic('robot')"></span> {{ t('aiduel.learningTitle') }}</h3>
+        <p class="ai-hint">{{ t('aiduel.learningIntro', { need: cloneStatus().need }) }}</p>
+        <div class="learn-list">
+          <div v-if="!cloneStatus().ready" class="learn-row me">
+            <div class="learn-name">{{ t('aiduel.oppClone') }}</div>
+            <div class="learn-bar"><div class="learn-bar-fill" :style="{ width: Math.min(100, Math.round(cloneStatus().games / cloneStatus().need * 100)) + '%' }"></div></div>
+            <div class="learn-num">{{ cloneStatus().games }} / {{ cloneStatus().need }}</div>
+          </div>
+          <div v-for="fc in learningClones()" :key="fc.uid" class="learn-row">
+            <div class="learn-name">{{ fc.name }}</div>
+            <div class="learn-bar"><div class="learn-bar-fill" :style="{ width: Math.min(100, Math.round(fc.games / fc.need * 100)) + '%' }"></div></div>
+            <div class="learn-num">{{ fc.games }} / {{ fc.need }}</div>
+          </div>
+        </div>
+        <button class="btn btn-primary" @click="state.modal=null">{{ t('common.close') }}</button>
+      </div>
+    </div>
+
+    <div v-if="state.modal==='missions'" class="modal-bg" @click.self="state.modal=null">
+      <div class="modal modal-missions">
+        <h3><span class="ei" v-html="ic('flag')"></span> {{ t('missions.title') }}</h3>
+        <p class="missions-intro">{{ t('missions.intro') }}</p>
+        <div class="missions-body">
+          <div v-for="m in state.missions.list" :key="m.id" class="mission-card" :class="{ done: missionDone(m), claimed: missionClaimedUI(m) }">
+            <div class="mission-ic" v-html="ic(m.icon)"></div>
+            <div class="mission-main">
+              <div class="mission-name">{{ t('missions.m.' + m.id) }}</div>
+              <div class="mission-bar"><div class="mission-bar-fill" :style="{ width: Math.round(missionProgressVal(m) / m.target * 100) + '%' }"></div></div>
+              <div class="mission-sub">{{ missionProgressVal(m) }} / {{ m.target }} · <span class="ei" v-html="ic('coin')"></span> {{ m.reward }}</div>
+            </div>
+            <button v-if="missionClaimableUI(m)" class="btn btn-primary btn-sm mission-claim" @click="claimMissionReward(m.id)">{{ t('missions.claim') }}</button>
+            <span v-else-if="missionClaimedUI(m)" class="mission-check" :title="t('missions.done')"><span class="ei" v-html="ic('check')"></span></span>
+          </div>
+        </div>
+        <button class="btn btn-primary" @click="state.modal=null">{{ t('common.close') }}</button>
+      </div>
+    </div>
+
+    <!-- Geldverlauf: Transaktionshistorie (Einnahmen/Ausgaben/Geschenke). -->
+    <div v-if="state.walletLogOpen" class="modal-bg" @click.self="closeWalletLog">
+      <div class="modal modal-wallet-log">
+        <h3><span class="ei" v-html="ic('coin')"></span> {{ t('wallet.historyTitle') }}</h3>
+        <div class="wallet-log-balance">{{ t('wallet.total', { n: state.wallet.balance || 0 }) }}</div>
+        <p v-if="!state.walletLog.length" class="set-hint wallet-log-empty">{{ t('wallet.historyEmpty') }}</p>
+        <div v-else class="wallet-log">
+          <div v-for="(e,i) in state.walletLog" :key="i" class="wl-item">
+            <div class="wl-row" :class="[e.amount >= 0 ? 'plus' : 'minus', { expandable: walletEntryExpandable(e), open: state.walletLogExpanded===i }]"
+                 @click="walletEntryExpandable(e) && toggleWalletEntry(i)">
+              <div class="wl-main">
+                <span class="wl-reason">{{ walletReasonLabel(e.reason) }}<span v-if="walletEntryExpandable(e)" class="wl-caret">▾</span></span>
+                <span class="wl-date">{{ adminFmtDate(e.ts) }}</span>
+                <span v-if="walletEntryDetail(e)" class="wl-detail">{{ walletEntryDetail(e) }}</span>
+              </div>
+              <span class="wl-amount"><span class="ei" v-html="ic('coin')"></span> {{ e.amount >= 0 ? '+' : '' }}{{ e.amount }}</span>
+            </div>
+            <div v-if="state.walletLogExpanded===i && walletEntryExpandable(e)" class="wl-breakdown">
+              <div v-for="(f,fi) in walletEntryFactors(e)" :key="fi" class="wl-factor" :class="{ 'wl-factor-total': f.total }">
+                <span class="wl-fk">{{ f.k }}</span><span class="wl-fv">{{ f.v }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <button class="btn btn-primary" @click="closeWalletLog">{{ t('common.close') }}</button>
+      </div>
+    </div>
+
+    <div v-if="state.historyDetail" class="modal-bg" @click.self="closeHistoryDetail">
+      <div class="modal modal-history">
+        <h3><span class="ei" v-html="ic(DIFF_BY_ID[state.historyDetail.entry.difficulty]?.emoji)"></span> {{ t('difficulty.'+state.historyDetail.entry.difficulty) }} · {{ state.historyDetail.entry.dim.r }}×{{ state.historyDetail.entry.dim.c }}</h3>
+        <div class="board-wrap">
+          <div class="board" :style="historyGridStyle(state.historyDetail.puzzle)">
+            <div class="corner"></div>
+            <div v-for="c in state.historyDetail.puzzle.cols" :key="'hch'+c" class="hdr col-hdr">
+              <span class="tgt">{{ state.historyDetail.puzzle.colTargets[c-1] }}</span>
+            </div>
+            <template v-for="r in state.historyDetail.puzzle.rows" :key="'hr'+r">
+              <div class="hdr row-hdr">
+                <span class="tgt">{{ state.historyDetail.puzzle.rowTargets[r-1] }}</span>
+              </div>
+              <div v-for="c in state.historyDetail.puzzle.cols" :key="'h'+r+'-'+c"
+                   class="cell" :class="historyCellClasses(r-1,c-1)" :style="historyCellStyle(r-1,c-1)">
+                <span v-if="state.historyDetail.cellMeta[r-1][c-1].chip!=null" class="rchip">{{ state.historyDetail.cellMeta[r-1][c-1].chip }}</span>
+                <span class="cnum">{{ state.historyDetail.puzzle.values[r-1][c-1] }}</span>
+              </div>
+            </template>
+          </div>
+        </div>
+        <button class="btn btn-primary" @click="closeHistoryDetail">{{ t('common.close') }}</button>
+      </div>
+    </div>
+
+    <div v-if="state.modal==='confirm'" class="modal-bg" @click.self="confirmNo">
+      <div class="modal modal-sm">
+        <h3>{{ state.confirm?.title }}</h3>
+        <p class="confirm-msg">{{ state.confirm?.msg }}</p>
+        <div class="confirm-actions">
+          <button class="btn btn-ghost" @click="confirmNo">{{ t('common.cancel') }}</button>
+          <button class="btn btn-danger" @click="confirmYes">{{ t('common.yes') }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Solo → Coop: Einladungs-Modal (Code teilen / Freunde einladen), während
+         die Solo-Partie weiterläuft. Schließen lässt den Raum offen (Knopf im
+         Pausenmenü zeigt „Warten auf Beitritt"); Zurückziehen baut ihn ab. -->
+    <div v-if="state.modal==='soloInvite'" class="modal-bg" @click.self="state.modal=null">
+      <div class="modal">
+        <h3><span class="ei" v-html="ic('users')"></span> {{ t('soloInvite.title') }}</h3>
+        <template v-if="state.soloInvite.status==='connecting'">
+          <p class="confirm-msg">{{ t('soloInvite.connecting') }}</p>
+          <div class="loading-bar"><span></span></div>
+        </template>
+        <template v-else>
+          <!-- Vor dem ersten Beitritt: „läuft solange als Solo weiter". Nach der
+               Umwandlung / als Coop-Host: „teile den Code für weitere Mitspieler". -->
+          <p class="confirm-msg">{{ t(state.coop.active ? 'soloInvite.msgMore' : 'soloInvite.msg') }}</p>
+          <div class="coop-code-label">{{ t('coop.yourCode') }}</div>
+          <div class="coop-code">{{ inviteCode() }}</div>
+          <p class="coop-subtext">{{ t('soloInvite.hint') }}</p>
+          <button v-if="state.account.status==='in'" class="btn btn-ghost btn-sm" @click="openInvitePicker"><span class="ei" v-html="ic('users')"></span> {{ t('coop.inviteFriends') }}</button>
+          <!-- Die Freunde-Auswahl erscheint als Vollbild-Modal ÜBER diesem Fenster
+               (siehe .invite-modal weiter unten). -->
+          <div class="confirm-actions">
+            <!-- „Zurückziehen" nur solange noch niemand beigetreten ist (pre-join).
+                 In der laufenden Coop-Runde gibt es nichts zurückzuziehen. -->
+            <button v-if="state.soloInvite.status==='hosting'" class="btn btn-ghost" @click="cancelSoloInvite()">{{ t('soloInvite.cancel') }}</button>
+            <button class="btn btn-primary" @click="state.modal=null">{{ t('common.close') }}</button>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- Freunde in die Lobby einladen — EIN Vollbild-Modal für ALLE Einstiegspunkte
+         (Coop-/Race-/Team-Lobby-Host, In-Game-Pause-Solo-Einladung). Liegt bewusst
+         NACH dem soloInvite-Modal im DOM, damit es (gleiche z-index-Ebene) darüber
+         stapelt. Die Freundesliste ist hier voll scrollbar statt inline am Button. -->
+    <div v-if="state.coop.invitePickerOpen" class="modal-bg" @click.self="closeInvitePicker">
+      <div class="modal invite-modal">
+        <header class="invite-modal-head">
+          <h3><span class="ei" v-html="ic('users')"></span> {{ t('coop.inviteFriends') }}</h3>
+          <button class="icon-btn" @click="closeInvitePicker" :aria-label="t('common.close')"><span class="ico-wrap" v-html="ic('close')"></span></button>
+        </header>
+        <p v-if="!state.friends.list.length" class="set-hint">{{ t('friends.empty') }}</p>
+        <div v-else class="invite-list">
+          <div v-for="fr in friendsSorted()" :key="fr.uid" class="invite-row">
+            <span class="friends-dot" :class="{ online: friendOnline(fr.uid), ingame: friendInGame(fr.uid) }"></span>
+            <span class="invite-name">{{ fr.username || fr.uid }}</span>
+            <!-- Bereits im Raum → „Beigetreten" (fix, nicht erneut einladbar). -->
+            <span v-if="friendInRoom(fr)" class="invite-joined"><span class="ei" v-html="ic('check')"></span> {{ t('coop.inviteJoined') }}</span>
+            <!-- Offene Einladung → „Zurückziehen" (löscht sie live beim Freund). -->
+            <button v-else-if="state.coop.invitedUids.includes(fr.uid)" class="btn btn-ghost btn-sm invite-withdraw" @click="withdrawLobbyInvite(fr)">{{ t('coop.inviteWithdraw') }}</button>
+            <button v-else class="btn btn-primary btn-sm" @click="inviteFriendToLobby(fr)">{{ t('coop.invite') }}</button>
+          </div>
+        </div>
+        <button class="btn btn-ghost" @click="closeInvitePicker">{{ t('common.close') }}</button>
+      </div>
+    </div>
+
+    <div v-if="state.updateCheck === 'found'" class="modal-bg" @click.self="dismissUpdateDialog">
+      <div class="modal modal-sm">
+        <h3>{{ t('update.foundTitle') }}</h3>
+        <p class="confirm-msg">{{ t('update.foundMsg') }}</p>
+        <div class="confirm-actions">
+          <button class="btn btn-ghost" @click="dismissUpdateDialog">{{ t('update.later') }}</button>
+          <button class="btn btn-primary" @click="restartForUpdate">{{ t('update.restart') }}</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="state.showWhatsNew" class="modal-bg">
+      <div class="modal">
+        <div class="whatsnew-badge">{{ t('whatsnew.badge') }}</div>
+        <h3>{{ t('whatsnew.title', { version: CHANGELOG[0]?.version }) }}</h3>
+        <!-- Alle Versionen seit der zuletzt gesehenen (neueste oben, scrollbar). Bei
+             nur einer neuen Version entfällt die Versions-Kopfzeile (eine einfache Liste). -->
+        <ul v-if="whatsNewEntries.length <= 1" class="whatsnew"><li v-for="(it,i) in (whatsNewEntries[0]?.changes || [])" :key="i">{{ it }}</li></ul>
+        <div v-else class="changelog whatsnew-multi">
+          <div v-for="e in whatsNewEntries" :key="e.version" class="cl-entry">
+            <div class="cl-head"><b>v{{ e.version }}</b><span>{{ e.date }}</span></div>
+            <ul><li v-for="(it,i) in e.changes" :key="i">{{ it }}</li></ul>
+          </div>
+        </div>
+        <button class="btn btn-primary" @click="dismissWhatsNew">{{ t('whatsnew.start') }}</button>
+      </div>
+    </div>
+
+    <!-- Feier-Modal: dynamischer Skin zur 1.0 freigeschaltet (erst NACH „Was ist neu",
+         damit nicht zwei Modals übereinander liegen). -->
+    <div v-if="state.skinJustUnlocked && !state.showWhatsNew" class="modal-bg">
+      <div class="modal skin-unlock-modal">
+        <div class="whatsnew-badge">{{ t('skin.unlockBadge') }}</div>
+        <div class="skin-unlock-preview board" :class="skinPreviewClasses" :style="skinPreviewVars">
+          <div class="cell kept coop-mark" :style="{ '--markcol': state.settings.coopMyColor }"><span class="cnum">1</span></div>
+        </div>
+        <h3>{{ t('skin.unlockTitle') }}</h3>
+        <p class="result-msg">{{ t('skin.unlockBody') }}</p>
+        <button class="btn btn-primary" @click="openSkinEditor">{{ t('skin.unlockCustomize') }}</button>
+        <button class="btn btn-ghost" @click="dismissSkinUnlock">{{ t('skin.unlockLater') }}</button>
+      </div>
+    </div>
+
+    <!-- ══ PRESTIGE: verdiente Abzeichen (nicht kaufbar) ══ -->
+    <div v-if="state.prestigeOpen" class="modal-bg" @click.self="closePrestige">
+      <div class="modal prestige-modal">
+        <header class="friends-head">
+          <h3><span class="ico-wrap" v-html="ic('medal')"></span> {{ t('prestige.title') }}</h3>
+          <button class="icon-btn" @click="closePrestige" :aria-label="t('common.close')"><span class="ico-wrap" v-html="ic('close')"></span></button>
+        </header>
+        <p class="set-hint prestige-intro">{{ t('prestige.intro') }}</p>
+        <div class="prestige-list">
+          <!-- Krönung: „Großmeister" — freigeschaltet, wenn ALLE 12 Kategorien Legendär sind.
+               Liegt IM Scrollbereich (erstes Element), damit es die Liste nicht verkürzt. -->
+          <div class="prestige-master" :class="{ unlocked: masterInfo().unlocked }">
+            <div class="prestige-master-medal" v-html="badgeSvg(MASTER_BADGE, true)"></div>
+            <div class="prestige-master-info">
+              <div class="prestige-master-nm"><b class="pm-title">{{ t('prestige.master.title') }}</b><span class="prestige-master-tag">{{ t('prestige.master.tag') }}</span></div>
+              <div class="prestige-bar" :class="{ done: masterInfo().unlocked }"><i :style="{ width: Math.round(masterInfo().maxed/masterInfo().total*100)+'%' }"></i></div>
+              <div class="prestige-master-prog">{{ t('prestige.master.progress', { n: masterInfo().maxed, total: masterInfo().total }) }}</div>
+              <button v-if="masterInfo().unlocked" class="btn btn-sm prestige-master-btn" :class="{ 'btn-ghost': isMasterEquipped(), 'btn-primary': !isMasterEquipped() }" @click="isMasterEquipped() ? unequipBadge() : equipMaster()">
+                {{ isMasterEquipped() ? t('prestige.unequip') : t('prestige.master.equip') }}
+              </button>
+            </div>
+          </div>
+          <div v-for="p in prestigeList()" :key="p.sym" class="prestige-cat" :class="{ locked: p.tier===0 }">
+            <div class="prestige-lead">
+              <div class="badge-medal-card prestige-cat-medal" :class="{ dim: p.tier===0 }" v-html="badgeSvg(p.sym + '-' + Math.max(1,p.tier))"></div>
+              <div class="prestige-cat-info">
+                <div class="prestige-cat-nm"><b>{{ p.name }}</b><span class="prestige-tier-pill" :class="'t'+p.tier">{{ prestigeTierName(p.tier) }}</span></div>
+                <div class="prestige-metric">{{ p.metricLabel }}: <b>{{ p.value }}</b></div>
+                <div class="prestige-bar" :class="{ done: p.next==null }"><i :style="{ width: Math.round(p.frac*100)+'%' }"></i></div>
+                <div class="prestige-next">{{ p.next==null ? t('prestige.maxed') : t('prestige.toNext', { n: p.next - p.value, tier: prestigeTierName(p.tier+1) }) }}</div>
+              </div>
+            </div>
+            <!-- Vier Stufen: freigeschaltete anklickbar zum Ausrüsten, gesperrte ausgegraut -->
+            <div class="prestige-tiers">
+              <button v-for="ti in 4" :key="ti" class="prestige-tier-btn"
+                :class="{ unlocked: ti<=p.tier, equipped: isBadgeEquipped(p.sym, ti) }"
+                :disabled="ti>p.tier"
+                @click="equipBadge(p.sym, ti)"
+                :aria-label="prestigeTierName(ti)" :title="prestigeTierName(ti)">
+                <span class="prestige-tier-medal" v-html="badgeSvg(p.sym + '-' + ti)"></span>
+                <span v-if="isBadgeEquipped(p.sym, ti)" class="prestige-eq-dot"><span class="ico-wrap" v-html="ic('check')"></span></span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <button v-if="myBadge()" class="btn btn-ghost prestige-unequip" @click="unequipBadge">{{ t('prestige.unequip') }}</button>
+      </div>
+    </div>
+
+    <!-- „Großmeister" freigeschaltet — einmalige Krönungs-Feier (alle 12 Kategorien Legendär) -->
+    <div v-if="state.masterUnlock" class="modal-bg master-unlock-bg">
+      <div class="modal master-unlock-modal">
+        <div class="master-unlock-medal" v-html="badgeSvg(MASTER_BADGE, true)"></div>
+        <div class="master-unlock-title">{{ t('prestige.master.unlockTitle') }}</div>
+        <div class="master-unlock-name">{{ t('prestige.master.title') }}</div>
+        <p class="master-unlock-msg">{{ t('prestige.master.unlockMsg') }}</p>
+        <button class="btn btn-primary" @click="dismissMasterUnlock">{{ t('prestige.master.equipWear') }}</button>
+      </div>
+    </div>
+
+    <!-- Prestige-Stufen-Aufstieg: Intensität skaliert mit der Stufe (t1..t4) -->
+    <div v-if="state.prestigeUnlock" class="modal-bg prestige-unlock-bg" @click.self="dismissPrestigeUnlock">
+      <div class="modal prestige-unlock-modal" :class="'pu-t'+state.prestigeUnlock.tier">
+        <div class="pu-rays" aria-hidden="true"></div>
+        <div class="pu-medal" v-html="badgeSvg(state.prestigeUnlock.sym + '-' + state.prestigeUnlock.tier, true)"></div>
+        <div class="pu-kicker">{{ t('prestige.unlock.kicker') }}</div>
+        <div class="pu-name">{{ prestigeUnlockName() }}</div>
+        <div class="pu-tier" :class="'t'+state.prestigeUnlock.tier">{{ t('prestige.tier.t'+state.prestigeUnlock.tier) }}</div>
+        <p class="pu-msg">{{ t('prestige.unlock.msg'+state.prestigeUnlock.tier) }}</p>
+        <p v-if="state.prestigeUnlock.more" class="pu-more">{{ t('prestige.unlock.more', { n: state.prestigeUnlock.more }) }}</p>
+        <button class="btn btn-primary" @click="dismissPrestigeUnlock">{{ t('prestige.unlock.cta') }}</button>
+      </div>
+    </div>
+
+    <!-- ══ Multiplayer-Chat (Coop / Race / FFA / Team) ══ -->
+    <div v-if="state.chat.open" class="modal-bg chat-bg" @click.self="closeChat">
+      <div class="modal chat-modal" :style="state.chat.kb ? { marginBottom: state.chat.kb + 'px', maxHeight: 'calc(100dvh - ' + (state.chat.kb + 24) + 'px)' } : null">
+        <header class="chat-head">
+          <h3><span class="ico-wrap" v-html="ic('chat')"></span> {{ t('chat.title') }}</h3>
+          <button class="icon-btn" @click="closeChat" :aria-label="t('common.close')"><span class="ico-wrap" v-html="ic('close')"></span></button>
+        </header>
+        <div class="chat-msgs">
+          <p v-if="!state.chat.messages.length" class="set-hint chat-empty">{{ t('chat.empty') }}</p>
+          <div v-for="(m,i) in state.chat.messages" :key="i" class="chat-msg" :class="{ mine: m.self }">
+            <div v-if="!m.self" class="chat-sender">
+              <span v-if="badgeShown(m.badge)" class="badge-medal-inline chat-badge" v-html="badgeSvg(m.badge)"></span>
+              <span class="chat-name" :style="m.color ? { color: m.color } : null">{{ m.name }}</span>
+            </div>
+            <div class="chat-bubble">{{ m.text }}</div>
+          </div>
+          <!-- „… schreibt"-Blase (à la WhatsApp): erscheint live, solange ein
+               Mitspieler tippt — mit Name in Spielerfarbe + wandernden Punkten. -->
+          <div v-for="p in typingPlayers()" :key="'tp-'+p.id" class="chat-msg chat-typing-row" :aria-label="t('chat.typing', { name: p.name })">
+            <div class="chat-sender"><span class="chat-name" :style="p.color ? { color: p.color } : null">{{ p.name }}</span></div>
+            <div class="chat-bubble chat-typing-bubble" :style="{ '--tp-col': p.color || 'currentColor' }"><i></i><i></i><i></i></div>
+          </div>
+        </div>
+        <form class="chat-input-row" @submit.prevent="sendChat">
+          <input class="text-input chat-input" v-model="state.chat.draft" @input="onChatTyping" :maxlength="300" :placeholder="t('chat.placeholder')" autocomplete="off" />
+          <button type="submit" class="btn btn-primary chat-send" :disabled="!state.chat.draft.trim()" :aria-label="t('chat.send')" :title="t('chat.send')"><span class="ico-wrap" v-html="ic('send')"></span></button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Streak verlängert/gestartet — feuriger Feier-Screen nach dem ersten
+         abgeschlossenen Spiel des Tages (analog zum "Gewonnen"-Screen). -->
+    <div v-if="state.streakExtended" class="modal-bg">
+      <div class="modal streak-modal extended">
+        <div class="streak-emoji"><span class="ei" v-html="ic('flame')"></span></div>
+        <h3 class="streak-title">{{ t(state.streakExtended.continued ? 'streak.extendedTitle' : 'streak.startedTitle') }}</h3>
+        <div class="streak-count"><b>{{ state.streakExtended.current }}</b><small>{{ t(state.streakExtended.current === 1 ? 'streak.dayLabel' : 'streak.daysLabel') }}</small></div>
+        <div v-if="state.streakExtended.current > 0" class="streak-coin-bonus"><span class="ei" v-html="ic('coin')"></span> {{ t('streak.coinBonus', { pct: streakBonusPct(state.streakExtended.current) }) }}</div>
+        <div v-if="state.streakExtended.isNewRecord" class="highscore-badge">{{ t('streak.recordBadge') }}</div>
+        <p class="streak-msg">
+          {{ state.streakExtended.isNewRecord
+              ? t('streak.recordPraise')
+              : t('streak.bestLine', { best: state.streakExtended.best }) }}
+        </p>
+        <button class="btn btn-primary" @click="dismissStreakExtended">{{ t('streak.continue') }}</button>
+      </div>
+    </div>
+
+    <!-- Streak verloren — gedämpfter Hinweis beim App-Start, wenn ein Tag fehlte. -->
+    <div v-if="state.streakLostNotice" class="modal-bg">
+      <div class="modal streak-modal lost">
+        <div class="streak-emoji"><span class="ei" v-html="ic('heart-broken')"></span></div>
+        <h3 class="streak-title">{{ t('streak.lostTitle') }}</h3>
+        <p class="streak-msg">{{ t('streak.lostBody', { best: state.streak.bestStreak }) }}</p>
+        <button class="btn btn-primary" @click="dismissStreakLostNotice">{{ t('common.ok') }}</button>
+      </div>
+    </div>
+  </div>
+  `,
+};
+
+// Methoden, die das Template über setup() referenziert
+function toggleTool() {
+  state.tool = state.tool === 'pen' ? 'eraser' : 'pen';
+  state.settings.confirmTool = state.tool;
+  if (state.settings.sfxToolSwitch) Music.sfxToolSwitch();
+}
+
+// ─── Desktop-Tastenkürzel (Werkzeug wechseln) ─────────────────────────────────
+// Eine frei belegbare Taste (Standard „Tab") schaltet WÄHREND einer Partie
+// zwischen Einkreisen und Radiergummi um — praktisch am Desktop, ohne die Maus
+// zum Werkzeug-Button zu bewegen. WICHTIG: keydown wird preventDefault()et, damit
+// z.B. Tab nicht den Browser-Fokus verschiebt, sondern im Spiel greift.
+function normKey(k) { return typeof k === 'string' && k.length === 1 ? k.toLowerCase() : k; }
+// Menschenlesbares Label einer Taste (für die Anzeige in den Einstellungen).
+function desktopKeyLabel(k) {
+  if (!k) return t('settings.desktop.off');
+  if (k === ' ' || k === 'Spacebar') return t('settings.desktop.keySpace');
+  if (k.length === 1) return k.toUpperCase();
+  return k; // Tab, Enter, ArrowLeft, …
+}
+function startDesktopKeyCapture() { state.desktopKeyCapture = true; }
+function cancelDesktopKeyCapture() { state.desktopKeyCapture = false; }
+function clearDesktopToolKey() { setSetting('desktopToolKey', ''); state.desktopKeyCapture = false; }
+// Ist gerade eine „echte" laufende Partie (nicht Pause/Ende/Lobby)?
+function inActiveRound() {
+  return state.screen === 'game' && state.status === 'playing' && !state.paused && !state.coop.awaitingStart;
+}
+// Globaler keydown: erst Belegungs-Modus, sonst Werkzeug-Umschalt-Taste.
+function onDesktopKeydown(e) {
+  // Belegen: nächster Tastendruck wird die neue Taste (Escape bricht ab).
+  if (state.desktopKeyCapture) {
+    e.preventDefault();
+    if (e.key !== 'Escape') { setSetting('desktopToolKey', normKey(e.key)); log('app', 'Desktop-Werkzeugtaste belegt', { key: e.key }); }
+    state.desktopKeyCapture = false;
+    return;
+  }
+  const bind = state.settings.desktopToolKey;
+  if (!bind || !inActiveRound()) return;
+  // Nicht in Textfeldern (Chat/Username/Code) kapern.
+  const el = e.target;
+  const tag = (el && el.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || (el && el.isContentEditable)) return;
+  if (normKey(e.key) !== bind) return;
+  e.preventDefault();
+  toggleTool();
+}
+
+// Liefert, welche Seiten dieser Zelle zum ÄUSSEREN Rand einer gerade fertig
+// gewordenen Reihe/Spalte/Cage gehören (für den Fertig-Puls, Punkt 3: nur die
+// äußersten Ränder der ganzen Struktur leuchten, keine Querstriche dazwischen).
+const NO_PULSE_EDGES = { t: false, b: false, l: false, r: false };
+const anyPulseActive = computed(() => Object.keys(state.justResolved).length > 0);
+function pulseEdges(r, c) {
+  if (!anyPulseActive.value) return NO_PULSE_EDGES;   // Normalfall: kein Puls → 0 Lookups
+  const p = state.puzzle;
+  let t = false, b = false, l = false, rr = false;
+  if (state.justResolved[`row-${r}`]) { t = true; b = true; if (c === 0) l = true; if (c === p.cols - 1) rr = true; }
+  if (state.justResolved[`col-${c}`]) { l = true; rr = true; if (r === 0) t = true; if (r === p.rows - 1) b = true; }
+  const region = state.cellMeta[r][c].region;
+  if (region >= 0 && state.justResolved[`region-${region}`]) {
+    const e = state.cellMeta[r][c].edges;
+    if (e.t) t = true; if (e.b) b = true; if (e.l) l = true; if (e.r) rr = true;
+  }
+  return { t, b, l, r: rr };
+}
+
+// Aria-Labels je Zelle EINMAL pro Zug/Sprachwechsel berechnen statt ×169 bei
+// JEDEM Render (die t()-Interpolation war ein messbarer Teil des Tick-Renders
+// auf großen Brettern). Computed trackt state.marks + i18n-Locale.
+const cellAriaLabels = computed(() => {
+  const p = state.puzzle; if (!p) return [];
+  const out = new Array(p.rows);
+  for (let r = 0; r < p.rows; r++) {
+    out[r] = new Array(p.cols);
+    for (let c = 0; c < p.cols; c++) {
+      const mk = state.marks[r][c];
+      const status = mk === 'kept' ? t('a11y.cellKept') : mk === 'removed' ? t('a11y.cellRemoved') : t('a11y.cellUnmarked');
+      out[r][c] = t('a11y.cellLabel', { row: r + 1, col: c + 1, value: p.values[r][c], status });
+    }
+  }
+  return out;
+});
+function cellAriaLabel(r, c) { return (cellAriaLabels.value[r] && cellAriaLabels.value[r][c]) || ''; }
+function cellClasses(r, c) {
+  const m = state.cellMeta[r][c];
+  const mk = state.marks[r][c];
+  // Cage-Färbung nur solange die Cage NICHT aufgelöst ist (dann verschwindet sie).
+  const colored = m.region >= 0 && !regionResolvedR(m.region);
+  const pe = pulseEdges(r, c);
+  return {
+    kept: mk === 'kept', removed: mk === 'removed',
+    region: colored,
+    flash: !!state.flash[`${r}-${c}`],
+    hinted: m.hint,
+    hintmark: m.hintMark,
+    'pulse-edge': pe.t || pe.b || pe.l || pe.r,
+    'region-pulse': m.region >= 0 && !!state.justResolved[`region-${m.region}`],
+    'row-pulse': !!state.justResolved[`row-${r}`],
+    'col-pulse': !!state.justResolved[`col-${c}`],
+    strike: mk === 'removed' && state.settings.eraseStyle === 'strike',
+    'coop-mark': !!state.markedBy[r][c],
+    // EIGENE Markierung: im Multiplayer behaelt sie den eigenen Skin (Regenbogen,
+    // Preset, Verlauf) — nur die Zellen der MITSPIELER fallen auf deren zugewiesene
+    // Farbe zurueck, damit erkennbar bleibt, wer was gesetzt hat (s. .mp-colors).
+    mine: !!state.markedBy[r][c] && state.markedBy[r][c] === (state.coop.myId || LOCAL_PLAYER_ID),
+    'coop-mark-removed': state.coop.active && !!state.markedBy[r][c] && mk === 'removed' && state.settings.coopRemovedOutline,
+    'training-highlight': state.isTrainingGame && state.trainingStep?.r === r && state.trainingStep?.c === c,
+    'hint-group': inHintGroup(r, c),
+  };
+}
+// Fokus-Zellen des aktuellen Tutor-Schritts als Set (r*1000+c) — cached
+// computed, damit inHintGroup pro Zelle O(1) bleibt (Brett-Render-Kernregel).
+const tutorFocusSet = computed(() => {
+  const tt = state.hintTutor;
+  if (!tt) return null;
+  const s = tt.steps[tt.i];
+  return new Set(s.cells.map(([r, c]) => r * 1000 + c));
+});
+function inHintGroup(r, c) {
+  const set = tutorFocusSet.value;
+  return !!set && set.has(r * 1000 + c);
+}
+// Style-Objekte je Zelle CACHEN und bei unveränderten Eingaben DIESELBE Referenz
+// zurückgeben: Vue patcht :style nur, wenn sich die Referenz/Werte ändern — bei
+// einem neuen Objekt pro Render setzte es dagegen JEDE CSS-Custom-Property
+// (--rc-*/--markcol) für ALLE ~169 Zellen bei JEDEM Render erneut (setProperty
+// war im Profil ein Top-Posten des Tick-Renders auf großen Brettern).
+let cellStyleCache = [];
+function cellStyle(r, c) {
+  const m = state.cellMeta[r][c];
+  const cv = m.color ? regionColorVars.value.get(colorKey(m.color)) : null;
+  const who = state.markedBy[r][c];
+  const col = who ? (who === LOCAL_PLAYER_ID ? state.settings.coopMyColor : playerColor(who)) : null;
+  const pe = pulseEdges(r, c);
+  const key = `${cv ? cv['--rc-h'] + cv['--rc-s'] + cv['--rc-l'] : ''}|${col || ''}|${pe.t ? 1 : 0}${pe.b ? 1 : 0}${pe.l ? 1 : 0}${pe.r ? 1 : 0}`;
+  const row = cellStyleCache[r] || (cellStyleCache[r] = []);
+  const hit = row[c];
+  if (hit && hit.key === key) return hit.style;
+  const st = { fontSize: 'var(--fs)' };
+  if (cv) { st['--rc-h'] = cv['--rc-h']; st['--rc-s'] = cv['--rc-s']; st['--rc-l'] = cv['--rc-l']; st['--rc-ink'] = cv['--rc-ink']; }
+  if (col) st['--markcol'] = col;
+  if (pe.t) st['--pt'] = '3px';
+  if (pe.b) st['--pb'] = '3px';
+  if (pe.l) st['--pl'] = '3px';
+  if (pe.r) st['--pr'] = '3px';
+  row[c] = { key, style: st };
+  return st;
+}
+
+// ─── BOOTSTRAP ────────────────────────────────────────────────────────────────
+const app = createApp(App);
+app.mount('#app');
+// Debug-Hook nur lokal (nie auf der echten Domain aktiv). handleCoopMsg ist
+// hier zusätzlich exponiert, damit E2E-Tests einen Team-vs-Team-TEAM_DONE
+// vom "Gegner-Team" simulieren können, ohne einen echten zweiten Firebase-
+// Client zu brauchen. getProgressThrottle() exponiert die beiden internen
+// Throttle-Zeitstempel, damit E2E-Tests den Sofort-Push aus registerMistake()
+// nachweisen können, ohne einen echten Firebase-Schreibzugriff zu brauchen
+// (Coop.setTeamProgress/setRaceProgress sind selbst nicht spionierbar, da
+// `import * as Coop` ein eingefrorenes Modul-Namespace-Objekt liefert).
+if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') window.__cns = { state, onCellTap, isSolved, handleCoopMsg, handleCoopConnection, coopSend, upsertPlayer, removePlayer, onSoloInviteRoomOpen, onSoloInviteJoin, cellStyle, cellClasses, Music, launchWinFx, toggleTool, useHint, // KI-Duell-Testhaken: spult den Bot bis 100 % vor bzw. lässt ihn ausscheiden,
+  // damit E2E beide Match-Enden ohne Echtzeit-Warten prüfen kann.
+  aiBotFastForward: () => {
+    if (!botState) return false;
+    stopBot();
+    let guard = 0;
+    while (botPct(botState) < 100 && guard++ < 20000) {
+      const a = botNextAction(botState);
+      if (a.kind === 'done') break;
+      if (a.kind === 'mistake') continue;   // Fehler ignorieren, wir wollen den Durchlauf
+      botApplyAction(botState, a);
+      if (botPct(botState) >= 100) break;
+    }
+    const opp = state.race.opponents[0];
+    if (opp) opp.pct = botPct(botState);
+    state.race.opponentPct = botPct(botState);
+    onBotSolved();
+    return true;
+  },
+  aiBotEliminate: () => {
+    if (!botState) return false;
+    stopBot();
+    botState.lives = 0;
+    botState.mistakes = 3;
+    onBotEliminated();
+    return true;
+  },
+  boardRenders: () => boardRenderCount, getProgressThrottle: () => ({ team: teamProgressThrottle, race: raceProgressThrottle }) };
+
+nextTick(() => {
+  const splash = document.getElementById('splash');
+  if (!splash) return;
+  const remaining = Math.max(0, 1200 - (Date.now() - APP_START));
+  setTimeout(() => {
+    splash.classList.add('fade-out');
+    setTimeout(() => { if (splash.parentNode) splash.remove(); }, 450);
+  }, remaining);
+});
+
+// Hintergrund-Gnadenfrist: solange die Coop-Lobby/-Session in der RTDB noch
+// existiert (siehe COOP_SESSION_TTL_MS, storage.js), bleibt der eigene Platz
+// nach Rückkehr aus dem Hintergrund erhalten -- ensurePresence() heilt nur den
+// eigenen players/$uid-Eintrag, ohne Listener neu anzuhängen (warmer Fall,
+// JS-Kontext lief im Hintergrund weiter). Der kalte Fall (JS-Kontext verloren,
+// z.B. App aus dem Speicher entfernt) läuft stattdessen über den "Coop
+// fortsetzen"-Button (resumeCoopGame()/Coop.rejoin()) beim nächsten App-Start.
+window.addEventListener('pagehide', () => { persistGame(); if (state.account.status === 'in') Account.syncNow(); });
+// iOS-PWA-Schwarzbild-Prävention: Standalone-PWAs zeigen nach einem Kaltstart /
+// Wiederkehren aus dem Hintergrund (das iOS-System killt die PWA aggressiv —
+// im Diagnoseprotokoll massenhaft `pagehide persisted:false` + Neustarts) oft
+// ein SCHWARZES, nicht neu gezeichnetes WebView, bis irgendetwas den Compositor
+// zum Neuzeichnen zwingt (z.B. eine Scroll-/Style-Änderung). Symptom bei uns:
+// „der Beitretende sieht (nach dem App-Wechsel zum Einladen) alles schwarz".
+// Ein kurzer Opacity-Stups (1 → 0.999 → 1) erzwingt genau dieses Neuzeichnen,
+// OHNE einen Containing-Block für die `position:fixed`-Vollbild-Hintergründe zu
+// erzeugen (das täte `transform`/`filter`, nicht aber `opacity`). Rein additiv,
+// unsichtbar, nur bei Sichtbarwerden (kein Per-Frame-Kosten).
+let repaintNudgeScheduled = false;
+function nudgeRepaint(reason) {
+  if (repaintNudgeScheduled) return;
+  repaintNudgeScheduled = true;
+  requestAnimationFrame(() => {
+    const el = document.querySelector('.app') || document.body;
+    if (el) {
+      el.style.opacity = '0.999';
+      void el.offsetHeight;                       // Reflow erzwingen
+      requestAnimationFrame(() => { el.style.opacity = ''; repaintNudgeScheduled = false; });
+    } else { repaintNudgeScheduled = false; }
+  });
+  log('app', 'Repaint-Stups (iOS-Schwarzbild-Prävention)', { reason });
+}
+window.addEventListener('pageshow', (e) => nudgeRepaint(e && e.persisted ? 'pageshow-bfcache' : 'pageshow'));
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    pauseGame();
+    persistGame();
+    if (state.account.status === 'in') Account.syncNow();  // beim Schließen/Wegwischen sofort in die Cloud sichern
+  } else if (document.visibilityState === 'visible') {
+    nudgeRepaint('visible');  // ggf. schwarzes WebView nach Rückkehr neu zeichnen
+    // Der Browser löst den Wake Lock beim Verstecken → im Spiel neu anfordern,
+    // damit der Bildschirm weiter wach bleibt und die Coop-Verbindung hält.
+    if (state.screen === 'game') requestWakeLock();
+    if (state.coop.active) Coop.ensurePresence({ name: state.settings.coopName, color: state.settings.coopMyColor, role: state.coop.role });
+    // Beim Zurückkehren ZUERST die Aktivspiel-Session abgleichen (statt blind
+    // hochzuladen — das überschrieb sonst einen neueren Fremdstand). Erst danach
+    // die übrigen Nutzdaten sichern (doSyncNow hat einen eigenen Fremd-Schutz).
+    // Außerdem sofort die eigene Präsenz auffrischen: der Heartbeat pausierte im
+    // Hintergrund, ohne diesen Push liefe das eigene lastActive kurz nach der
+    // Rückkehr ab und Freunde sähen einen fälschlich-offline-Flacker.
+    state.friends.now = Date.now();
+    if (state.account.status === 'in') { pushPresence(); reconcileSession().then(() => doSyncNow()); }
+  }
+});
+
+// Der Service Worker dient ausschließlich dem Offline-Caching — innerhalb einer
+// nativen Capacitor-App gibt es dieses Konzept nicht (Updates laufen über
+// Store-Binaries), daher dort gar nicht erst registrieren.
+//
+// BEWUSST KEIN AUTOMATISCHER Laufzeit-Update-Flow: kein zyklisches
+// reg.update(), keine ungefragte „Update verfügbar"-Erkennung. Ein neues
+// Deployment installiert der Browser im Hintergrund; da sw.js beim install
+// NICHT skipWaiting() ruft, übernimmt der neue Worker erst beim nächsten
+// Kaltstart — der Nutzer wird nie mitten im Spiel neu geladen. EINZIGE
+// Ausnahme ist die MANUELLE Update-Prüfung (checkForUpdate, Klick auf die
+// Version im Hauptmenü): sie stößt reg.update() explizit an und aktiviert
+// einen wartenden Worker nur nach Bestätigung im Neustart-Dialog.
+if ('serviceWorker' in navigator && !(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js')
+      .then(() => log('sw', `Service Worker registriert`))
+      .catch(e => log('sw', `Service-Worker-Registrierung fehlgeschlagen`, e));
+  });
+}
