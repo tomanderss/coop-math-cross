@@ -177,14 +177,34 @@ test.describe('big numbers mode', () => {
     await page.waitForFunction(() => window.__cns && window.__cns.state.puzzle && !window.__cns.state.generating);
 
     // Der Zahlenraum ist deutlich größer als im Normalspiel, Puzzle ist markiert.
-    const info = await page.evaluate(() => {
+    // Geprüft wird die HARTE Zusage des Modus: JEDER Operand liegt über der
+    // Untergrenze des großen Zahlenraums (minOperand). Ein blosses „irgendein
+    // Wert ist größer als 20" war eine Wette auf den Zufall der Runde — bei
+    // einer kleinen 4×4-Aufgabe konnten alle Werte darunter bleiben und der
+    // Test fiel gelegentlich ohne echten Fehler um.
+    const info = await page.evaluate(async () => {
+      const [{ eqCells }, { genOptionsFor }] = await Promise.all([import('/js/model.js'), import('/js/config.js')]);
       const p = window.__cns.state.puzzle;
-      let max = 0;
+      const min = genOptionsFor('sehrleicht', { bigNumbers: true }).minOperand;
+      let kleinsterOperand = Infinity, max = 0;
       for (const row of p.slots) for (const sl of row) if (sl) max = Math.max(max, sl.v);
-      return { big: p.bigNumbers, max };
+      // ERGEBNIS-Zellen ausnehmen: ein Ergebnis darf klein sein (25 − 17 = 8),
+      // und im Kreuzwort ist es oft zugleich Operand der kreuzenden Rechnung.
+      const ergebnis = new Set();
+      for (const eq of p.equations) { const cs = eqCells(eq); const [r, c] = cs[cs.length - 1]; ergebnis.add(r + ':' + c); }
+      for (const eq of p.equations) {
+        const cells = eqCells(eq);
+        for (let i = 0; i < cells.length - 1; i++) {
+          const [r, c] = cells[i];
+          if (ergebnis.has(r + ':' + c)) continue;
+          kleinsterOperand = Math.min(kleinsterOperand, p.slots[r][c].v);
+        }
+      }
+      return { big: p.bigNumbers, max, kleinsterOperand, min };
     });
     expect(info.big).toBe(true);
-    expect(info.max).toBeGreaterThan(20);
+    expect(info.min).toBeGreaterThan(1);                       // der Modus hebt die Untergrenze überhaupt an
+    expect(info.kleinsterOperand).toBeGreaterThanOrEqual(info.min);
     await expect(page.locator('.board.big-num')).toBeVisible();
 
     await solveActivePuzzle(page);

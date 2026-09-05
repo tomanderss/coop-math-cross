@@ -158,7 +158,25 @@ test.describe('Reichweite beim Ziehen', () => {
     await startNewGame(page, 'mittel');
     await page.evaluate(() => window.__cns.setSetting('dragScale', 3));
     const lift = await page.evaluate(() => window.__cns.dragLift);
-    const target = await page.evaluate(() => window.__cns.firstBlank());
+    // BEWUSST die vom Vorrat am weitesten entfernte Lücke: darum geht es hier —
+    // das andere Ende des Bretts mit einer kurzen Bewegung erreichen. Eine nahe
+    // Lücke bräuchte bei Faktor 3 einen Zeigerweg unter der Zug-Schwelle, der
+    // Zug würde also gar nicht erst beginnen.
+    const target = await page.evaluate(() => {
+      const s = window.__cns.state, p = s.puzzle;
+      const tray = document.querySelector('.tray').getBoundingClientRect();
+      let best = null;
+      for (let r = 0; r < p.rows; r++) for (let c = 0; c < p.cols; c++) {
+        const sl = p.slots[r][c];
+        if (!sl || sl.given || s.placed[r][c] != null) continue;
+        const el = document.querySelector(`.board .cell[data-r="${r}"][data-c="${c}"]`);
+        if (!el) continue;
+        const b = el.getBoundingClientRect();
+        const d = Math.hypot(b.x - tray.x, b.y - tray.y);
+        if (!best || d > best.d) best = { r, c, v: sl.v, d };
+      }
+      return best;
+    });
     const tileIndex = await page.evaluate((v) => window.__cns.state.tray.findIndex((t) => !t.used && t.v === v), target.v);
     const tile = page.locator('.tray .tile').nth(tileIndex);
     const cell = page.locator(`.board .cell[data-r="${target.r}"][data-c="${target.c}"]`);
@@ -183,10 +201,11 @@ test.describe('Reichweite beim Ziehen', () => {
   });
 });
 
-// Der Vorrat ist eine einzige, waagerecht scrollbare Reihe. Ein Zug beginnt
-// deshalb erst nach einer echten Bewegung (DRAG_SLOP) — sonst nahm jede
-// Beruehrung sofort den Stein auf und die Leiste liess sich nie scrollen.
-test.describe('Vorrat scrollen statt ziehen', () => {
+// Der Vorrat zeigt IMMER alle Steine auf einmal (kein Scrollen), nimmt dabei so
+// wenig Hoehe wie moeglich ein, und ein gelegter Stein hinterlaesst KEINE Luecke.
+// Der Zug beginnt erst nach echter Bewegung (DRAG_SLOP), damit ein Tipp nur
+// auswaehlt und der Ziehschatten nicht schon beim Antippen aufblitzt.
+test.describe('Vorrat', () => {
   test('eine winzige Bewegung nimmt den Stein nur auf, sie zieht ihn nicht', async ({ page }) => {
     await gotoApp(page);
     await startNewGame(page, 'mittel');
@@ -203,16 +222,46 @@ test.describe('Vorrat scrollen statt ziehen', () => {
     expect(await page.evaluate(() => document.querySelectorAll('.drag-ghost[style*="display: block"]').length)).toBe(0);
   });
 
-  test('die Steine geben waagerechte Wische an den Browser ab (touch-action)', async ({ page }) => {
+  test('auch das größte Level zeigt ALLE Steine ohne Scrollen', async ({ page }) => {
     await gotoApp(page);
-    await startNewGame(page, 'rip');   // viele Steine -> die Reihe laeuft ueber
-    const ta = await page.evaluate(() => getComputedStyle(document.querySelector('.tray .tile')).touchAction);
-    expect(ta).toBe('pan-x');
-    const scrollable = await page.evaluate(() => {
-      const t = document.querySelector('.tray');
-      return t.scrollWidth > t.clientWidth && getComputedStyle(t).overflowX === 'auto';
+    await startNewGame(page, 'rip');   // die meisten Steine
+    const t = await page.evaluate(() => {
+      const tray = document.querySelector('.tray');
+      const box = tray.getBoundingClientRect();
+      const tiles = [...document.querySelectorAll('.tray .tile')];
+      const drin = tiles.every((el) => {
+        const b = el.getBoundingClientRect();
+        return b.left >= box.left - 1 && b.right <= box.right + 1 && b.top >= box.top - 1 && b.bottom <= box.bottom + 1;
+      });
+      return {
+        scrollt: tray.scrollWidth > tray.clientWidth + 1 || tray.scrollHeight > tray.clientHeight + 1,
+        tiles: tiles.length,
+        offen: window.__cns.state.tray.filter((x) => !x.used).length,
+        drin,
+      };
     });
-    expect(scrollable).toBe(true);
+    expect(t.scrollt).toBe(false);       // nichts ist weggescrollt
+    expect(t.tiles).toBe(t.offen);       // jeder offene Stein hat eine Kachel
+    expect(t.drin).toBe(true);           // und liegt sichtbar im Vorrat
+  });
+
+  test('ein gelegter Stein hinterlässt keine Lücke und der Vorrat schrumpft', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page, 'schwer');
+    const vorher = await page.evaluate(() => ({
+      h: Math.round(document.querySelector('.tray').getBoundingClientRect().height),
+      tile: window.__cns.state.trayTile,
+      kacheln: document.querySelectorAll('.tray .tile').length,
+    }));
+    await page.evaluate(() => { for (let i = 0; i < 5; i++) window.__cns.placeOne(); });
+    const nachher = await page.evaluate(() => ({
+      h: Math.round(document.querySelector('.tray').getBoundingClientRect().height),
+      tile: window.__cns.state.trayTile,
+      kacheln: document.querySelectorAll('.tray .tile').length,
+    }));
+    expect(nachher.kacheln).toBe(vorher.kacheln - 5);   // keine Platzhalter-Lücken
+    expect(nachher.tile).toBe(vorher.tile);             // Steingröße bleibt konstant
+    expect(nachher.h).toBeLessThanOrEqual(vorher.h);    // der Vorrat wächst nie
   });
 });
 
