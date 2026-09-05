@@ -1,7 +1,0 @@
-Brett ist jetzt ein echtes zusammenhängendes Raster wie beim Sudoku statt loser Kästchen
-Zahl- und Rechenzeichen-Felder stoßen ohne Fuge aneinander und teilen sich eine Rasterlinie
-Deutlich stärkerer Kontrast zwischen Vorgabe, Lücke und gelegtem Stein
-Zellen werden viel größer: Rechenzeichen-Spuren passen sich an, freie Höhe geht ans Brett
-Vorrat halbiert die Höhe (kleinere Steine, engere Abstände, höchstens drei Zeilen)
-Toter Streifen unter der Werkzeugleiste entfernt, Knöpfe im Spiel kompakter
-Spielstände von anderen Geräten erscheinen sofort und lassen sich fortsetzen
