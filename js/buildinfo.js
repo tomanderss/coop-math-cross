@@ -1,8 +1,21 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.2';
-export const BUILD_HASH = 'f3af7c6';
+export const BUILD      = '1.3';
+export const BUILD_HASH = '47b7b97';
 
 export const CHANGELOG = [
+  {
+    "version": "1.3",
+    "date": "05.09.2026",
+    "changes": [
+      "Cloud-Sicherung repariert: Spielstände, Einstellungen und Fortschritt kommen wieder in der Cloud an",
+      "Endlosschleife beim Start („Spielstand-Differenz\") behoben",
+      "Mehrspieler: Beitretende bekommen das Brett wieder — die Bereit-Lobby hängt nicht mehr",
+      "Wer sein Konto in der Schwester-App angelegt hat, ist jetzt auch hier per Benutzername auffindbar",
+      "Vorrat ist jetzt immer genau eine Reihe hoch und lässt sich seitlich schieben — das Brett bekommt die ganze Höhe",
+      "Rand unter Sortier- und Tipp-Knopf entfernt",
+      "Neue Einstellung „Reichweite beim Ziehen\": der Stein folgt dem Finger verstärkt, so erreicht man das ganze Brett mit einer kurzen Bewegung"
+    ]
+  },
   {
     "version": "1.2",
     "date": "05.09.2026",
