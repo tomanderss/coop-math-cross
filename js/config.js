@@ -285,6 +285,11 @@ export const DEFAULT_SETTINGS = {
                               // Modus (auch solo), nicht nur Coop (Default: Blau). Name des Storage-
                               // Keys bewusst beibehalten, um bestehende Nutzerfarben nicht zu verlieren.
   language: null,           // UI-Sprache; null = noch nicht erkannt/gewählt -> Auto-Detect via navigator.language
+  dragScale: 1,             // Reichweite beim Ziehen: der gezogene Stein folgt der
+                            // Fingerbewegung um DIESEN Faktor verstärkt (1 = wie
+                            // gehabt, 3 = eine kleine Bewegung schiebt ihn dreimal
+                            // so weit). Damit erreicht man den oberen Brettrand,
+                            // ohne den Finger über den ganzen Bildschirm zu ziehen.
   colorBlindMode: false,    // farbenblind-freundlicher Modus, global: ersetzt Grün/Rot
                             // (richtig/falsch, Hinweis/Fehler, Leben, Toasts, ...) durch
                             // Blau/Orange (css/styles.css) UND nutzt COOP_COLORS_CB statt

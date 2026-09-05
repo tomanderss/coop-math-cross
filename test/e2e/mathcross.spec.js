@@ -142,3 +142,38 @@ test.describe('Tipp-Tutor', () => {
     expect(await page.evaluate(() => window.__cns.state.hintsUsed)).toBe(1);
   });
 });
+
+// Reichweite beim Ziehen (settings.dragScale): der Stein folgt der Bewegung
+// verstärkt, damit man den oberen Brettrand erreicht, ohne den Finger über den
+// ganzen Bildschirm zu ziehen. Abgelegt wird IMMER dort, wo der Stein zu sehen
+// ist — genau das prüft der Test: eine um den Faktor GETEILTE Zeigerbewegung
+// muss dieselbe Zelle treffen wie die volle Bewegung ohne Verstärkung.
+test.describe('Reichweite beim Ziehen', () => {
+  test('bei Faktor 3 legt ein Drittel der Bewegung den Stein aufs Ziel', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page, 'mittel');
+    await page.evaluate(() => window.__cns.setSetting('dragScale', 3));
+    const lift = await page.evaluate(() => window.__cns.dragLift);
+    const target = await page.evaluate(() => window.__cns.firstBlank());
+    const tileIndex = await page.evaluate((v) => window.__cns.state.tray.findIndex((t) => !t.used && t.v === v), target.v);
+    const tile = page.locator('.tray .tile').nth(tileIndex);
+    const cell = page.locator(`.board .cell[data-r="${target.r}"][data-c="${target.c}"]`);
+    const a = await tile.boundingBox();
+    const b = await cell.boundingBox();
+    const sx = a.x + a.width / 2, sy = a.y + a.height / 2;
+    // Zielpunkt des STEINS (inkl. Lift) …
+    const gx = b.x + b.width / 2, gy = b.y + b.height / 2 + lift;
+    // … und der Zeigerweg dorthin ist bei Faktor 3 nur ein Drittel so lang.
+    await page.mouse.move(sx, sy);
+    await page.mouse.down();
+    await page.mouse.move(sx + (gx - sx) / 3, sy + (gy - sy) / 3, { steps: 8 });
+    await page.mouse.up();
+    expect(await page.evaluate(({ r, c }) => window.__cns.state.placed[r][c], target)).toBe(target.v);
+  });
+
+  test('Standard ist 1 — die Bewegung wird nicht verstärkt', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page, 'mittel');
+    expect(await page.evaluate(() => window.__cns.state.settings.dragScale)).toBe(1);
+  });
+});

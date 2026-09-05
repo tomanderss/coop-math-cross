@@ -2209,7 +2209,33 @@ let dragMoved = false;
 // Zahl, die man gerade schiebt. Abgelegt wird dort, wo der STEIN liegt (nicht
 // unter dem Finger) — Anzeige und Trefferpunkt sind damit dasselbe.
 const DRAG_LIFT = 52;
-const dropPoint = (e) => ({ x: e.clientX, y: e.clientY - DRAG_LIFT });
+// REICHWEITE (settings.dragScale): der Stein folgt der Fingerbewegung um diesen
+// Faktor verstärkt. Bei 1 klebt er wie bisher über dem Finger; bei 3 schiebt
+// eine kurze Bewegung ihn dreimal so weit — man erreicht den oberen Brettrand,
+// ohne den Finger über den ganzen Bildschirm zu ziehen (Nutzerwunsch). Gemessen
+// wird ab dem Punkt, an dem der Stein aufgenommen wurde (dragOrigin), damit die
+// Verstärkung erst mit der Bewegung einsetzt und der Stein nicht springt.
+// Der Trefferpunkt ist IMMER dort, wo der Stein ANGEZEIGT wird — Anzeige und
+// Ablageort bleiben also dasselbe, egal wie stark verstärkt wird.
+let dragOrigin = null;
+function dragScale() {
+  const v = Number(state.settings.dragScale);
+  return Number.isFinite(v) ? Math.min(4, Math.max(1, v)) : 1;
+}
+function dropPoint(e) {
+  const f = dragScale();
+  let x = e.clientX, y = e.clientY;
+  if (dragOrigin && f !== 1) {
+    x = dragOrigin.x + (x - dragOrigin.x) * f;
+    y = dragOrigin.y + (y - dragOrigin.y) * f;
+  }
+  // Innerhalb des Fensters halten — sonst zeigt der Stein bei starker
+  // Verstärkung ins Nichts und lässt sich nirgends mehr ablegen.
+  const m = 4;
+  x = Math.min(window.innerWidth - m, Math.max(m, x));
+  y = Math.min(window.innerHeight - m, Math.max(m, y - DRAG_LIFT));
+  return { x, y };
+}
 
 function ensureGhost(v) {
   if (!dragGhost) {
@@ -2247,6 +2273,7 @@ function hideGhost() { if (dragGhost) dragGhost.style.display = 'none'; }
 function onDragStart(e, v, from, tileId) {
   if (boardLocked()) return;
   dragSrc = { v, from: from || null, tileId: tileId ?? null };
+  dragOrigin = { x: e.clientX, y: e.clientY };
   dragMoved = false;
   state.drag = { v, from: dragSrc.from };
   ensureGhost(v);
@@ -2267,8 +2294,12 @@ function onDragEnd(e) {
   state.drag = null;
   hideGhost();
   clearHighlight();
+  // dragOrigin wird ERST nach dropPoint(e) geleert — sonst fiele die Reichweite
+  // genau beim Loslassen weg und der Stein landete unter dem Finger statt dort,
+  // wo er die ganze Zeit zu sehen war.
+  const p = dragMoved ? dropPoint(e) : null;
+  dragOrigin = null;
   if (!dragMoved) { pickTile(src.v, src.from, src.tileId); return; }  // reiner Tipp = auswählen
-  const p = dropPoint(e);
   const el = document.elementFromPoint(p.x, p.y);
   const cell = el && el.closest && el.closest('.cell[data-r]');
   if (cell) { dropOn(parseInt(cell.dataset.r, 10), parseInt(cell.dataset.c, 10), src); return; }
@@ -2277,7 +2308,7 @@ function onDragEnd(e) {
 }
 function onDragCancel() {
   if (!dragSrc) return;
-  dragSrc = null; state.drag = null; hideGhost(); clearHighlight(); state.pick = null;
+  dragSrc = null; dragOrigin = null; state.drag = null; hideGhost(); clearHighlight(); state.pick = null;
 }
 
 // Klick auf ein Feld: mit aufgenommenem Stein ablegen, sonst den dort liegenden aufnehmen.
@@ -5776,6 +5807,11 @@ function resolveVersionMismatch(choice) {
     safeReload('version-mismatch-' + choice);
   });
 }
+// Anzeige des Reichweite-Reglers: „1x (aus)" bzw. „2,5x".
+function dragScaleLabel() {
+  const f = dragScale();
+  return f <= 1 ? t('settings.dragScaleOff') : t('settings.dragScaleOn', { f: String(f).replace('.', ',') });
+}
 function fmtMismatchTime(ts) {
   if (!ts) return '–';
   try { return new Date(ts).toLocaleString(i18nState.locale || undefined, { dateStyle: 'short', timeStyle: 'short' }); }
@@ -7523,7 +7559,7 @@ const App = {
       desktopKeyLabel, startDesktopKeyCapture, cancelDesktopKeyCapture, clearDesktopToolKey,
       isMultiplayer, sendChat, openChat, closeChat, toggleChat, toggleMuteAll, onChatTyping, typingPlayers,
       reclaimSession, dismissDeviceNotice,
-      resolveVersionMismatch, fmtMismatchTime, mismatchSubText,
+      resolveVersionMismatch, fmtMismatchTime, mismatchSubText, dragScaleLabel,
       openSaves, closeSaves, resumeSave, deleteSave, saveProgress, saveIsEndless, saveDifficulty, saveDim, saveIsCurrent, saveWhen, SAVES_MAX,
       soloResume, resumeSolo, otherSavesCount, savesLabel, resumeSubline, saveLivesArr, saveLivesLeft,
       startHosting, startJoining, coopReset, avgTimeFor, coopAvgTimeFor, lobbyIsCompetition, lobbyAvgTimeFor, lobbyBestTimeMs, racePct,
@@ -8661,6 +8697,16 @@ const App = {
           </div>
 
           <div class="set-group-title">{{ t('settings.a11y') }}</div>
+          <!-- Reichweite beim Ziehen: der Stein folgt der Fingerbewegung
+               verstärkt, damit man den oberen Brettrand ohne eine Wischbewegung
+               über den ganzen Bildschirm erreicht. -->
+          <div class="set-row col">
+            <span class="set-row-label">{{ t('settings.dragScale') }}<span class="account-role">{{ dragScaleLabel() }}</span></span>
+            <input type="range" class="set-range" min="1" max="4" step="0.5" :value="state.settings.dragScale"
+                   :style="{ '--rangePct': Math.round((state.settings.dragScale-1)/3*100) + '%' }"
+                   @input="setSetting('dragScale', parseFloat($event.target.value))" />
+            <small class="set-hint">{{ t('settings.dragScaleHint') }}</small>
+          </div>
           <div class="set-row" @click="toggleSetting('colorBlindMode')">
             <span>{{ t('settings.colorBlindMode') }}</span><span class="switch" :class="{on:state.settings.colorBlindMode}"><i></i></span>
           </div>
