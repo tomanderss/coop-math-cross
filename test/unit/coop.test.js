@@ -10,7 +10,9 @@
 //   altes INIT reaktivierte die Bereit-Lobby.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { computeJoinAnchor, sanitizeForFirebase, normalizeGrid } from '../../js/coop.js';
+import { computeJoinAnchor, sanitizeForFirebase, safeKey, normalizeGrid } from '../../js/coop.js';
+import { generatePuzzle } from '../../js/generator.js';
+import { genOptionsFor } from '../../js/config.js';
 
 const ev = (key, type, extra = {}) => ({ key, val: { type, ...extra } });
 
@@ -164,4 +166,44 @@ test('normalizeGrid schneidet auf die Brettmaße zu und ignoriert Unsinn', () =>
   // Primitive/kaputte Werte dürfen nicht als Raster durchgehen.
   assert.deepEqual(normalizeGrid('kaputt', 1, 2, null), [[null, null]]);
   assert.deepEqual(normalizeGrid([42, 'x'], 2, 1, null), [[null], [null]]);
+});
+
+// ── safeKey / sanitizeForFirebase: verbotene Schluessel ──────────────────────
+// Die RTDB verbietet . # $ / [ ] in Schluesseln und weist den GESAMTEN
+// Schreibvorgang zurueck. Genau das brachte puzzle.tierCounts mit dem Schluessel
+// "2.5" mit: kein Upload kam mehr durch (Spielstand-Dialog in Endlosschleife)
+// und das Coop-INIT wurde nie geschrieben (Beitretender ohne Brett).
+test('safeKey entschaerft die von der RTDB verbotenen Zeichen', () => {
+  assert.equal(safeKey('2.5'), '2_5');
+  assert.equal(safeKey('a/b'), 'a_b');
+  assert.equal(safeKey('x#y$z[0]'), 'x_y_z_0_');
+  assert.equal(safeKey('normal-key_1'), 'normal-key_1');
+});
+
+test('sanitizeForFirebase repariert Schluessel und verwirft undefined', () => {
+  const out = sanitizeForFirebase({
+    tierCounts: { '2.5': 3, '1': 1 },
+    nested: { keep: 1, gone: undefined, inf: Infinity },
+    arr: [1, NaN],
+  });
+  assert.deepEqual(out.tierCounts, { '2_5': 3, 1: 1 });
+  assert.ok(!('gone' in out.nested));
+  assert.equal(out.nested.inf, null);
+  assert.deepEqual(out.arr, [1, null]);
+  // Nichts im Ergebnis traegt noch einen verbotenen Schluessel.
+  const walk = (v) => {
+    if (!v || typeof v !== 'object') return;
+    for (const k in v) { assert.ok(!/[.#$/[\]]/.test(k), k); walk(v[k]); }
+  };
+  walk(out);
+});
+
+test('ein frisch erzeugtes Raetsel ist ohne Nacharbeit RTDB-tauglich', () => {
+  const p = generatePuzzle({ ...genOptionsFor('mittel'), seed: 99 });
+  const walk = (v, path) => {
+    if (!v || typeof v !== 'object') return;
+    for (const k in v) { assert.ok(!/[.#$/[\]]/.test(k), `verbotener Schluessel ${path}/${k}`); walk(v[k], path + '/' + k); }
+  };
+  walk(p, '');
+  assert.deepEqual(Object.keys(p.tierCounts).sort(), ['t1', 't2', 't25', 't3']);
 });

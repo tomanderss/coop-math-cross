@@ -426,10 +426,28 @@ export function sanitizeForFirebase(v) {
   if (Array.isArray(v)) return v.map(sanitizeForFirebase);
   if (v && typeof v === 'object') {
     const out = {};
-    for (const k in v) out[k] = sanitizeForFirebase(v[k]);
+    for (const k in v) {
+      const val = v[k];
+      // undefined ist fuer die RTDB ein harter Fehler (nicht etwa "weglassen") —
+      // genau wie ein nicht-endlicher Zahlenwert. Beides wird hier entschaerft.
+      if (val === undefined) continue;
+      out[safeKey(k)] = sanitizeForFirebase(val);
+    }
     return out;
   }
   return v;
+}
+// Die RTDB verbietet in Schluesseln: . # $ / [ ] und Steuerzeichen — ein
+// einziger solcher Schluessel laesst den GESAMTEN Schreibvorgang scheitern
+// (kein Teil-Write). Gestolpert ist die App ueber puzzle.tierCounts mit dem
+// Schluessel "2.5": jeder Upload mit einem Raetsel im Snapshot warf, syncedRev
+// blieb null (Spielstand-Dialog in Endlosschleife) und das Coop-INIT wurde nie
+// geschrieben (der Beitretende sah die Bereit-Lobby nie). Die Quelle ist
+// repariert (solver.js TIER_KEY); das hier ist das Netz fuer alles Kuenftige.
+export function safeKey(k) {
+  const s = String(k);
+  // eslint-disable-next-line no-control-regex
+  return /[.#$/[\]\u0000-\u001f\u007f]/.test(s) ? s.replace(/[.#$/[\]\u0000-\u001f\u007f]/g, '_') : s;
 }
 // Firebase RTDB speichert KEINE null-Werte: ein null wird beim Schreiben einfach
 // weggelassen. Ein 2D-Raster, dessen Zellen ueberwiegend null sind — genau das ist
