@@ -1052,21 +1052,25 @@ const gridStyle = computed(() => {
 // halbe Display. Die Steine schrumpfen deshalb, bis alle in wenige Zeilen
 // passen (gemeldet: „die Zahlen unten deutlich kompakter").
 const TRAY_GAP = 3;
-const TRAY_MAX_ROWS = 3;   // mehr Zeilen frisst die Fläche, die dem Brett gehört
-const trayTilePx = computed(() => {
-  // Ein benutzter Stein hinterlaesst seine LUECKE — der Platzbedarf richtet
-  // sich also nach ALLEN Slots, nicht nur den noch offenen.
-  const n = Math.max(1, state.tray.length);
-  const avail = Math.max(200, (state.boardW || window.innerWidth) - 16);
-  // Größten Stein wählen, mit dem der Vorrat noch in TRAY_MAX_ROWS Zeilen passt.
-  // Der Vorrat ist NICHT das Spiel — er darf dem Brett keine Höhe wegnehmen
-  // (gemeldet: „die Zahlen unten nehmen viel zu viel Platz ein").
-  for (let px = 40; px > 22; px--) {
-    const perRow = Math.max(1, Math.floor((avail + TRAY_GAP) / (px + TRAY_GAP)));
-    if (Math.ceil(n / perRow) <= TRAY_MAX_ROWS) return px;
-  }
-  return 22;
-});
+const TRAY_MIN_TILE = 30, TRAY_MAX_TILE = 42;
+// Der Vorrat ist IMMER genau eine Reihe hoch (s. .tray in styles.css): jede
+// weitere Reihe naehme dem Brett eine Zellhoehe weg. Passen nicht alle Steine
+// nebeneinander, wird waagerecht gescrollt. Die Steingroesse schrumpft vorher
+// bis TRAY_MIN_TILE, damit moeglichst viel ohne Scrollen sichtbar bleibt.
+// Ein bereits gelegter Stein belegt nur noch die Fugenbreite (.tray-slot.used).
+function trayWidths() {
+  const open = state.tray.reduce((n, t) => n + (t.used ? 0 : 1), 0);
+  const used = state.tray.length - open;
+  const avail = Math.max(160, (state.boardW || window.innerWidth) - 16);
+  const slots = Math.max(1, state.tray.length);
+  const gaps = (slots - 1) * TRAY_GAP;
+  const usedW = used * TRAY_GAP;
+  const room = avail - 8 - gaps - usedW;      // 8 = 2*4px Innenabstand
+  const px = Math.max(TRAY_MIN_TILE, Math.min(TRAY_MAX_TILE, Math.floor(room / Math.max(1, open))));
+  return { px, fits: open * px <= room };
+}
+const trayTilePx = computed(() => trayWidths().px);
+const trayFits = computed(() => trayWidths().fits);
 const trayStyle = computed(() => ({
   '--tile': trayTilePx.value + 'px',
   '--tgap': TRAY_GAP + 'px',
@@ -7275,11 +7279,11 @@ const BoardGrid = {
 // LÜCKE (wie in der Vorlage) — der Sortier-Knopf räumt auf und sortiert.
 const TrayBar = {
   setup() {
-    return { state, onDragStart, onDragMove, onDragEnd, onDragCancel, pickTile, dropOnTray, trayStyle };
+    return { state, onDragStart, onDragMove, onDragEnd, onDragCancel, pickTile, dropOnTray, trayStyle, trayFits };
   },
   template: `
-          <div class="tray" :style="trayStyle" @click.self="dropOnTray()">
-            <div v-for="tile in state.tray" :key="tile.id" class="tray-slot">
+          <div class="tray" :class="{ 'tray-fits': trayFits }" :style="trayStyle" @click.self="dropOnTray()">
+            <div v-for="tile in state.tray" :key="tile.id" class="tray-slot" :class="{ used: tile.used }">
               <div v-if="!tile.used" class="tile"
                    :class="{ picked: state.pick && !state.pick.from && state.pick.tileId===tile.id, d3: String(tile.v).length===3, d4: String(tile.v).length>=4 }"
                    role="button" tabindex="0"
