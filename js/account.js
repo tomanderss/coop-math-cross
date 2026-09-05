@@ -324,7 +324,25 @@ function usernameIndexRef(fb, name) { return fb.ref(fb.db, `usernames/${username
 // aber nur, wenn er in DIESEM Teilbaum noch frei ist (sonst gehoert er jemand
 // anderem und der Nutzer waehlt selbst einen ueber „Benutzername aendern").
 async function ensureAccountProfile(fb, u, prof) {
-  const name = normalizeUsername(prof.username || u.displayName || '');
+  // Die SCHREIBWEISE bleibt, wie der Nutzer sie angelegt hat — genau wie in
+  // signUp(). Kleingeschrieben wird nur der INDEX-Schluessel (usernameKey), damit
+  // „Tom" und „tom" derselbe belegte Name sind; die Anzeige darf Grossbuchstaben
+  // behalten. Ein normalizeUsername() an dieser Stelle machte aus jedem
+  // mitgebrachten Konto einen komplett kleingeschriebenen Namen (gemeldet).
+  const shared = String(u.displayName || '').trim();
+  // Bereits kleingeschrieben nachgetragene Profile heilen: unterscheidet sich der
+  // gespeicherte Name von der geteilten Anmeldung NUR in der Gross-/Kleinschreibung,
+  // gilt deren Schreibweise. Der Index-Schluessel bleibt derselbe, es kann also
+  // niemandem ein Name weggenommen werden.
+  if (prof.username && shared && prof.username !== shared
+      && normalizeUsername(prof.username) === normalizeUsername(shared)) {
+    try {
+      await fb.set(userRef(fb, u.uid, 'profile/username'), shared);
+      log('account', 'Schreibweise des Namens aus der Anmeldung uebernommen', { uid: u.uid, name: shared });
+      return { ...prof, username: shared };
+    } catch (e) { log('account', 'Schreibweise konnte nicht uebernommen werden', e); return prof; }
+  }
+  const name = String(prof.username || shared).trim();
   if (prof.username || !isValidUsername(name)) return prof;
   try {
     const owner = (await fb.get(usernameIndexRef(fb, name))).val();

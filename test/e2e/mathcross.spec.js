@@ -9,6 +9,10 @@ test.describe('Rechenkreuz: Steine legen', () => {
   // dort, wo der STEIN liegt. Der Zeiger muss also um genau diesen Betrag
   // TIEFER stehen als das Zielfeld, so wie es ein Daumen auch täte.
   async function dragTo(page, from, to) {
+    // Der Vorrat ist eine waagerecht scrollbare Reihe — ein Stein kann also
+    // ausserhalb des Sichtbereichs liegen. Erst heranscrollen, sonst zeigt die
+    // Bounding-Box auf eine Stelle, an der gar nicht der Stein liegt.
+    await from.scrollIntoViewIfNeeded();
     const lift = await page.evaluate(() => window.__cns.dragLift);
     const a = await from.boundingBox();
     const b = await to.boundingBox();
@@ -158,6 +162,7 @@ test.describe('Reichweite beim Ziehen', () => {
     const tileIndex = await page.evaluate((v) => window.__cns.state.tray.findIndex((t) => !t.used && t.v === v), target.v);
     const tile = page.locator('.tray .tile').nth(tileIndex);
     const cell = page.locator(`.board .cell[data-r="${target.r}"][data-c="${target.c}"]`);
+    await tile.scrollIntoViewIfNeeded();
     const a = await tile.boundingBox();
     const b = await cell.boundingBox();
     const sx = a.x + a.width / 2, sy = a.y + a.height / 2;
@@ -175,5 +180,108 @@ test.describe('Reichweite beim Ziehen', () => {
     await gotoApp(page);
     await startNewGame(page, 'mittel');
     expect(await page.evaluate(() => window.__cns.state.settings.dragScale)).toBe(1);
+  });
+});
+
+// Der Vorrat ist eine einzige, waagerecht scrollbare Reihe. Ein Zug beginnt
+// deshalb erst nach einer echten Bewegung (DRAG_SLOP) — sonst nahm jede
+// Beruehrung sofort den Stein auf und die Leiste liess sich nie scrollen.
+test.describe('Vorrat scrollen statt ziehen', () => {
+  test('eine winzige Bewegung nimmt den Stein nur auf, sie zieht ihn nicht', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page, 'mittel');
+    const tile = page.locator('.tray .tile').first();
+    const v = await page.evaluate(() => window.__cns.state.tray.find((t) => !t.used).v);
+    await tile.scrollIntoViewIfNeeded();
+    const a = await tile.boundingBox();
+    await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(a.x + a.width / 2 + 3, a.y + a.height / 2, { steps: 2 });  // unter der Schwelle
+    await page.mouse.up();
+    // Unter der Schwelle = Tipp: der Stein ist AUSGEWAEHLT, nicht gezogen.
+    expect(await page.evaluate(() => window.__cns.state.pick && window.__cns.state.pick.v)).toBe(v);
+    expect(await page.evaluate(() => document.querySelectorAll('.drag-ghost[style*="display: block"]').length)).toBe(0);
+  });
+
+  test('die Steine geben waagerechte Wische an den Browser ab (touch-action)', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page, 'rip');   // viele Steine -> die Reihe laeuft ueber
+    const ta = await page.evaluate(() => getComputedStyle(document.querySelector('.tray .tile')).touchAction);
+    expect(ta).toBe('pan-x');
+    const scrollable = await page.evaluate(() => {
+      const t = document.querySelector('.tray');
+      return t.scrollWidth > t.clientWidth && getComputedStyle(t).overflowX === 'auto';
+    });
+    expect(scrollable).toBe(true);
+  });
+});
+
+// Der Vorrat muss IMMER exakt die noch fehlenden Zahlen enthalten — nicht mehr,
+// nicht weniger. Beim Tausch zweier gelegter Steine entstand vorher ein Stein
+// aus dem Nichts (gemeldet: „manche Level haben zu viele Steine").
+test.describe('Vorrat bleibt exakt', () => {
+  test('nach dem Tausch zweier gelegter Steine stimmt der Vorrat weiter', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page, 'schwer');
+    const before = await page.evaluate(() => window.__cns.state.tray.length);
+    // ZWEI Lücken suchen, deren TAUSCH die Fehlerprüfung passiert (keine VOLLE
+    // Rechnung wird dadurch falsch) — sonst weist applyChanges den Zug ab und
+    // der Pfad, um den es hier geht, wird gar nicht durchlaufen. Geprüft wird
+    // mit derselben Funktion, die auch das Spiel benutzt.
+    const cells = await page.evaluate(async () => {
+      const { placementBreaksEquation } = await import('/js/board.js');
+      const s = window.__cns.state, p = s.puzzle;
+      const blanks = [];
+      for (let r = 0; r < p.rows; r++) for (let c = 0; c < p.cols; c++) {
+        const sl = p.slots[r][c];
+        if (sl && !sl.given) blanks.push({ r, c, v: sl.v });
+      }
+      for (let i = 0; i < blanks.length; i++) {
+        for (let j = i + 1; j < blanks.length; j++) {
+          const a = blanks[i], b = blanks[j];
+          if (a.v === b.v) continue;                       // ein Tausch gleicher Werte ist keiner
+          const trial = p.slots.map((row) => row.map(() => null));
+          trial[b.r][b.c] = a.v; trial[a.r][a.c] = b.v;
+          const bad = placementBreaksEquation(p, trial, b.r, b.c, a.v)
+                   || placementBreaksEquation(p, trial, a.r, a.c, b.v);
+          if (!bad) return [a, b];
+        }
+      }
+      return [];
+    });
+    expect(cells.length).toBe(2);
+    const swapped = await page.evaluate(([a, b]) => {
+      window.__cns.placeAt(a.r, a.c, a.v);
+      window.__cns.placeAt(b.r, b.c, b.v);
+      window.__cns.dropOn(b.r, b.c, { v: a.v, from: { r: a.r, c: a.c } });
+      const s = window.__cns.state;
+      return s.placed[b.r][b.c] === a.v && s.placed[a.r][a.c] === b.v;
+    }, cells);
+    expect(swapped).toBe(true);   // der Tausch ist wirklich passiert
+    const after = await page.evaluate(() => {
+      const s = window.__cns.state;
+      const placed = [];
+      for (let r = 0; r < s.puzzle.rows; r++) for (let c = 0; c < s.puzzle.cols; c++) if (s.placed[r][c] != null) placed.push(s.placed[r][c]);
+      const open = s.tray.filter((t) => !t.used).map((t) => t.v);
+      const sort = (x) => x.slice().sort((p, q) => p - q).join(',');
+      return { total: s.tray.length, matches: sort([...open, ...placed]) === sort(s.puzzle.tray) };
+    });
+    expect(after.total).toBe(before);
+    expect(after.matches).toBe(true);   // offen + gelegt == der Vorrat des Rätsels
+  });
+
+  test('ein frisch gestartetes Level hat exakt so viele Steine wie Lücken', async ({ page }) => {
+    await gotoApp(page);
+    for (const diff of ['sehrleicht', 'mittel', 'schwer']) {
+      await startNewGame(page, diff);
+      const ok = await page.evaluate(() => {
+        const s = window.__cns.state;
+        let blanks = 0;
+        for (const row of s.puzzle.slots) for (const sl of row) if (sl && !sl.given) blanks++;
+        return { blanks, tray: s.tray.length };
+      });
+      expect(ok.tray).toBe(ok.blanks);
+      await page.evaluate(() => window.__cns.state.screen = 'home');
+    }
   });
 });

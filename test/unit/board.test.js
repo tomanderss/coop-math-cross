@@ -150,3 +150,36 @@ test('geheiltes Rätsel ist wieder darstellbar (das war der Blackscreen)', () =>
   assert.throws(() => B.buildDisplay(holey));
   assert.doesNotThrow(() => B.buildDisplay(B.normalizePuzzle(holey)));
 });
+
+// ── Vorrat/Brett dürfen nie auseinanderlaufen ────────────────────────────────
+// Es müssen IMMER exakt die Steine im Vorrat liegen, die noch fehlen.
+const multiset = (a) => a.slice().sort((x, y) => x - y).join(',');
+
+test('reconcileTray entfernt überzählige und ergänzt fehlende Steine', () => {
+  // Brett hat die 7 liegen, im Vorrat taucht sie trotzdem noch als offen auf.
+  const tray = [{ id: 0, v: 7, used: false }, { id: 1, v: 3, used: false }];
+  const out = B.reconcileTray(tray, [7], [7, 3]);
+  assert.equal(multiset(out.filter((t) => !t.used).map((t) => t.v)), '3');
+  // Fehlender Stein wird ergänzt.
+  const out2 = B.reconcileTray([], [7], [7, 3]);
+  assert.equal(multiset(out2.filter((t) => !t.used).map((t) => t.v)), '3');
+});
+
+test('reconcileTray lässt einen gesunden Vorrat inhaltlich unverändert', () => {
+  const tray = [{ id: 0, v: 7, used: true }, { id: 1, v: 3, used: false }, { id: 2, v: 3, used: false }];
+  const out = B.reconcileTray(tray, [7], [7, 3, 3]);
+  assert.equal(out.length, 3);
+  assert.equal(multiset(out.filter((t) => !t.used).map((t) => t.v)), '3,3');
+  assert.equal(multiset(out.filter((t) => t.used).map((t) => t.v)), '7');
+});
+
+test('Tauschen zweier gelegter Steine erzeugt keinen Stein aus dem Nichts', () => {
+  // Genau der gemeldete Fall: A und B liegen, ihre Plätze werden getauscht.
+  // Erst ALLE freigewordenen zurück, dann alle neuen entnehmen (wie applyChanges).
+  const tray = [{ id: 0, v: 4, used: true }, { id: 1, v: 9, used: true }, { id: 2, v: 5, used: false }];
+  const freed = [4, 9], taken = [9, 4];
+  for (const v of freed) B.returnToTray(tray, v);
+  for (const v of taken) B.takeFromTray(tray, v);
+  assert.equal(tray.length, 3, 'kein zusätzlicher Stein');
+  assert.equal(multiset(tray.filter((t) => !t.used).map((t) => t.v)), '5');
+});
