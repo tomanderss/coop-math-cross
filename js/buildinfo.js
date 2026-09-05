@@ -1,8 +1,18 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.3';
-export const BUILD_HASH = '47b7b97';
+export const BUILD      = '1.4';
+export const BUILD_HASH = 'e59d44b';
 
 export const CHANGELOG = [
+  {
+    "version": "1.4",
+    "date": "05.09.2026",
+    "changes": [
+      "Vorrat lässt sich jetzt seitlich schieben — ein Zug beginnt erst bei echter Bewegung",
+      "Steine im Vorrat behalten immer dieselbe Größe, die Leiste wächst nicht mehr beim Leerspielen",
+      "Der Vorrat enthält jetzt garantiert exakt die noch fehlenden Zahlen — beim Tauschen zweier Steine entstand einer zu viel",
+      "Benutzername behält seine Groß- und Kleinschreibung"
+    ]
+  },
   {
     "version": "1.3",
     "date": "05.09.2026",
