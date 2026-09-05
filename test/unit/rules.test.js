@@ -49,4 +49,23 @@ describe('database.rules.json', () => {
     assert.equal(r['.write'], 'auth != null && auth.uid === $uid');
     assert.match(r['.validate'], /hasChildren\(\['pct','mistakes'\]\)/);
   });
+
+  // Der mc-Teilbaum (Coop Math Cross) teilt sich das Firebase-Projekt mit der
+  // Schwester-App, MUSS aber vollständig eigenständig sein: prüft eine Regel
+  // die Admin-Rolle über `root.child('users')`, zöge Math Cross seine Rechte
+  // aus dem FREMDEN Datenbaum. Jeder Rollen-/Admin-Verweis unterhalb von `mc`
+  // gehört deshalb nach `root.child('mc').child('users')`.
+  test('der mc-Teilbaum verweist nie auf den Datenbaum der Schwester-App', () => {
+    const mc = JSON.stringify(rules.rules.mc);
+    assert.equal(mc.includes("root.child('users')"), false, 'mc-Regel greift auf den Wurzel-Baum zu');
+    assert.ok(mc.includes("root.child('mc').child('users')"), 'mc-Regeln prüfen die Rolle im eigenen Baum');
+  });
+
+  test('beide Apps haben denselben Regelsatz — die Datei wird als Ganzes veröffentlicht', () => {
+    const top = Object.keys(rules.rules).filter((k) => !k.startsWith('.') && k !== 'mc');
+    for (const node of ['rooms', 'users', 'status', 'leaderboard', 'usernames']) {
+      assert.ok(top.includes(node), `Wurzel-Baum ohne ${node}`);
+      assert.ok(rules.rules.mc[node], `mc-Baum ohne ${node}`);
+    }
+  });
 });

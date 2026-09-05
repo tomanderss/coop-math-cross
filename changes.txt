@@ -3,3 +3,4 @@ Deutlich bessere Kontraste: Vorgaben, offene Lücken und selbst gelegte Steine s
 Der Vorrat ist kompakter: die Steine richten sich nach ihrer Anzahl, statt das halbe Display zu belegen. Mehrstellige Zahlen werden enger gesetzt und laufen nicht mehr über den Rand.
 Beim Ziehen schwebt die Zahl jetzt ÜBER dem Finger, sodass man sie sieht — und landet genau dort, wo sie angezeigt wird. Das Zielfeld leuchtet vorher auf.
 Viel abwechslungsreichere Rätsel: keine doppelten Aufgaben mehr auf einem Brett, deutlich weniger Wiederholungen derselben Zahl, keine Alibi-Rechnungen wie „×1" oder „÷1" — und in den oberen Stufen ein größerer Zahlenraum.
+Adminrechte werden jetzt ausschließlich im eigenen Datenbaum geprüft — vorher zogen sie versehentlich die Rolle aus der Schwester-App.
