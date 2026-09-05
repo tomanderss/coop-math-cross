@@ -931,7 +931,7 @@ function shopDemoSkin() {
   const it = shopItemById(shopDemoId('skinpreset'));
   const s = it ? {
     skinStyle: it.data.style, skinColor1: it.data.c[0] || '', skinColor2: it.data.c[1] || '', skinColor3: it.data.c[2] || '',
-    skinSpeed: it.data.speed, skinGlow: it.data.glow, skinThickness: it.data.thickness, skinApplyTo: 'both', skinDirection: 'cw',
+    skinSpeed: it.data.speed, skinGlow: it.data.glow, skinThickness: it.data.thickness, skinDirection: 'cw',
   } : state.settings;
   return { vars: buildSkinVars(s), classes: buildSkinClasses(s, true) };
 }
@@ -6109,7 +6109,6 @@ const ADMIN_ENUM_VALUES = {
   'settings/themeMode': ['auto', 'light', 'dark'],
   'settings/skinStyle': ['solid', 'gradient', 'rainbow'],
   'settings/skinDirection': ['cw', 'ccw'],
-  'settings/skinApplyTo': ['kept', 'removed', 'both'],
 };
 function adminEnumOptions(row) {
   if (row.path === 'settings/language') return SUPPORTED_LOCALES.map((l) => ({ v: l.id, label: l.label }));
@@ -8611,15 +8610,6 @@ const App = {
               <input type="range" class="set-range" min="1" max="5" step="0.5" :value="state.settings.skinThickness"
                      :style="{ '--rangePct': Math.round((state.settings.skinThickness-1)/4*100) + '%' }"
                      @input="setSetting('skinThickness', parseFloat($event.target.value))" />
-            </div>
-            <div class="set-row col">
-              <span class="set-row-label">{{ t('skin.applyTo') }}</span>
-              <div class="seg">
-                <button :class="{active:state.settings.skinApplyTo==='kept'}" @click="setSetting('skinApplyTo','kept')">{{ t('skin.applyKept') }}</button>
-                <button :class="{active:state.settings.skinApplyTo==='removed'}" @click="setSetting('skinApplyTo','removed')">{{ t('skin.applyRemoved') }}</button>
-                <button :class="{active:state.settings.skinApplyTo==='both'}" @click="setSetting('skinApplyTo','both')">{{ t('skin.applyBoth') }}</button>
-              </div>
-              <small class="set-hint">{{ t('skin.applyHint') }}</small>
             </div>
           </template>
           <template v-else>

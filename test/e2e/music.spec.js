@@ -26,12 +26,7 @@ test('Solo-Modus-Schalter steuert die Spielmusik (Menü-Musik aus isoliert den T
   await page.waitForFunction(() => window.__cns.Music.isPlaying() === true, null, { timeout: 4000 });
 
   await page.evaluate(() => {
-    const { state, onCellTap } = window.__cns, p = state.puzzle;
-    for (let r = 0; r < p.rows; r++) for (let c = 0; c < p.cols; c++) {
-      if (state.marks[r][c] !== 'none') continue;
-      state.tool = p.solution[r][c] ? 'pen' : 'eraser';
-      onCellTap(r, c);
-    }
+    while (window.__cns.placeOne()) { /* Rätsel lösen */ }
   });
   await page.waitForFunction(() => window.__cns.Music.isPlaying() === false, null, { timeout: 4000 });
 });

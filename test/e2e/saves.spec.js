@@ -6,18 +6,11 @@ import { gotoApp, startNewGame } from './helpers.js';
 // anfing, verlor den vorherigen Fortschritt ersatzlos.
 async function playAFewCells(page, n = 3) {
   await page.evaluate((count) => {
-    const { state, onCellTap } = window.__cns;
-    state.tool = 'pen';
-    let done = 0;
-    for (let r = 0; r < state.puzzle.rows && done < count; r++) {
-      for (let c = 0; c < state.puzzle.cols && done < count; c++) {
-        if (state.puzzle.solution[r][c]) { onCellTap(r, c); done++; }
-      }
-    }
+    for (let i = 0; i < count; i++) if (!window.__cns.placeOne()) break;
   }, n);
   // Autosave ist auf 400 ms gedrosselt.
   await page.waitForTimeout(600);
-  await page.evaluate(() => { const { state, onCellTap } = window.__cns; onCellTap(state.puzzle.rows - 1, state.puzzle.cols - 1); });
+  await page.evaluate(() => window.__cns.placeOne());
   await page.waitForTimeout(200);
 }
 

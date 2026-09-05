@@ -88,13 +88,7 @@ test.describe('home screen', () => {
     await gotoApp(page);
     await startNewGame(page, 'sehrleicht');
     await page.evaluate(() => {
-      const { state, onCellTap } = window.__cns;
-      const p = state.puzzle;
-      for (let r = 0; r < p.rows; r++)
-        for (let c = 0; c < p.cols; c++) {
-          state.tool = p.solution[r][c] ? 'pen' : 'eraser';
-          onCellTap(r, c);
-        }
+      while (window.__cns.placeOne()) { /* Rätsel komplett lösen */ }
     });
     await page.waitForFunction(() => window.__cns.state.status === 'won');
     await dismissStreakModal(page);

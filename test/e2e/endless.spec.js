@@ -40,12 +40,22 @@ test.describe('endless climb', () => {
 
     // Leben aufbrauchen → Lauf endet, Endlos-Ergebnis-Screen
     await page.evaluate(() => {
-      const { state, onCellTap } = window.__cns;
+      // Absichtlich raten: eine Gleichung bis auf EIN Feld korrekt füllen und
+      // dann eine falsche Zahl darauflegen — das ist der einzige echte Fehler.
+      const { state, placeAt } = window.__cns;
       const p = state.puzzle;
-      let r = -1, c = -1;
-      outer: for (let i = 0; i < p.rows; i++) for (let j = 0; j < p.cols; j++) { if (state.marks[i][j] === 'none') { r = i; c = j; break outer; } }
-      state.tool = p.solution[r][c] ? 'eraser' : 'pen'; // absichtlich falsch
-      for (let k = 0; k < 8; k++) onCellTap(r, c);
+      const cellsOf = (eq) => { const out = []; for (let i = 0; i <= eq.n; i++) out.push(eq.dir === 'h' ? [eq.r, eq.c + i] : [eq.r + i, eq.c]); return out; };
+      for (const eq of p.equations) {
+        const blanks = cellsOf(eq).filter(([r, c]) => !p.slots[r][c].given && state.placed[r][c] == null);
+        if (!blanks.length) continue;
+        const [tr, tc] = blanks[blanks.length - 1];
+        for (const [r, c] of blanks.slice(0, -1)) placeAt(r, c, p.slots[r][c].v);
+        const right = p.slots[tr][tc].v;
+        const wrong = state.tray.filter((t) => !t.used && t.v !== right).map((t) => t.v)[0];
+        if (wrong == null) continue;
+        for (let k = 0; k < 8; k++) placeAt(tr, tc, wrong);
+        break;
+      }
     });
     await expect(page.locator('.endless-reached')).toBeVisible();
     expect(await page.evaluate(() => !!window.__cns.state.endlessSummary)).toBe(true);
@@ -174,7 +184,7 @@ test.describe('endless climb', () => {
     await page.locator('.diff-start').click();
     await page.waitForFunction(() => window.__cns && window.__cns.state.puzzle && !window.__cns.state.generating);
     // Einen Zug machen (Status bleibt playing), dann pausieren.
-    await page.evaluate(() => { const s = window.__cns.state, p = s.puzzle; s.tool = p.solution[0][0] ? 'pen' : 'eraser'; window.__cns.onCellTap(0, 0); });
+    await page.evaluate(() => window.__cns.placeOne());
     await page.locator('.game-top .icon-btn').first().click();
     await page.waitForSelector('.pause-overlay');
     // „Mitspieler einladen" ist im Endlos-Lauf verfügbar (Live-Umwandlung zu Coop-Endlos).
@@ -191,7 +201,7 @@ test.describe('endless climb', () => {
     await page.waitForFunction(() => window.__cns.state.puzzle && !window.__cns.state.generating);
     const before = await page.evaluate(() => ({ big: window.__cns.state.puzzle.bigNumbers, seed: window.__cns.state.puzzle.seed, level: window.__cns.state.endless.level }));
     // einen Zug machen, dann pausieren und zum Menü.
-    await page.evaluate(() => { const s = window.__cns.state; s.tool = 'pen'; window.__cns.onCellTap(0, 0); });
+    await page.evaluate(() => window.__cns.placeOne());
     await page.locator('.game-top .icon-btn').first().click();
     await page.locator('.pause-overlay').getByText('Zum Menü').click();
     await page.waitForSelector('.screen.home');
@@ -220,13 +230,10 @@ test.describe('endless climb', () => {
     // Ein klassischer Solo-Stand als "der andere Spielstand".
     await startNewGame(page, 'sehrleicht');
     await page.evaluate(() => {
-      const { state, onCellTap } = window.__cns;
-      state.tool = 'pen';
-      outer: for (let r = 0; r < state.puzzle.rows; r++) for (let c = 0; c < state.puzzle.cols; c++)
-        if (state.puzzle.solution[r][c]) { onCellTap(r, c); break outer; }
+      window.__cns.placeOne();
     });
     await page.waitForTimeout(600);
-    await page.evaluate(() => { const { state, onCellTap } = window.__cns; onCellTap(state.puzzle.rows - 1, state.puzzle.cols - 1); });
+    await page.evaluate(() => window.__cns.placeOne());
     await page.waitForTimeout(300);
     await page.locator('.game-top .icon-btn').last().click();
     await page.locator('.pause-overlay').getByText('Zum Menü').click();
@@ -256,12 +263,22 @@ test.describe('endless climb', () => {
 
     // Lauf verlieren.
     await page.evaluate(() => {
-      const { state, onCellTap } = window.__cns;
+      // Absichtlich raten: eine Gleichung bis auf EIN Feld korrekt füllen und
+      // dann eine falsche Zahl darauflegen — das ist der einzige echte Fehler.
+      const { state, placeAt } = window.__cns;
       const p = state.puzzle;
-      let r = -1, c = -1;
-      outer: for (let i = 0; i < p.rows; i++) for (let j = 0; j < p.cols; j++) { if (state.marks[i][j] === 'none') { r = i; c = j; break outer; } }
-      state.tool = p.solution[r][c] ? 'eraser' : 'pen';
-      for (let k = 0; k < 8; k++) onCellTap(r, c);
+      const cellsOf = (eq) => { const out = []; for (let i = 0; i <= eq.n; i++) out.push(eq.dir === 'h' ? [eq.r, eq.c + i] : [eq.r + i, eq.c]); return out; };
+      for (const eq of p.equations) {
+        const blanks = cellsOf(eq).filter(([r, c]) => !p.slots[r][c].given && state.placed[r][c] == null);
+        if (!blanks.length) continue;
+        const [tr, tc] = blanks[blanks.length - 1];
+        for (const [r, c] of blanks.slice(0, -1)) placeAt(r, c, p.slots[r][c].v);
+        const right = p.slots[tr][tc].v;
+        const wrong = state.tray.filter((t) => !t.used && t.v !== right).map((t) => t.v)[0];
+        if (wrong == null) continue;
+        for (let k = 0; k < 8; k++) placeAt(tr, tc, wrong);
+        break;
+      }
     });
     await expect(page.locator('.endless-reached')).toBeVisible();
     // Der verlorene Lauf ist sofort aus der Bibliothek raus.

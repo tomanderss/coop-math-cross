@@ -45,6 +45,7 @@ test.describe('coop robustness', () => {
     await gotoApp(page);
     // Host mit laufender Runde simulieren; Coop.send ist ohne Firebase ein No-op,
     // daher prüfen wir den Handler-Pfad über den Log-Eintrag.
+    const puzzle = await makePuzzle(page, 'sehrleicht');
     await page.evaluate((p) => {
       const s = window.__cns.state;
       s.coop.active = true; s.coop.role = 'host'; s.coop.myId = 'me'; s.coop.awaitingStart = false;
@@ -53,7 +54,7 @@ test.describe('coop robustness', () => {
       // Als Host betrachten (der INIT-Handler setzt guest-typische Flags zurück).
       s.coop.role = 'host';
       window.__cns.handleCoopMsg({ type: 'resync', author: 'g1' });
-    }, PUZZLE('sehrleicht'));
+    }, puzzle);
     const hasLog = await page.evaluate(() => JSON.parse(localStorage.getItem('cmc_debuglog') || '[]').some((e) => String(e.message || '').includes('RESYNC-Anfrage')));
     expect(hasLog).toBe(true);
   });
@@ -63,7 +64,9 @@ test.describe('coop robustness', () => {
     await asGuestInGame(page);
     // Ein paar Partner-Züge, dann Verbindung tot.
     await page.evaluate(() => {
-      window.__cns.handleCoopMsg({ type: 'move', r: 0, c: 0, mark: 'kept', from: 'host' });
+      const b = window.__cns.firstBlank();
+      window.__testMove = b;
+      window.__cns.handleCoopMsg({ type: 'move', cells: [{ r: b.r, c: b.c, v: b.v }], from: 'host' });
       window.__cns.state.coop.online = false;
     });
     // Pausenmenü zeigt die Rettung.
@@ -75,9 +78,12 @@ test.describe('coop robustness', () => {
     // Jetzt eigenständiges Solo-Spiel: Coop aus, Solo-Slot, Marks gehören „mir".
     await page.waitForFunction(() => !window.__cns.state.coop.active && window.__cns.state.saveSlot === 'solo');
     expect(await page.evaluate(() => window.__cns.state.status)).toBe('playing');
-    expect(await page.evaluate(() => window.__cns.state.markedBy[0][0])).toBe('local');
+    expect(await page.evaluate(() => { const b = window.__testMove; return window.__cns.state.markedBy[b.r][b.c]; })).toBe('local');
     // Persistiert im SOLO-Slot (Fortsetzen nach App-Neustart möglich).
-    expect(await page.evaluate(() => { const g = JSON.parse(localStorage.getItem('cmc_active_game') || 'null'); return g && g.puzzle ? g.puzzle.rows : null; })).toBe(4);
+    expect(await page.evaluate(() => {
+      const g = JSON.parse(localStorage.getItem('cmc_active_game') || 'null');
+      return g && g.puzzle ? g.puzzle.rows === window.__cns.state.puzzle.rows : null;
+    })).toBe(true);
   });
 
   test('coop offline: leaving to the menu automatically rescues the board as a solo save', async ({ page }) => {
@@ -122,7 +128,12 @@ test.describe('coop robustness', () => {
       ];
       // Züge auf alle vier verteilen, damit die Verteilung 4 Zeilen hat.
       const ids = ['host', 'me', 'p3', 'p4'];
-      for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) { s.marks[r][c] = 'kept'; s.markedBy[r][c] = ids[(r * 4 + c) % 4]; }
+      let i = 0;
+      for (let r = 0; r < s.puzzle.rows; r++) for (let c = 0; c < s.puzzle.cols; c++) {
+        const sl = s.puzzle.slots[r][c];
+        if (!sl || sl.given) continue;
+        s.placed[r][c] = sl.v; s.markedBy[r][c] = ids[i++ % ids.length];
+      }
       s.coop.mistakesByPlayer = { host: 1, me: 0, p3: 2, p4: 0 };
       s.endless.active = true; s.endless.coop = true; s.endless.score = 7;
       s.lives = 1; s.maxLives = 3; s.coop.lifeLossBy = ['host', 'p3', null];
@@ -169,7 +180,12 @@ test.describe('coop robustness', () => {
       s.coop.players = [
         { id: 'host', name: 'JACOBY BESTMANNSSON', color: '#e5679a' }, { id: 'me', name: 'Ich', color: '#67a3e5' },
       ];
-      for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) { s.marks[r][c] = 'kept'; s.markedBy[r][c] = r < 3 ? 'host' : 'me'; }
+      let i = 0;
+      for (let r = 0; r < s.puzzle.rows; r++) for (let c = 0; c < s.puzzle.cols; c++) {
+        const sl = s.puzzle.slots[r][c];
+        if (!sl || sl.given) continue;
+        s.placed[r][c] = sl.v; s.markedBy[r][c] = i++ % 3 === 0 ? 'me' : 'host';
+      }
       s.coop.mistakesByPlayer = { host: 0, me: 1 };
       s.status = 'won';
     });

@@ -30,7 +30,7 @@ test.describe('dynamic skin', () => {
     await expect(page.locator('.skin-preview')).toBeVisible();
   });
 
-  test('the unlocked skin renders a conic-gradient ring on a kept cell in-game', async ({ page }) => {
+  test('the unlocked skin renders a conic-gradient ring on a placed tile in-game', async ({ page }) => {
     await gotoApp(page);
     // Unlock directly (equivalent to the version-jump/code path) and start a game.
     await page.evaluate(() => {
@@ -40,21 +40,15 @@ test.describe('dynamic skin', () => {
     });
     await startNewGame(page, 'sehrleicht');
 
-    // Mark one correct cell as kept (pen on a solution cell).
-    await page.evaluate(() => {
-      const { state, onCellTap } = window.__cns;
-      const p = state.puzzle;
-      outer: for (let r = 0; r < p.rows; r++)
-        for (let c = 0; c < p.cols; c++)
-          if (p.solution[r][c] && state.marks[r][c] === 'none') { state.tool = 'pen'; onCellTap(r, c); break outer; }
-    });
+    // Einen Stein legen — er trägt den Skin.
+    await page.evaluate(() => window.__cns.placeOne());
 
     // Board carries the skin classes.
     await expect(page.locator('.board.skin-dynamic.skin-style-gradient')).toBeVisible();
 
-    // The kept cell's ::after paints a conic-gradient (the rotating ring).
+    // Das ::after des gelegten Steins malt einen conic-gradient (der Ring).
     const bg = await page.evaluate(() => {
-      const cell = document.querySelector('.board .cell.kept.coop-mark');
+      const cell = document.querySelector('.board .cell.filled.coop-mark');
       return cell ? getComputedStyle(cell, '::after').backgroundImage : null;
     });
     expect(bg).toContain('conic-gradient');
