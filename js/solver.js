@@ -26,7 +26,18 @@ export const TIER = { DIRECT: 1, COMBO: 2, CROSS: 2.5, POOL: 3 };
 // Kandidatenmenge wäre unvollständig und damit unsicher).
 const ENUM_LIMIT = 40000;
 
-export function createSolveState(puzzle) {
+/**
+ * Ausgangslage des Solvers. Ohne Argumente = frisches Rätsel (nur Vorgaben,
+ * voller Vorrat). Mit `from` = der LAUFENDE Spielstand (bereits gelegte Steine
+ * + Rest-Vorrat) — so kann der Tipp-Tutor mitten in der Partie den nächsten
+ * erzwungenen Schritt bestimmen.
+ */
+export function createSolveState(puzzle, from = null) {
+  if (from) {
+    const unknown = new Set();
+    for (const id of blankIds(puzzle)) if (from.values[id] == null) unknown.add(id);
+    return { values: from.values.slice(), pool: countMap(from.pool), unknown, cols: puzzle.cols };
+  }
   return {
     values: givenValues(puzzle),
     pool: countMap(puzzle.tray),
@@ -107,7 +118,7 @@ function intersect(a, b) {
  */
 export function logicalSolve(puzzle, opts = {}) {
   const maxTier = opts.maxTier ?? 3;
-  const st = createSolveState(puzzle);
+  const st = createSolveState(puzzle, opts.from || null);
   const steps = [];
   const tierCounts = { 1: 0, 2: 0, 2.5: 0, 3: 0 };
   let maxUsed = 0;
@@ -194,8 +205,8 @@ export function allEquationsHold(puzzle, values) {
  * die sich nur in der Reihenfolge GLEICHER Vorratszahlen unterscheiden, sind
  * dieselbe Lösung — das ergibt sich automatisch, weil über WERTE gebrancht wird.
  */
-export function countSolutions(puzzle, limit = 2, nodeBudget = 200000) {
-  const st = createSolveState(puzzle);
+export function countSolutions(puzzle, limit = 2, nodeBudget = 200000, from = null) {
+  const st = createSolveState(puzzle, from);
   let count = 0, nodes = 0;
 
   const rec = () => {
