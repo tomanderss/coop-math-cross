@@ -162,12 +162,16 @@ test.describe('coop', () => {
     expect(await page.evaluate(() => window.__cns.state.status)).toBe('playing');
 
     // Ein Partner-Zug aus dem Replay kommt an …
-    await page.evaluate(() => { window.__cns.handleCoopMsg({ type: 'move', r: 0, c: 0, mark: 'keep', from: 'fake-partner' }); });
-    expect(await page.evaluate(() => window.__cns.state.marks[0][0])).toBe('keep');
+    const remote = await page.evaluate(() => {
+      const b = window.__cns.firstBlank();
+      window.__cns.handleCoopMsg({ type: 'move', cells: [{ r: b.r, c: b.c, v: b.v }], from: 'fake-partner' });
+      return b;
+    });
+    expect(await page.evaluate(({ r, c }) => window.__cns.state.placed[r][c], remote)).toBe(remote.v);
 
     // … und man kann sofort selbst mitspielen.
-    await page.evaluate(() => window.__cns.onCellTap(1, 1));
-    expect(await page.evaluate(() => window.__cns.state.marks[1][1])).not.toBe('none');
+    const mine = await page.evaluate(() => window.__cns.placeOne());
+    expect(await page.evaluate(({ r, c }) => window.__cns.state.placed[r][c], mine)).toBe(mine.v);
   });
 
   test('back navigation from the coop screen returns to home', async ({ page }) => {
@@ -200,9 +204,7 @@ test.describe('coop', () => {
     await startNewGame(page);
     // Zwei eigene Züge, damit markedBy-Einträge zum Umschreiben existieren.
     await page.evaluate(() => {
-      const { state, onCellTap } = window.__cns; const p = state.puzzle;
-      state.tool = p.solution[0][0] ? 'pen' : 'eraser'; onCellTap(0, 0);
-      state.tool = p.solution[0][1] ? 'pen' : 'eraser'; onCellTap(0, 1);
+      window.__testFirst = window.__cns.placeOne(); window.__cns.placeOne();
     });
     // Der Host lädt real aus dem PAUSENMENÜ ein — der Beitritt muss die Pause
     // automatisch beenden (der Gast steigt in ein LAUFENDES Spiel ein, nicht
@@ -225,7 +227,7 @@ test.describe('coop', () => {
       myId: window.__cns.state.coop.myId,
       saveSlot: window.__cns.state.saveSlot,
       players: window.__cns.state.coop.players.map(p => p.name).sort(),
-      markedBy00: window.__cns.state.markedBy[0][0],
+      markedByFirst: window.__cns.state.markedBy[window.__testFirst.r][window.__testFirst.c],
       gameStatus: window.__cns.state.status,
       soloSlot: JSON.parse(localStorage.getItem('cmc_active_game') || 'null'),
     }));
@@ -234,7 +236,7 @@ test.describe('coop', () => {
     expect(s.role).toBe('host');
     expect(s.saveSlot).toBe('coop');
     expect(s.players).toEqual(['Mara', 'Tom']);
-    expect(s.markedBy00).toBe('fake-me');   // eigene Solo-Züge gehören jetzt der Coop-Identität
+    expect(s.markedByFirst).toBe('fake-me');   // eigene Solo-Züge gehören jetzt der Coop-Identität
     expect(s.gameStatus).toBe('playing');   // Spiel lief einfach weiter
     expect(s.soloSlot).toBe(null);          // Solo-Slot geräumt (lebt im Coop-Slot weiter)
   });
@@ -261,8 +263,8 @@ test.describe('coop', () => {
     // Ein nachzügelndes START ist ein No-op (kein Timer-Reset/Doppelstart).
     await page.evaluate(() => window.__cns.handleCoopMsg({ type: 'start', startTime: Date.now() }));
     // Sofort spielbar:
-    await page.evaluate(() => window.__cns.onCellTap(1, 1));
-    expect(await page.evaluate(() => window.__cns.state.marks[1][1])).not.toBe('none');
+    const mv1 = await page.evaluate(() => window.__cns.placeOne());
+    expect(await page.evaluate(({ r, c }) => window.__cns.state.placed[r][c], mv1)).toBe(mv1.v);
   });
 
   // BLACKSCREEN-REGRESSION (gemeldet, per Beitritts-Render-Protokoll belegt:
@@ -278,37 +280,50 @@ test.describe('coop', () => {
     await gotoApp(page);
     await page.evaluate(() => {
       const puzzle = window.__testPuzzle;
-      const marks = Array.from({ length: 4 }, () => Array(4).fill('none'));
-      marks[1][2] = 'kept';
-      marks[3][0] = 'removed';
-      // GENAU die Form, die aus der RTDB zurückkommt: Objekt statt Array, und nur
-      // die beiden Zeilen, die überhaupt eine Markierung tragen.
-      const markedBy = { 1: { 2: 'partner-uid' }, 3: { 0: 'partner-uid' } };
-      window.__cns.handleCoopMsg({ type: 'init', puzzle, marks, markedBy, startTime: Date.now() - 5000, running: true });
+      // Zwei bereits gelegte Steine des Partners …
+      const blanks = [];
+      for (let r = 0; r < puzzle.rows && blanks.length < 2; r++)
+        for (let c = 0; c < puzzle.cols && blanks.length < 2; c++)
+          if (puzzle.slots[r][c] && !puzzle.slots[r][c].given) blanks.push([r, c]);
+      const placed = Array.from({ length: puzzle.rows }, () => Array(puzzle.cols).fill(null));
+      const markedBy = {};
+      for (const [r, c] of blanks) {
+        placed[r][c] = puzzle.slots[r][c].v;
+        // … in GENAU der Form, die aus der RTDB zurückkommt: Objekt statt Array,
+        // und nur die Zeilen, die überhaupt einen Eintrag tragen.
+        markedBy[r] = { ...(markedBy[r] || {}), [c]: 'partner-uid' };
+      }
+      window.__testBlanks = blanks;
+      window.__cns.handleCoopMsg({ type: 'init', puzzle, placed, markedBy, startTime: Date.now() - 5000, running: true });
     });
     await page.waitForSelector('.screen.game');
     // Das Brett muss stehen — vorher war .board gar nicht erst im DOM.
     await expect(page.locator('.board')).toBeVisible();
-    expect(await page.locator('.board .cell').count()).toBe(16);
+    const numCells = await page.evaluate(() => window.__testPuzzle.slots.flat().filter(Boolean).length);
+    expect(await page.locator('.board .cell').count()).toBe(numCells);
     const box = await page.locator('.board').boundingBox();
     expect(box.width).toBeGreaterThan(0);
     expect(box.height).toBeGreaterThan(0);
     // Der Spielstand ist vollständig angekommen (dichtes Raster, Besitzer erhalten).
-    const s = await page.evaluate(() => ({
-      rows: window.__cns.state.markedBy.length,
-      cols: window.__cns.state.markedBy.map(r => r.length),
-      owner: window.__cns.state.markedBy[1][2],
-      empty: window.__cns.state.markedBy[0][0],
-      mark: window.__cns.state.marks[3][0],
-    }));
-    expect(s.rows).toBe(4);
-    expect(s.cols).toEqual([4, 4, 4, 4]);
+    const s = await page.evaluate(() => {
+      const st = window.__cns.state, [a, b] = window.__testBlanks;
+      return {
+        rows: st.markedBy.length,
+        cols: st.markedBy.map((r) => r.length),
+        owner: st.markedBy[a[0]][a[1]],
+        placedA: st.placed[a[0]][a[1]],
+        placedB: st.placed[b[0]][b[1]],
+        puzzleRows: st.puzzle.rows, puzzleCols: st.puzzle.cols,
+      };
+    });
+    expect(s.rows).toBe(s.puzzleRows);
+    expect(s.cols.every((n) => n === s.puzzleCols)).toBe(true);
     expect(s.owner).toBe('partner-uid');
-    expect(s.empty).toBe(null);
-    expect(s.mark).toBe('removed');
+    expect(s.placedA).not.toBeNull();
+    expect(s.placedB).not.toBeNull();
     // Und die Runde ist normal spielbar.
-    await page.evaluate(() => window.__cns.onCellTap(0, 0));
-    expect(await page.evaluate(() => window.__cns.state.marks[0][0])).not.toBe('none');
+    const mv2 = await page.evaluate(() => window.__cns.placeOne());
+    expect(await page.evaluate(({ r, c }) => window.__cns.state.placed[r][c], mv2)).toBe(mv2.v);
   });
 
   // Sicherheitsnetz: der Gast bekam ein INIT OHNE running (z.B. alte Host-Version
@@ -327,11 +342,15 @@ test.describe('coop', () => {
     await expect(page.locator('.coop-lobby-overlay')).toBeVisible();
 
     // Partner macht einen Zug → Gast steigt automatisch ein.
-    await page.evaluate(() => window.__cns.handleCoopMsg({ type: 'move', r: 0, c: 0, mark: 'keep', from: 'fake-partner' }));
+    const wake = await page.evaluate(() => {
+      const b = window.__cns.firstBlank();
+      window.__cns.handleCoopMsg({ type: 'move', cells: [{ r: b.r, c: b.c, v: b.v }], from: 'fake-partner' });
+      return b;
+    });
     expect(await page.evaluate(() => window.__cns.state.coop.awaitingStart)).toBe(false);
     await expect(page.locator('.coop-lobby-overlay')).toBeHidden();
     expect(await page.evaluate(() => window.__cns.state.status)).toBe('playing');
-    expect(await page.evaluate(() => window.__cns.state.marks[0][0])).toBe('keep'); // Zug angewandt
+    expect(await page.evaluate(({ r, c }) => window.__cns.state.placed[r][c], wake)).toBe(wake.v); // Zug angewandt
   });
 
   test('a converted solo game\'s INIT carries the mid-game state (lives/hints/mistakes) to the joiner', async ({ page }) => {
@@ -369,28 +388,22 @@ test.describe('coop', () => {
   test('a repeated INIT for the game I am already playing is ignored (no board reset)', async ({ page }) => {
     await gotoApp(page);
     await page.evaluate(() => {
-      const puzzle = {
-        rows: 4, cols: 4,
-        rowTargets: [1, 1, 1, 1], colTargets: [1, 1, 1, 1],
-        values: Array.from({ length: 4 }, () => Array(4).fill(true).map(() => 1)),
-        solution: Array.from({ length: 4 }, () => Array(4).fill(true)),
-        regions: [], difficulty: 'leicht',
-      };
+      const puzzle = window.__testPuzzle;
       window.__cns.handleCoopMsg({ type: 'init', gameId: 'game-XYZ', puzzle, placed: null, markedBy: null, startTime: Date.now() - 5000, running: true });
     });
     await page.waitForSelector('.screen.game');
     // Einen eigenen Zug machen …
-    await page.evaluate(() => window.__cns.onCellTap(2, 2));
-    expect(await page.evaluate(() => window.__cns.state.marks[2][2])).not.toBe('none');
+    const own = await page.evaluate(() => window.__cns.placeOne());
+    expect(await page.evaluate(({ r, c }) => window.__cns.state.placed[r][c], own)).toBe(own.v);
     const gid = await page.evaluate(() => window.__cns.state.gameId);
     expect(gid).toBe('game-XYZ');   // Host-gameId übernommen
-    // … dann kommt das Wiederhol-INIT (frische leere marks) für DIESELBE gameId:
+    // … dann kommt das Wiederhol-INIT (frisch leeres Brett) für DIESELBE gameId:
     await page.evaluate(() => {
       const puzzle = window.__testPuzzle;
       window.__cns.handleCoopMsg({ type: 'init', gameId: 'game-XYZ', puzzle, placed: null, markedBy: null, startTime: Date.now(), running: true });
     });
     // Mein Zug ist NICHT verloren gegangen (Brett nicht neu geladen).
-    expect(await page.evaluate(() => window.__cns.state.marks[2][2])).not.toBe('none');
+    expect(await page.evaluate(({ r, c }) => window.__cns.state.placed[r][c], own)).toBe(own.v);
   });
 
   // Bildschirme verhalten sich wie ein Stack: Zurück führt Schritt für Schritt
@@ -481,22 +494,17 @@ test.describe('coop', () => {
     await startNewGame(page);
     // Ein paar Zuege setzen, damit der Stand wie bei einer laufenden Partie aussieht.
     const host = await page.evaluate(() => {
-      const { state, onCellTap } = window.__cns;
-      state.tool = 'pen';
-      // NUR korrekte Zellen antippen. Vorher lief der Stift blind ueber die
-      // erste Reihe — jeder Fehlgriff kostet ein Leben, nach dreien ist die
-      // Partie verloren und weitere Taps sind wirkungslos. Bei einem Raetsel,
-      // dessen erste Reihe mit drei Loeschzellen beginnt, blieb der Stand damit
-      // OHNE eine einzige Markierung, und der Test scheiterte an seiner eigenen
-      // Vorbereitung statt an der Sache (in 8 Wiederholungen einmal reproduziert).
+      const { state } = window.__cns;
+      // Immer nur KORREKTE Steine legen — ein falscher Zug kostet ein Leben und
+      // nach dreien waere die Partie verloren, der Test also an seiner eigenen
+      // Vorbereitung gescheitert.
       let n = 0;
-      outer: for (let r = 0; r < state.puzzle.rows; r++)
-        for (let c = 0; c < state.puzzle.cols; c++)
-          if (state.puzzle.solution[r][c]) { onCellTap(r, c); if (++n >= 6) break outer; }
+      while (n < 6 && window.__cns.placeOne()) n++;
       return {
         marked: n,
         puzzle: JSON.parse(JSON.stringify(state.puzzle)),
-        marks: JSON.parse(JSON.stringify(state.marks)),
+        placed: JSON.parse(JSON.stringify(state.placed)),
+        tray: JSON.parse(JSON.stringify(state.tray)),
         markedBy: JSON.parse(JSON.stringify(state.markedBy)),
       };
     });
@@ -513,7 +521,7 @@ test.describe('coop', () => {
       // herausgefiltert, beim Empfaenger kommt der Key gar nicht an.
       window.__cns.handleCoopMsg({
         type: 'init', gameId: 'conv1', running: true,
-        puzzle: h.puzzle, marks: h.marks, markedBy: h.markedBy,
+        puzzle: h.puzzle, placed: h.placed, tray: h.tray, markedBy: h.markedBy,
         startTime: Date.now() - 5000, lives: 3, maxLives: 3, hintsUsed: 0, mistakes: 0,
       });
     }, host);
@@ -529,11 +537,11 @@ test.describe('coop', () => {
     expect(box.height).toBeGreaterThan(50);
     const cells = await page.evaluate(() => ({
       total: document.querySelectorAll('.board .cell').length,
-      marked: document.querySelectorAll('.board .cell.kept, .board .cell.removed').length,
-      rows: window.__cns.state.puzzle.rows, cols: window.__cns.state.puzzle.cols,
+      filled: document.querySelectorAll('.board .cell.filled').length,
+      slots: window.__cns.state.puzzle.slots.flat().filter(Boolean).length,
     }));
-    expect(cells.total).toBe(cells.rows * cells.cols);
-    expect(cells.marked, 'der uebernommene Spielstand muss sichtbar sein').toBeGreaterThan(0);
+    expect(cells.total).toBe(cells.slots);
+    expect(cells.filled, 'der uebernommene Spielstand muss sichtbar sein').toBeGreaterThan(0);
     expect(errors, 'ein Render-Fehler wuerde die Seite leer lassen').toEqual([]);
 
     // Nach dem Aufbau laeuft die Rotation wieder.
@@ -546,25 +554,32 @@ test.describe('coop', () => {
   // (wer hat was gesetzt), nicht Kosmetik.
   test('im Coop: eigener Skin bleibt, Mitspieler tragen ihre zugewiesene Farbe', async ({ page }) => {
     await gotoApp(page);
-    const PUZZLE = window.__testPuzzle;
-    await page.evaluate((p) => {
-      const s = window.__cns.state;
+    await page.evaluate(() => {
+      const s = window.__cns.state, p = window.__testPuzzle;
       s.settings.skinStyle = 'rainbow'; s.settings.skinApplyTo = 'both'; s.settings.skinOn = true;
       s.inventory = { ...(s.inventory || {}), dynamicColor: { acquiredAt: Date.now() } };
       s.coop.active = true; s.coop.role = 'guest'; s.coop.myId = 'me';
       s.coop.players = [{ id: 'host', name: 'H', color: '#e5679a' }, { id: 'me', name: 'I', color: '#67a3e5' }];
-      const marks = Array.from({ length: 4 }, () => Array(4).fill('none'));
-      const by = Array.from({ length: 4 }, () => Array(4).fill(null));
-      marks[0][0] = 'kept'; by[0][0] = 'host';
-      marks[0][1] = 'kept'; by[0][1] = 'me';
-      window.__cns.handleCoopMsg({ type: 'init', gameId: 'colors', running: true, puzzle: p, marks, markedBy: by, startTime: Date.now(), lives: 3, maxLives: 3 });
-    }, PUZZLE);
+      const blanks = [];
+      for (let r = 0; r < p.rows && blanks.length < 2; r++)
+        for (let c = 0; c < p.cols && blanks.length < 2; c++)
+          if (p.slots[r][c] && !p.slots[r][c].given) blanks.push([r, c]);
+      const placed = Array.from({ length: p.rows }, () => Array(p.cols).fill(null));
+      const by = Array.from({ length: p.rows }, () => Array(p.cols).fill(null));
+      placed[blanks[0][0]][blanks[0][1]] = p.slots[blanks[0][0]][blanks[0][1]].v; by[blanks[0][0]][blanks[0][1]] = 'host';
+      placed[blanks[1][0]][blanks[1][1]] = p.slots[blanks[1][0]][blanks[1][1]].v; by[blanks[1][0]][blanks[1][1]] = 'me';
+      window.__testBlanks = blanks;
+      window.__cns.handleCoopMsg({ type: 'init', gameId: 'colors', running: true, puzzle: p, placed, markedBy: by, startTime: Date.now(), lives: 3, maxLives: 3 });
+    });
     await page.waitForSelector('.screen.game');
 
     const bg = await page.evaluate(() => {
-      const cells = [...document.querySelectorAll('.board .cell')];
-      const at = (i) => getComputedStyle(cells[i], '::after').backgroundImage;
-      return { host: at(0), me: at(1), boardCls: document.querySelector('.board').className };
+      const at = ([r, c]) => {
+        const el = document.querySelector(`.board .cell[data-r="${r}"][data-c="${c}"]`);
+        return getComputedStyle(el, '::after').backgroundImage;
+      };
+      const [a, b] = window.__testBlanks;
+      return { host: at(a), me: at(b), boardCls: document.querySelector('.board').className };
     });
     expect(bg.boardCls).toContain('mp-colors');
     // Die Farben der beiden Spieler muessen im Ring wirklich auftauchen …
@@ -581,17 +596,14 @@ test.describe('coop', () => {
     await gotoApp(page);
     await startNewGame(page, 'sehrleicht');
     await page.evaluate(() => {
-      const { state, onCellTap } = window.__cns;
+      const { state } = window.__cns;
       state.settings.skinStyle = 'rainbow'; state.settings.skinApplyTo = 'both'; state.settings.skinOn = true;
       state.inventory = { ...(state.inventory || {}), dynamicColor: { acquiredAt: Date.now() } };
-      state.tool = 'pen';
-      outer: for (let r = 0; r < state.puzzle.rows; r++)
-        for (let c = 0; c < state.puzzle.cols; c++)
-          if (state.puzzle.solution[r][c]) { onCellTap(r, c); break outer; }
+      window.__cns.placeOne();
     });
     await page.waitForTimeout(200);
     const solo = await page.evaluate(() => {
-      const cell = document.querySelector('.board .cell.kept');
+      const cell = document.querySelector('.board .cell.filled');
       return { cls: document.querySelector('.board').className, bg: cell ? getComputedStyle(cell, '::after').backgroundImage : '' };
     });
     expect(solo.cls, 'ohne Multiplayer keine Farb-Umlenkung').not.toContain('mp-colors');

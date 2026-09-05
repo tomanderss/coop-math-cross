@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { gotoApp, startNewGame, solveActivePuzzle, dismissStreakModal } from './helpers.js';
+import { gotoApp, startNewGame, solveActivePuzzle, dismissStreakModal, commitMistakes } from './helpers.js';
 
 // home-grid now only holds stats/history (settings is a top-right gear icon,
 // howto is a top-left "?" icon, changelog moved into settings) — see js/app.js.
@@ -53,18 +53,7 @@ test.describe('history', () => {
     await startNewGame(page, 'sehrleicht');
     await page.evaluate(() => { window.__cns.state.lives = 1; window.__cns.state.maxLives = 1; window.__cns.state.settings.livesEnabled = true; });
     // A single mistake with 1 life left immediately ends the round as lost.
-    await page.evaluate(() => {
-      const { state, onCellTap } = window.__cns;
-      const p = state.puzzle;
-      let wrongR = -1, wrongC = -1;
-      outer: for (let r = 0; r < p.rows; r++) {
-        for (let c = 0; c < p.cols; c++) {
-          if (state.marks[r][c] === 'none') { wrongR = r; wrongC = c; break outer; }
-        }
-      }
-      state.tool = p.solution[wrongR][wrongC] ? 'eraser' : 'pen';
-      onCellTap(wrongR, wrongC);
-    });
+    await commitMistakes(page, 1);
     await dismissStreakModal(page);
     await expect(page.locator('.result-card.lose')).toBeVisible();
     await page.locator('.result-card.lose .btn-ghost', { hasText: 'Menü' }).click();
@@ -83,14 +72,18 @@ test.describe('history', () => {
 test.describe('resume', () => {
   test('a fully-solved saved game is never offered as resume and is cleared on start', async ({ page }) => {
     await page.addInitScript(() => {
+      // 3 + 4 = 7 mit beiden Operanden als Lücke — komplett gelegt.
+      const puzzle = {
+        rows: 1, cols: 3,
+        slots: [[{ v: 3, given: false }, { v: 4, given: false }, { v: 7, given: true }]],
+        equations: [{ dir: 'h', r: 0, c: 0, n: 2, ops: ['+'] }],
+        tray: [3, 4], difficulty: 'leicht', seed: 1,
+      };
       const solved = {
-        puzzle: {
-          rows: 2, cols: 2, rowTargets: [1, 1], colTargets: [1, 1],
-          values: [[1, 1], [1, 1]], solution: [[true, false], [false, true]],
-          regions: [], difficulty: 'leicht', seed: 1,
-        },
-        marks: [['kept', 'removed'], ['removed', 'kept']],
-        markedBy: [[null, null], [null, null]],
+        puzzle,
+        placed: [[3, 4, null]],
+        tray: [{ v: 3, used: true }, { v: 4, used: true }],
+        markedBy: [[null, null, null]],
         elapsed: 5000, ts: Date.now(),
       };
       localStorage.setItem('cmc_active_game', JSON.stringify(solved));
@@ -104,14 +97,17 @@ test.describe('resume', () => {
 
   test('an unsolved saved game IS offered as resume', async ({ page }) => {
     await page.addInitScript(() => {
+      const puzzle = {
+        rows: 1, cols: 3,
+        slots: [[{ v: 3, given: false }, { v: 4, given: false }, { v: 7, given: true }]],
+        equations: [{ dir: 'h', r: 0, c: 0, n: 2, ops: ['+'] }],
+        tray: [3, 4], difficulty: 'leicht', seed: 1,
+      };
       const unsolved = {
-        puzzle: {
-          rows: 2, cols: 2, rowTargets: [1, 1], colTargets: [1, 1],
-          values: [[1, 1], [1, 1]], solution: [[true, false], [false, true]],
-          regions: [], difficulty: 'leicht', seed: 1,
-        },
-        marks: [['none', 'none'], ['none', 'none']],
-        markedBy: [[null, null], [null, null]],
+        puzzle,
+        placed: [[null, null, null]],
+        tray: [{ v: 3, used: false }, { v: 4, used: false }],
+        markedBy: [[null, null, null]],
         elapsed: 5000, ts: Date.now(),
       };
       localStorage.setItem('cmc_active_game', JSON.stringify(unsolved));

@@ -68,8 +68,9 @@ export function skinClasses(s, active) {
   const style = SKIN_STYLES.includes(s.skinStyle) ? s.skinStyle : 'gradient';
   return {
     'skin-dynamic': !!active,
-    'skin-kept': s.skinApplyTo !== 'removed',
-    'skin-removed': s.skinApplyTo !== 'kept',
+    // Es gibt nur EINE Art Markierung — den gelegten Stein. Die frühere
+    // Unterscheidung „eingekreist/gelöscht" (skinApplyTo) entfällt damit.
+    'skin-kept': true,
     'skin-spin': (Number(s.skinSpeed) || 0) > 0,
     'skin-ccw': s.skinDirection === 'ccw',
     ['skin-style-' + style]: true,

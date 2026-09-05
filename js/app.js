@@ -931,7 +931,7 @@ function shopDemoSkin() {
   const it = shopItemById(shopDemoId('skinpreset'));
   const s = it ? {
     skinStyle: it.data.style, skinColor1: it.data.c[0] || '', skinColor2: it.data.c[1] || '', skinColor3: it.data.c[2] || '',
-    skinSpeed: it.data.speed, skinGlow: it.data.glow, skinThickness: it.data.thickness, skinApplyTo: 'both', skinDirection: 'cw',
+    skinSpeed: it.data.speed, skinGlow: it.data.glow, skinThickness: it.data.thickness, skinDirection: 'cw',
   } : state.settings;
   return { vars: buildSkinVars(s), classes: buildSkinClasses(s, true) };
 }
@@ -4508,7 +4508,7 @@ function refreshResume() {
   // verworfen (sonst 100%-Brett ohne Interaktion, wie im Solo-Slot).
   let ge = loadActiveGameEndless();
   if (ge && ge.endless && !ge.pending && ge.puzzle && snapshotSolved(ge)) { log('storage', 'Gelösten Endlos-Stand verworfen'); saveActiveGameEndless(null); ge = null; }
-  const geValid = ge && ge.endless && (ge.pending || (ge.puzzle && ge.marks));
+  const geValid = ge && ge.endless && (ge.pending || (ge.puzzle && ge.placed));
   state.resumeAvailableEndless = geValid ? ge : null;
   // Bibliothek mitziehen: pruneSaves wirft dabei geloeste/leere Staende raus,
   // die Liste bleibt also von selbst sauber.
@@ -4520,31 +4520,33 @@ function refreshResume() {
   // weg — obwohl weitere Staende in der Bibliothek lagen. Der Knopf bietet
   // deshalb IMMER den juengsten fortsetzbaren Stand an, egal woher er kommt.
   if (!state.resumeAvailable) {
-    const next = state.saves.find((x) => !saveIsEndless(x) && x.puzzle && x.marks);
+    const next = state.saves.find((x) => !saveIsEndless(x) && x.puzzle && x.placed);
     if (next) { saveActiveGame(next); state.resumeAvailable = next; }
   }
   if (!state.resumeAvailableEndless) {
-    const nextE = state.saves.find((x) => saveIsEndless(x) && (x.pending || (x.puzzle && x.marks)));
+    const nextE = state.saves.find((x) => saveIsEndless(x) && (x.pending || (x.puzzle && x.placed)));
     if (nextE) { saveActiveGameEndless(nextE); state.resumeAvailableEndless = nextE; }
+  }
+}
+// Ein gespeicherter Stand ohne (vollständiges) markedBy bekäme beim Fortsetzen
+// weder die eigene Farbe noch den dynamischen Skin („die gelegten Steine sehen
+// nach dem Fortsetzen anders aus"). Eigene Steine daher nachträglich als eigene
+// ausweisen.
+function claimOwnTiles(g) {
+  if (!Array.isArray(g.placed)) return;
+  if (!Array.isArray(g.markedBy)) g.markedBy = g.placed.map((row) => row.map(() => null));
+  for (let r = 0; r < g.placed.length; r++) {
+    if (!Array.isArray(g.markedBy[r])) g.markedBy[r] = g.placed[r].map(() => null);
+    for (let c = 0; c < g.placed[r].length; c++) {
+      const v = g.placed[r][c];
+      if (v != null && v !== '' && !g.markedBy[r][c]) g.markedBy[r][c] = LOCAL_PLAYER_ID;
+    }
   }
 }
 function resumeGame() {
   const g = state.resumeAvailable;
   if (!g) return;
-  // Alt-Spielstände (vor der Eigene-Farbe-Markierung) haben kein oder lücken-
-  // haftes markedBy. Ohne Besitzer bekommt eine wiederhergestellte Markierung
-  // weder die eigene Farbe noch den dynamischen Skin (Symptom: „bereits
-  // eingekreiste Zahlen sind nach dem Fortsetzen nicht animiert"). Eigene
-  // Solo-Züge daher nachträglich als eigene ausweisen.
-  if (g.marks) {
-    if (!Array.isArray(g.markedBy)) g.markedBy = g.marks.map((row) => row.map(() => null));
-    for (let r = 0; r < g.marks.length; r++) {
-      if (!Array.isArray(g.markedBy[r])) g.markedBy[r] = g.marks[r].map(() => null);
-      for (let c = 0; c < g.marks[r].length; c++) {
-        if (g.marks[r][c] !== 'none' && !g.markedBy[r][c]) g.markedBy[r][c] = LOCAL_PLAYER_ID;
-      }
-    }
-  }
+  claimOwnTiles(g);
   navigate('game');
   loadPuzzleIntoState(g.puzzle, g);
   startTimer();
@@ -4572,14 +4574,8 @@ function resumeEndlessGame() {
   navStack = [() => { navigate('home'); }];
   log('game', 'Endlos-Lauf fortgesetzt', { level: em.level, pending: !!g.pending });
   if (g.pending || !g.puzzle) { loadEndlessLevel(); return; }  // zwischen Leveln → nächstes Level frisch
-  // Mitten im Level verlassen: exaktes Brett wiederherstellen (markedBy wie bei resumeGame auffüllen).
-  if (g.marks) {
-    if (!Array.isArray(g.markedBy)) g.markedBy = g.marks.map((row) => row.map(() => null));
-    for (let r = 0; r < g.marks.length; r++) {
-      if (!Array.isArray(g.markedBy[r])) g.markedBy[r] = g.marks[r].map(() => null);
-      for (let c = 0; c < g.marks[r].length; c++) if (g.marks[r][c] !== 'none' && !g.markedBy[r][c]) g.markedBy[r][c] = LOCAL_PLAYER_ID;
-    }
-  }
+  // Mitten im Level verlassen: exaktes Brett wiederherstellen.
+  claimOwnTiles(g);
   state.isTrainingGame = false;
   state.screen = 'game';
   navigate('game');
@@ -6109,7 +6105,6 @@ const ADMIN_ENUM_VALUES = {
   'settings/themeMode': ['auto', 'light', 'dark'],
   'settings/skinStyle': ['solid', 'gradient', 'rainbow'],
   'settings/skinDirection': ['cw', 'ccw'],
-  'settings/skinApplyTo': ['kept', 'removed', 'both'],
 };
 function adminEnumOptions(row) {
   if (row.path === 'settings/language') return SUPPORTED_LOCALES.map((l) => ({ v: l.id, label: l.label }));
@@ -8611,15 +8606,6 @@ const App = {
               <input type="range" class="set-range" min="1" max="5" step="0.5" :value="state.settings.skinThickness"
                      :style="{ '--rangePct': Math.round((state.settings.skinThickness-1)/4*100) + '%' }"
                      @input="setSetting('skinThickness', parseFloat($event.target.value))" />
-            </div>
-            <div class="set-row col">
-              <span class="set-row-label">{{ t('skin.applyTo') }}</span>
-              <div class="seg">
-                <button :class="{active:state.settings.skinApplyTo==='kept'}" @click="setSetting('skinApplyTo','kept')">{{ t('skin.applyKept') }}</button>
-                <button :class="{active:state.settings.skinApplyTo==='removed'}" @click="setSetting('skinApplyTo','removed')">{{ t('skin.applyRemoved') }}</button>
-                <button :class="{active:state.settings.skinApplyTo==='both'}" @click="setSetting('skinApplyTo','both')">{{ t('skin.applyBoth') }}</button>
-              </div>
-              <small class="set-hint">{{ t('skin.applyHint') }}</small>
             </div>
           </template>
           <template v-else>

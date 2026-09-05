@@ -51,7 +51,11 @@ export function genOptionsFor(diffId, { bigNumbers = false } = {}) {
     eqTarget: d.eqTarget,
     ops: d.ops.slice(),
     ternaryChance: d.ternaryChance,
-    minOperand: 1,
+    // „Große Zahlen" hebt AUCH die Untergrenze an — sonst wären die Zahlen zwar
+    // erlaubt größer, blieben aber zufällig oft klein und der Modus fühlte sich
+    // nicht anders an (gemessen: Maximalwert je nach Seed unter dem des
+    // Normalspiels).
+    minOperand: bigNumbers ? Math.max(2, Math.round(d.maxOperand * BIG_OPERAND_MULT * 0.3)) : 1,
     maxOperand: bigNumbers ? Math.round(d.maxOperand * BIG_OPERAND_MULT) : d.maxOperand,
     minResult: 1,
     maxResult: bigNumbers ? Math.round(d.maxResult * BIG_RESULT_MULT) : d.maxResult,

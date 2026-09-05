@@ -4,21 +4,24 @@ import { gotoApp, startNewGame } from './helpers.js';
 // Kern des Features: ein NEUES Spiel darf einen alten Stand nicht mehr
 // ueberschreiben. Frueher gab es genau einen Solo-Slot — wer ein neues Spiel
 // anfing, verlor den vorherigen Fortschritt ersatzlos.
+// Legt ein paar Steine — aber NIE alle: ein fertig gelöstes Rätsel beendet die
+// Partie, und eine beendete Partie räumt ihren Spielstand ab (genau das prüft
+// home.spec.js). Der Stand muss hier fortsetzbar BLEIBEN.
 async function playAFewCells(page, n = 3) {
+  const left = await page.evaluate(() => window.__cns.state.tray.filter((t) => !t.used).length);
+  const moves = Math.max(1, Math.min(n, left - 2));
   await page.evaluate((count) => {
-    const { state, onCellTap } = window.__cns;
-    state.tool = 'pen';
-    let done = 0;
-    for (let r = 0; r < state.puzzle.rows && done < count; r++) {
-      for (let c = 0; c < state.puzzle.cols && done < count; c++) {
-        if (state.puzzle.solution[r][c]) { onCellTap(r, c); done++; }
-      }
-    }
-  }, n);
-  // Autosave ist auf 400 ms gedrosselt.
+    for (let i = 0; i < count; i++) if (!window.__cns.placeOne()) break;
+  }, moves);
+  // Autosave ist auf 400 ms gedrosselt — ein weiterer Zug DANACH schreibt sicher.
   await page.waitForTimeout(600);
-  await page.evaluate(() => { const { state, onCellTap } = window.__cns; onCellTap(state.puzzle.rows - 1, state.puzzle.cols - 1); });
-  await page.waitForTimeout(200);
+  await page.evaluate(() => window.__cns.placeOne());
+  await page.waitForTimeout(250);
+  const gid = await page.evaluate(() => window.__cns.state.gameId);
+  await page.waitForFunction((id) => {
+    const g = JSON.parse(localStorage.getItem('cmc_active_game') || 'null');
+    return !!g && g.gameId === id;
+  }, gid, { timeout: 5000 });
 }
 
 test.describe('Spielstand-Bibliothek', () => {

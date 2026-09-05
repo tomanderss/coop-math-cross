@@ -100,23 +100,22 @@ describe('skins.skinVars', () => {
 });
 
 describe('skins.skinClasses', () => {
-  test('reflect applyTo / speed / direction / style', () => {
-    const c = skinClasses({ skinApplyTo: 'kept', skinSpeed: 0, skinDirection: 'cw', skinStyle: 'solid' }, true);
+  test('reflect speed / direction / style', () => {
+    const c = skinClasses({ skinSpeed: 0, skinDirection: 'cw', skinStyle: 'solid' }, true);
     assert.equal(c['skin-dynamic'], true);
+    // Es gibt nur EINE Markierungsart (der gelegte Stein) — der Skin gilt immer.
     assert.equal(c['skin-kept'], true);
-    assert.equal(c['skin-removed'], false);
     assert.equal(c['skin-spin'], false); // speed 0
     assert.equal(c['skin-style-solid'], true);
-    const c2 = skinClasses({ skinApplyTo: 'both', skinSpeed: 3, skinDirection: 'ccw', skinStyle: 'rainbow' }, true);
+    const c2 = skinClasses({ skinSpeed: 3, skinDirection: 'ccw', skinStyle: 'rainbow' }, true);
     assert.equal(c2['skin-kept'], true);
-    assert.equal(c2['skin-removed'], true);
     assert.equal(c2['skin-spin'], true);
     assert.equal(c2['skin-ccw'], true);
     assert.equal(c2['skin-style-rainbow'], true);
   });
   test('unknown style falls back to gradient; inactive ⇒ skin-dynamic false', () => {
-    assert.equal(skinClasses({ skinApplyTo: 'both', skinStyle: 'bogus' }, false)['skin-style-gradient'], true);
-    assert.equal(skinClasses({ skinApplyTo: 'both' }, false)['skin-dynamic'], false);
+    assert.equal(skinClasses({ skinStyle: 'bogus' }, false)['skin-style-gradient'], true);
+    assert.equal(skinClasses({}, false)['skin-dynamic'], false);
   });
   test('SKIN_STYLES lists the three supported styles', () => {
     assert.deepEqual(SKIN_STYLES, ['solid', 'gradient', 'rainbow']);

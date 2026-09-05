@@ -2329,14 +2329,14 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 
 /* ─── Coop Farb-Kennzeichnung pro Zelle ─── */
 /* Eingekreist: Ring in Spieler-Farbe statt Standard-Akzent */
-.cell.kept.coop-mark::after { border-color: var(--markcol); }
+.cell.filled.coop-mark::after { border-color: var(--markcol); }
 /* Gelöscht: Umrandung in Spieler-Farbe (einziger Hinweis, wer gelöscht hat, da Zahl ggf. verschwindet) —
    per Einstellung settings.coopRemovedOutline abschaltbar, da das manche Spieler verwirrt. */
 .cell.removed.coop-mark-removed { box-shadow: inset 0 0 0 2px var(--markcol); }
 /* Hinweis behält seinen grünen Ring (höhere Spezifität gewinnt gegen die Regel
    oben), bekommt aber zusätzlich einen farbigen Rahmen, der zeigt, wer den
    Hinweis ausgelöst hat. */
-.cell.kept.hintmark.coop-mark::after { border-color: var(--good); }
+.cell.filled.hintmark.coop-mark::after { border-color: var(--good); }
 .cell.hintmark.coop-mark { box-shadow: inset 0 0 0 2px var(--markcol); }
 
 /* ─── Dynamischer Skin (1.0, freischaltbar) ───────────────────────────────────
@@ -2355,11 +2355,11 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
    Hints bleiben bewusst unangetastet (grüner Ring). */
 @keyframes skinSpinCW { to { transform: rotate(360deg); } }
 @keyframes skinSpinCCW { to { transform: rotate(-360deg); } }
-.board.skin-dynamic.skin-spin.skin-kept .cell.kept.coop-mark:not(.hintmark)::after,
+.board.skin-dynamic.skin-spin.skin-kept .cell.filled.coop-mark:not(.hintmark)::after,
 .board.skin-dynamic.skin-spin.skin-removed .cell.removed.coop-mark-removed::after {
   animation: skinSpinCW var(--skin-speed) linear infinite;
 }
-.board.skin-dynamic.skin-spin.skin-ccw.skin-kept .cell.kept.coop-mark:not(.hintmark)::after,
+.board.skin-dynamic.skin-spin.skin-ccw.skin-kept .cell.filled.coop-mark:not(.hintmark)::after,
 .board.skin-dynamic.skin-spin.skin-ccw.skin-removed .cell.removed.coop-mark-removed::after {
   animation-name: skinSpinCCW;
 }
@@ -2372,13 +2372,13 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
    gerenderte Kacheln, hängender Pause-Blur). Der Glow ist rotationsinvariant
    (runde Ring-Alphamaske, flache --markcol-Farbe) und liegt deshalb als
    box-shadow auf dem STATISCHEN ::before darunter — einmal gerastert, 0 Kosten. */
-.skin-dynamic.skin-kept .cell.kept.coop-mark:not(.hintmark)::after {
+.skin-dynamic.skin-kept .cell.filled.coop-mark:not(.hintmark)::after {
   border: none;
   -webkit-mask: radial-gradient(farthest-side, #0000 calc(100% - var(--skin-thickness)), #000 calc(100% - var(--skin-thickness)));
           mask: radial-gradient(farthest-side, #0000 calc(100% - var(--skin-thickness)), #000 calc(100% - var(--skin-thickness)));
 }
 /* Statischer Glow-Ring unter der rotierenden Markierung (außen + innen). */
-.skin-dynamic.skin-kept .cell.kept.coop-mark:not(.hintmark)::before,
+.skin-dynamic.skin-kept .cell.filled.coop-mark:not(.hintmark)::before,
 .skin-dynamic.skin-removed .cell.removed.coop-mark-removed::before {
   content: ''; position: absolute; inset: 11%; border-radius: 50%; z-index: 1; pointer-events: none;
   box-shadow: 0 0 var(--skin-glow) var(--markcol), inset 0 0 var(--skin-glow) var(--markcol);
@@ -2395,17 +2395,17 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 }
 /* Pause/Overlay: Rotation anhalten — sonst müsste der backdrop-filter-Blur des
    Pause-Overlays das darunter weiterlaufende Brett in jedem Frame neu blurren. */
-.board.skin-freeze .cell.kept.coop-mark:not(.hintmark)::after,
+.board.skin-freeze .cell.filled.coop-mark:not(.hintmark)::after,
 .board.skin-freeze .cell.removed.coop-mark-removed::after { animation-play-state: paused; }
 /* Der Gradient selbst MUSS hier (auf ::after) stehen, NICHT als Custom-Property am
    Brett — sonst würde var(--markcol) schon am Brett (ohne --markcol) ungültig.
    Hier löst es pro Zelle in der jeweiligen Spielerfarbe auf. Leere Editor-Farben
    fallen via var(--skin-cN, …) auf eine aus --markcol abgeleitete Farbe zurück. */
-.skin-style-solid.skin-kept .cell.kept.coop-mark:not(.hintmark)::after,
+.skin-style-solid.skin-kept .cell.filled.coop-mark:not(.hintmark)::after,
 .skin-style-solid.skin-removed .cell.removed.coop-mark-removed::after {
   background: conic-gradient(from 0deg, var(--markcol) 0deg, color-mix(in srgb, var(--markcol) 25%, transparent) 150deg, transparent 250deg, var(--markcol) 360deg);
 }
-.skin-style-gradient.skin-kept .cell.kept.coop-mark:not(.hintmark)::after,
+.skin-style-gradient.skin-kept .cell.filled.coop-mark:not(.hintmark)::after,
 .skin-style-gradient.skin-removed .cell.removed.coop-mark-removed::after {
   background: conic-gradient(from 0deg,
     var(--skin-c1, var(--markcol)),
@@ -2413,7 +2413,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
     var(--skin-c3, color-mix(in srgb, var(--markcol) 60%, #000)),
     var(--skin-c1, var(--markcol)));
 }
-.skin-style-rainbow.skin-kept .cell.kept.coop-mark:not(.hintmark)::after,
+.skin-style-rainbow.skin-kept .cell.filled.coop-mark:not(.hintmark)::after,
 .skin-style-rainbow.skin-removed .cell.removed.coop-mark-removed::after {
   background: conic-gradient(from 0deg, #ff004c, #ff9a00, #ffe600, #43e043, #00c8ff, #6a5cff, #ff00c8, #ff004c);
 }
@@ -2426,15 +2426,15 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
    AUSGENOMMEN die EIGENEN Zellen (.mine): den eigenen Skin sieht man weiterhin in
    voller Pracht — man weiss ja selbst, welche Zellen von einem sind. Die
    Unterscheidung braucht es nur fuer die Mitspieler. */
-.board.mp-colors.skin-style-gradient.skin-kept .cell.kept.coop-mark:not(.hintmark):not(.mine)::after,
+.board.mp-colors.skin-style-gradient.skin-kept .cell.filled.coop-mark:not(.hintmark):not(.mine)::after,
 .board.mp-colors.skin-style-gradient.skin-removed .cell.removed.coop-mark-removed:not(.mine)::after,
-.board.mp-colors.skin-style-rainbow.skin-kept .cell.kept.coop-mark:not(.hintmark):not(.mine)::after,
+.board.mp-colors.skin-style-rainbow.skin-kept .cell.filled.coop-mark:not(.hintmark):not(.mine)::after,
 .board.mp-colors.skin-style-rainbow.skin-removed .cell.removed.coop-mark-removed:not(.mine)::after {
   background: conic-gradient(from 0deg, var(--markcol) 0deg, color-mix(in srgb, var(--markcol) 25%, transparent) 150deg, transparent 250deg, var(--markcol) 360deg);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .board.skin-dynamic.skin-spin.skin-kept .cell.kept.coop-mark:not(.hintmark)::after,
+  .board.skin-dynamic.skin-spin.skin-kept .cell.filled.coop-mark:not(.hintmark)::after,
   .board.skin-dynamic.skin-spin.skin-removed .cell.removed.coop-mark-removed::after { animation: none; }
 }
 
@@ -2811,7 +2811,7 @@ select.admin-row-input { flex-basis: 56%; max-width: 230px; font-size: .82rem; }
   position: relative; width: 46px; height: 46px; border-radius: 10px; background: var(--bg3);
   display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.2rem;
 }
-.shop-demo .cell.kept, .shop-demo .cell.removed { width: 52px; height: 52px; }
+.shop-demo .cell.filled, .shop-demo .cell.given { width: 52px; height: 52px; }
 .shop-demo-hint { color: var(--text2); font-size: .76rem; }
 .shop-demo-chip {
   display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 99px;

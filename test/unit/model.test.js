@@ -9,12 +9,20 @@ test('evalExpr rechnet Punkt vor Strich', () => {
   assert.equal(evalExpr([7, 5], ['-']), 2);
 });
 
-test('evalExpr verbietet Kommazahlen und negative Werte', () => {
+test('evalExpr verbietet Kommazahlen und negative ERGEBNISSE', () => {
   assert.equal(evalExpr([7, 2], ['/']), null, 'Division mit Rest');
   assert.equal(evalExpr([7, 0], ['/']), null, 'Division durch 0');
   assert.equal(evalExpr([3, 8], ['-']), null, 'negatives Ergebnis');
-  assert.equal(evalExpr([1, 8, 2], ['-', '*']), null, 'negatives Zwischenergebnis');
+  assert.equal(evalExpr([1, 8, 2], ['-', '*']), null, '1 − 16 wäre negativ');
   assert.equal(evalExpr([8, 2, 3], ['-', '-']), 3);
+});
+
+test('evalExpr erlaubt negative ZWISCHENSTÄNDE der Plus/Minus-Kette', () => {
+  // Nutzerbeispiel: 4 − 42 ist unterwegs negativ, das Ergebnis aber nicht.
+  assert.equal(evalExpr([4, 42, 67], ['-', '+']), 29);
+  assert.equal(evalExpr([2, 30, 40], ['-', '+']), 12);
+  // Bleibt es am Ende negativ, ist die Rechnung trotzdem ungültig.
+  assert.equal(evalExpr([2, 30, 5], ['-', '+']), null);
 });
 
 test('eqCells/eqIds folgen der Richtung', () => {

@@ -1,19 +1,11 @@
 import { test, expect } from '@playwright/test';
-import { gotoApp } from './helpers.js';
+import { gotoApp, makePuzzle } from './helpers.js';
 
 // Coop-Endlos aus Gast-Sicht (host-autoritativ): der Host schickt je Level ein
 // laufendes INIT mit endless-Marker + geteilten Rest-Leben; das Lösen erkennt der
 // Gast über sein Brett, das Leben-Aus über die MISTAKE-Sync. Reales 2-Client-
 // Firebase testet die Suite bewusst nicht — wir simulieren die Events via
 // window.__cns.handleCoopMsg (wie coop.spec.js).
-const PUZZLE = (difficulty) => ({
-  rows: 4, cols: 4,
-  rowTargets: [1, 1, 1, 1], colTargets: [1, 1, 1, 1],
-  values: Array.from({ length: 4 }, () => Array(4).fill(1)),
-  solution: Array.from({ length: 4 }, () => Array(4).fill(true)),
-  regions: [], difficulty,
-});
-
 async function asGuest(page) {
   await page.evaluate(() => {
     const s = window.__cns.state;
@@ -27,7 +19,7 @@ test.describe('coop endless climb', () => {
     await gotoApp(page);
     await asGuest(page);
     // Level 1 als laufendes Endlos-INIT (3 geteilte Leben).
-    await page.evaluate((p) => window.__cns.handleCoopMsg({ type: 'init', gameId: 'lvl1', running: true, puzzle: p, marks: null, markedBy: null, startTime: Date.now() - 1000, lives: 3, maxLives: 3, endless: true, endlessLevel: 1 }), PUZZLE('sehrleicht'));
+    await page.evaluate((p) => window.__cns.handleCoopMsg({ type: 'init', gameId: 'lvl1', running: true, puzzle: p, placed: null, markedBy: null, startTime: Date.now() - 1000, lives: 3, maxLives: 3, endless: true, endlessLevel: 1 }), await makePuzzle(page, 'sehrleicht'));
     await page.waitForSelector('.screen.game');
     expect(await page.evaluate(() => window.__cns.state.endless.active)).toBe(true);
     expect(await page.evaluate(() => window.__cns.state.endless.coop)).toBe(true);
@@ -36,7 +28,7 @@ test.describe('coop endless climb', () => {
     await expect(page.locator('.hud-item.endless-lvl')).toBeVisible();
 
     // Host schaltet auf Level 2 weiter (frische gameId, 2 Rest-Leben).
-    await page.evaluate((p) => window.__cns.handleCoopMsg({ type: 'init', gameId: 'lvl2', running: true, puzzle: p, marks: null, markedBy: null, startTime: Date.now(), lives: 2, maxLives: 3, endless: true, endlessLevel: 2 }), PUZZLE('leicht'));
+    await page.evaluate((p) => window.__cns.handleCoopMsg({ type: 'init', gameId: 'lvl2', running: true, puzzle: p, placed: null, markedBy: null, startTime: Date.now(), lives: 2, maxLives: 3, endless: true, endlessLevel: 2 }), await makePuzzle(page, 'leicht'));
     expect(await page.evaluate(() => window.__cns.state.endless.level)).toBe(2);
     expect(await page.evaluate(() => window.__cns.state.lives)).toBe(2);
 
@@ -53,13 +45,11 @@ test.describe('coop endless climb', () => {
   test('solving a level shows the win screen and a non-host waits for the host (no Fortsetzen button)', async ({ page }) => {
     await gotoApp(page);
     await asGuest(page);
-    await page.evaluate((p) => window.__cns.handleCoopMsg({ type: 'init', gameId: 'lvl1', running: true, puzzle: p, marks: null, markedBy: null, startTime: Date.now() - 1000, lives: 3, maxLives: 3, endless: true, endlessLevel: 1 }), PUZZLE('sehrleicht'));
+    await page.evaluate((p) => window.__cns.handleCoopMsg({ type: 'init', gameId: 'lvl1', running: true, puzzle: p, placed: null, markedBy: null, startTime: Date.now() - 1000, lives: 3, maxLives: 3, endless: true, endlessLevel: 1 }), await makePuzzle(page, 'sehrleicht'));
     await page.waitForSelector('.screen.game');
     // Brett lösen (alle Zellen behalten = Lösung all-true).
     await page.evaluate(() => {
-      const { state, onCellTap } = window.__cns;
-      state.tool = 'pen';
-      for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) onCellTap(r, c);
+      while (window.__cns.placeOne()) { /* Level durchspielen */ }
     });
     // NORMALER Gewinn-Screen (status='won') — der Gast wartet auf den Host, kein
     // „Fortsetzen"-Knopf, kein Ergebnis-Screen (Lauf läuft weiter).
@@ -71,7 +61,7 @@ test.describe('coop endless climb', () => {
     expect(await page.evaluate(() => !!window.__cns.state.endlessSummary)).toBe(false);
 
     // Host schickt Level 2 → Gast steigt ein (status='playing', Level 2).
-    await page.evaluate((p) => window.__cns.handleCoopMsg({ type: 'init', gameId: 'lvl2', running: true, puzzle: p, marks: null, markedBy: null, startTime: Date.now(), lives: 3, maxLives: 3, endless: true, endlessLevel: 2 }), PUZZLE('leicht'));
+    await page.evaluate((p) => window.__cns.handleCoopMsg({ type: 'init', gameId: 'lvl2', running: true, puzzle: p, placed: null, markedBy: null, startTime: Date.now(), lives: 3, maxLives: 3, endless: true, endlessLevel: 2 }), await makePuzzle(page, 'leicht'));
     expect(await page.evaluate(() => window.__cns.state.endless.level)).toBe(2);
     expect(await page.evaluate(() => window.__cns.state.status)).toBe('playing');
   });
@@ -92,7 +82,7 @@ test.describe('coop endless climb', () => {
       }));
     });
     await asGuest(page);
-    await page.evaluate((p) => window.__cns.handleCoopMsg({ type: 'init', gameId: 'cl1', running: true, puzzle: p, marks: null, markedBy: null, startTime: Date.now(), lives: 3, maxLives: 3, endless: true, endlessLevel: 3 }), PUZZLE('mittel'));
+    await page.evaluate((p) => window.__cns.handleCoopMsg({ type: 'init', gameId: 'cl1', running: true, puzzle: p, placed: null, markedBy: null, startTime: Date.now(), lives: 3, maxLives: 3, endless: true, endlessLevel: 3 }), await makePuzzle(page, 'mittel'));
     await page.waitForSelector('.screen.game');
     expect(await page.evaluate(() => window.__cns.state.endless.coop)).toBe(true);
 

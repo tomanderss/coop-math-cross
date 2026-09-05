@@ -1,5 +1,5 @@
 // Shared helpers for the Playwright E2E suite. The app exposes a debug hook
-// (window.__cns = { state, onCellTap, isSolved }) gated to localhost/127.0.0.1
+// (window.__cns = { state, placeAt, placeOne, isSolved, … }) gated to localhost/127.0.0.1
 // in js/app.js -- our webServer always runs on 127.0.0.1, so every test can
 // drive/inspect the full Vue reactive state without any extra instrumentation.
 
@@ -18,6 +18,21 @@ export async function gotoApp(page) {
   // werden; no-op, falls es (künftig) nicht erscheint.
   await page.locator('.skin-unlock-modal .btn-ghost').click({ timeout: 2000 }).catch(() => {});
   await page.waitForSelector('.screen.home');
+  await installTestPuzzle(page);
+}
+
+// Legt ein ECHTES Rätsel als window.__testPuzzle ab. Die Coop-Tests spielen
+// INIT-Nachrichten von Hand ein und brauchen dafür ein Brett, das exakt dem
+// Modell entspricht — handgeschriebene Attrappen veralten sonst bei jeder
+// Modelländerung.
+export async function installTestPuzzle(page, difficulty = 'sehrleicht', seed = 4711) {
+  await page.evaluate(async ({ difficulty, seed }) => {
+    const [{ generatePuzzle }, { genOptionsFor }] = await Promise.all([
+      import('/js/generator.js'),
+      import('/js/config.js'),
+    ]);
+    window.__testPuzzle = JSON.parse(JSON.stringify(generatePuzzle({ ...genOptionsFor(difficulty), seed })));
+  }, { difficulty, seed });
 }
 
 // Klappt eine Einstellungs-Karte (Accordion) per sichtbarem Label auf (z.B.

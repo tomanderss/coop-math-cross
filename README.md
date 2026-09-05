@@ -1,16 +1,19 @@
 # Coop Math Cross
 
-Ein Number-Sums-Logikrätsel als Progressive Web App (PWA) — offline spielbar, mit
-Dunkelmodus, mehreren Feldgrößen und Schwierigkeitsgraden. Aufgebaut wie die
-Werwolf-App (Vanilla + Vue 3 via ESM, kein Build-Tooling, Versionierung über
-Commit-Anzahl).
+Ein Rechenkreuz-Logikrätsel als Progressive Web App (PWA) — offline spielbar, mit
+Dunkelmodus, neun Schwierigkeitsgraden und Mehrspieler-Modi. Vanilla JS + Vue 3
+via ESM, kein Build-Tooling.
 
 ## Spielregeln
-- Jede Zahl **links neben einer Reihe** und **über einer Spalte** ist die **Zielsumme**.
-- Kreise mit dem **Stift (○)** genau die Zahlen ein, die zusammen die Zielsumme ergeben.
-- Überflüssige Zahlen mit dem **Radierer (⌫)** durchstreichen.
-- Jede **farbige Region** hat zusätzlich eine eigene Zielsumme (Zahl in der Ecke).
+- Ziehe die Zahlen aus dem **Vorrat** in die leeren Felder des Rechennetzes.
+- Jede waagerechte und senkrechte **Rechnung** muss aufgehen (z. B. `7 × 3 = 21`).
+- Es gibt nur **ganze, positive Zahlen** — nie ein Komma, nie ein Minus im Ergebnis.
+- Zwei Steine **tauschen** den Platz, wenn du einen auf einen belegten Platz ziehst;
+  der **Sortier-Knopf** ordnet den Vorrat aufsteigend.
+- Der Vorrat enthält **exakt** die fehlenden Zahlen — bleibt etwas übrig, liegt etwas falsch.
 - Jedes Rätsel ist garantiert **eindeutig** und **ohne Raten** lösbar.
+- Ein **Fehler** ist nur, wenn ein Stein eine Rechnung vollständig macht, die dann
+  nicht aufgeht — das kostet eines von drei Leben.
 
 ## Lokal testen (iPhone im selben WLAN)
 Doppelklick auf **`start-server.bat`** → die angezeigte `http://<IP>:8080`-Adresse

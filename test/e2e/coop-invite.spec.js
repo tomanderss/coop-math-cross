@@ -16,7 +16,7 @@ test.describe('coop invite stays available after first join', () => {
     await page.waitForFunction(() => window.__cns && window.__cns.state.puzzle && !window.__cns.state.generating);
 
     // Einen Zug machen (Status bleibt playing), dann pausieren.
-    await page.evaluate(() => { const s = window.__cns.state, p = s.puzzle; s.tool = p.solution[0][0] ? 'pen' : 'eraser'; window.__cns.onCellTap(0, 0); });
+    await page.evaluate(() => window.__cns.placeOne());
     await page.locator('.game-top .icon-btn').first().click();
     await page.waitForSelector('.pause-overlay');
 

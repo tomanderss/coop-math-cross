@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Coop Math Cross</string>
+    <string name="title_activity_main">Coop Math Cross</string>
+    <string name="package_name">com.tomanderss.coopmathcross</string>
+    <string name="custom_url_scheme">com.tomanderss.coopmathcross</string>
+</resources>
