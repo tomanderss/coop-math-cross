@@ -14,6 +14,7 @@
 //  4. PRÜFUNG: Mindestanteil an Lücken + Stufenlimit, sonst neuer Versuch.
 
 import { eqIds, evalExpr, OPS } from './model.js';
+import { DIFF_BY_ID, genOptionsFor } from './config.js';
 import { logicalSolve } from './solver.js';
 import { log } from './debuglog.js';
 
@@ -279,8 +280,17 @@ export const DEFAULT_OPTS = {
   maxTier: 3, blankRatio: 0.6, minBlankRatio: 0.45, tries: 60,
 };
 
+/**
+ * Erzeugt ein Rätsel. Wird nur eine `difficulty` übergeben, kommen Raster,
+ * Rechenarten, Zahlenraum usw. aus config.js — jeder Aufrufer (Solo, Endlos,
+ * Coop-INIT, Race/Team-Seed, Verlaufs-Endbrett) bekommt damit garantiert
+ * dieselben Vorgaben, ohne sie einzeln durchreichen zu müssen.
+ */
 export function generatePuzzle(options = {}) {
-  const opts = { ...DEFAULT_OPTS, ...options };
+  const preset = options.difficulty && DIFF_BY_ID[options.difficulty]
+    ? genOptionsFor(options.difficulty, { bigNumbers: !!options.bigNumbers })
+    : {};
+  const opts = { ...DEFAULT_OPTS, ...preset, ...options };
   if (opts.ops.some(o => !OPS.includes(o))) throw new Error('unbekannter Operator');
   const t0 = Date.now();
   let seed = (opts.seed ?? Math.floor(Math.random() * 2 ** 31)) >>> 0;
