@@ -1,8 +1,21 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.1';
-export const BUILD_HASH = '15f82ec';
+export const BUILD      = '1.2';
+export const BUILD_HASH = 'f3af7c6';
 
 export const CHANGELOG = [
+  {
+    "version": "1.2",
+    "date": "05.09.2026",
+    "changes": [
+      "Brett ist jetzt ein echtes zusammenhängendes Raster wie beim Sudoku statt loser Kästchen",
+      "Zahl- und Rechenzeichen-Felder stoßen ohne Fuge aneinander und teilen sich eine Rasterlinie",
+      "Deutlich stärkerer Kontrast zwischen Vorgabe, Lücke und gelegtem Stein",
+      "Zellen werden viel größer: Rechenzeichen-Spuren passen sich an, freie Höhe geht ans Brett",
+      "Vorrat halbiert die Höhe (kleinere Steine, engere Abstände, höchstens drei Zeilen)",
+      "Toter Streifen unter der Werkzeugleiste entfernt, Knöpfe im Spiel kompakter",
+      "Spielstände von anderen Geräten erscheinen sofort und lassen sich fortsetzen"
+    ]
+  },
   {
     "version": "1.1",
     "date": "05.09.2026",
