@@ -11,8 +11,8 @@ name: Tests
 # in der Suite. Deshalb wird sie AUFGETEILT statt beschleunigt:
 #   • Unit-Tests laufen als eigener Job PARALLEL zu den E2E-Tests und brauchen
 #     dafür gar keinen Browser (spart dort die Chromium-Installation komplett).
-#   • Die 132 E2E-Tests laufen in DREI Shards gleichzeitig (Playwright `--shard`,
-#     verifiziert exakt 44/44/44 — die Summe ist die vollständige Suite).
+#   • Die E2E-Tests laufen in DREI Shards gleichzeitig (Playwright `--shard`);
+#     die Summe der Shards ist immer die vollständige Suite.
 # Erwartete Wanduhrzeit dadurch ~3 min statt ~7, bei identischer Abdeckung.
 # Nebeneffekt auf die QUALITÄT: weniger Tests je Runner heißt weniger Last je
 # Runner. Genau die lastbedingten Timeouts (training.spec.js) werden damit

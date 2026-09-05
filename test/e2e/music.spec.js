@@ -8,6 +8,11 @@ import { gotoApp, startNewGame, gotoSettingsSection } from './helpers.js';
 
 test('Menü-Musik läuft im Hauptmenü (Default an)', async ({ page }) => {
   await gotoApp(page);
+  // Browser starten Audio erst nach einer Nutzergeste zuverlässig — die App
+  // hängt dafür an keydown/pointerdown/touchstart (unlockAudio in init()).
+  // Ohne diese Geste bleibt der AudioContext im Testbrowser hängen; das ist
+  // Browser-Politik, kein App-Fehler.
+  await page.keyboard.press('Shift');
   await page.waitForFunction(() => window.__cns.Music.isPlaying() === true, null, { timeout: 4000 });
 });
 
