@@ -1,8 +1,20 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.0';
-export const BUILD_HASH = 'f4f6318';
+export const BUILD      = '1.1';
+export const BUILD_HASH = '15f82ec';
 
 export const CHANGELOG = [
+  {
+    "version": "1.1",
+    "date": "05.09.2026",
+    "changes": [
+      "Das Rechennetz passt jetzt auf jedem Gerät komplett auf den Bildschirm — auch das größte Brett. Leere Zwischenspuren schrumpfen, Operatoren brauchen keine eigene Kachel mehr, und die Rasterfugen werden endlich mitgerechnet (vorher rutschte die letzte Zeile unter den Vorrat).",
+      "Deutlich bessere Kontraste: Vorgaben, offene Lücken und selbst gelegte Steine sind sofort auseinanderzuhalten; eine fertig gerechnete Aufgabe bekommt einen grünen Rahmen.",
+      "Der Vorrat ist kompakter: die Steine richten sich nach ihrer Anzahl, statt das halbe Display zu belegen. Mehrstellige Zahlen werden enger gesetzt und laufen nicht mehr über den Rand.",
+      "Beim Ziehen schwebt die Zahl jetzt ÜBER dem Finger, sodass man sie sieht — und landet genau dort, wo sie angezeigt wird. Das Zielfeld leuchtet vorher auf.",
+      "Viel abwechslungsreichere Rätsel: keine doppelten Aufgaben mehr auf einem Brett, deutlich weniger Wiederholungen derselben Zahl, keine Alibi-Rechnungen wie „×1\" oder „÷1\" — und in den oberen Stufen ein größerer Zahlenraum.",
+      "Adminrechte werden jetzt ausschließlich im eigenen Datenbaum geprüft — vorher zogen sie versehentlich die Rolle aus der Schwester-App."
+    ]
+  },
   {
     "version": "1.0",
     "date": "05.09.2026",
