@@ -92,6 +92,38 @@ export function returnToTray(tray, v) {
   return fresh;
 }
 
+/**
+ * Bringt den Vorrat zwingend mit Brett + Rätsel in Einklang: die OFFENEN Steine
+ * müssen exakt die noch fehlenden Zahlen sein (Rätsel-Vorrat minus alles, was
+ * schon auf dem Brett liegt). Rein — heilt beim Laden auch alte, verkorkste
+ * Spielstände.
+ *
+ * Nötig, weil der Vorrat sonst auseinanderlaufen kann: `sortTray` wirft benutzte
+ * Steine weg, `returnToTray` legt einen fehlenden wieder an, und beim TAUSCH
+ * zweier gelegter Steine lief das Auf und Ab so gegeneinander, dass ein Stein
+ * doppelt existierte (gemeldet: „manche Level haben zu viele Steine").
+ * Reihenfolge und ids bestehender Steine bleiben erhalten, es wird nur
+ * Überzähliges entfernt und Fehlendes ergänzt.
+ */
+export function reconcileTray(tray, placedValues, puzzleTray) {
+  const open = new Map();          // Wert -> wie viele Steine OFFEN sein müssen
+  for (const v of puzzleTray || []) open.set(v, (open.get(v) || 0) + 1);
+  const used = new Map();          // Wert -> wie viele Steine auf dem Brett liegen
+  for (const v of placedValues || []) used.set(v, (used.get(v) || 0) + 1);
+  for (const [v, n] of used) open.set(v, Math.max(0, (open.get(v) || 0) - n));
+  const out = [];
+  for (const t of (Array.isArray(tray) ? tray : [])) {
+    const bucket = t && t.used ? used : open;
+    const n = (t && bucket.get(t.v)) || 0;
+    if (n <= 0) continue;                       // überzählig → fällt weg
+    bucket.set(t.v, n - 1);
+    out.push({ v: t.v, used: !!t.used });
+  }
+  for (const [v, n] of open) for (let i = 0; i < n; i++) out.push({ v, used: false });
+  for (const [v, n] of used) for (let i = 0; i < n; i++) out.push({ v, used: true });
+  return out.map((t, i) => ({ ...t, id: i }));
+}
+
 /** Wie viele Steine liegen noch im Vorrat? */
 export function trayLeft(tray) { return tray.reduce((n, t) => n + (t.used ? 0 : 1), 0); }
 

@@ -7,7 +7,7 @@ import { validPuzzleShape as puzzleShapeOk } from './model.js';
 import {
   buildDisplay, buildTray, sortTray as sortTrayList, takeFromTray, returnToTray, trayLeft,
   emptyPlaced, currentValues, equationsAt, placementBreaksEquation, solvedEquationSet,
-  isBoardSolved, progressOf, solutionAt, normalizePuzzle, OP_SYMBOL,
+  isBoardSolved, progressOf, solutionAt, normalizePuzzle, reconcileTray, OP_SYMBOL,
 } from './board.js';
 import { todayDateStr } from './streak.js';
 import * as Coop from './coop.js';
@@ -1193,7 +1193,15 @@ function buildBoardState(puzzle, saved) {
       for (let c = 0; c < puzzle.cols; c++) if (state.placed[r][c] != null) takeFromTray(tray, state.placed[r][c]);
     }
   }
-  state.tray = tray;
+  // Letzte Instanz: die OFFENEN Steine müssen exakt die noch fehlenden Zahlen
+  // sein. Heilt auch Spielstände, die vor dem Tausch-Fix entstanden sind.
+  const placedValues = [];
+  for (let r = 0; r < puzzle.rows; r++) {
+    for (let c = 0; c < puzzle.cols; c++) if (state.placed[r][c] != null) placedValues.push(state.placed[r][c]);
+  }
+  const fixed = reconcileTray(tray, placedValues, puzzle.tray);
+  if (fixed.length !== tray.length) log('game', 'Vorrat mit dem Brett abgeglichen', { vorher: tray.length, nachher: fixed.length });
+  state.tray = fixed;
   state.drag = null;
   state.pick = null;
 }
@@ -2118,16 +2126,26 @@ function applyChanges(changes, { user = true, fromId = null, hint = false } = {}
   // 2. Übernehmen — Vorrat mitführen, damit Brett und Vorrat nie auseinanderlaufen.
   const wasSolved = new Set(solvedEquations.value);
   const undoSteps = [];
+  // Vorrat in ZWEI Durchgängen führen: erst ALLE freigewordenen Zahlen zurück,
+  // dann alle neu gelegten entnehmen. Pro Zelle abwechselnd zurück/entnehmen
+  // ging beim TAUSCH zweier gelegter Steine schief: das takeFromTray für den
+  // gezogenen Stein fand keinen offenen Stein dieses Werts (er lag ja auf dem
+  // Brett) und tat nichts, während das returnToTray der zweiten Änderung den
+  // benutzten Stein wieder freigab — der Wert lag danach auf dem Brett UND im
+  // Vorrat (gemeldet: „manche Level haben zu viele Steine").
+  const freed = [], taken = [];
   for (const ch of changes) {
     const prev = state.placed[ch.r][ch.c];
     if (prev === ch.v) continue;
     undoSteps.push({ r: ch.r, c: ch.c, prev });
-    if (prev != null) returnToTray(state.tray, prev);
-    if (ch.v != null) takeFromTray(state.tray, ch.v);
+    if (prev != null) freed.push(prev);
+    if (ch.v != null) taken.push(ch.v);
     state.placed[ch.r][ch.c] = ch.v;
     state.markedBy[ch.r][ch.c] = ch.v == null ? null : (user ? (state.coop.myId || LOCAL_PLAYER_ID) : fromId);
     if (moveLog && ch.v != null) moveLog.push(user ? { r: ch.r, c: ch.c, v: ch.v, t: state.elapsed } : { r: ch.r, c: ch.c, v: ch.v, t: state.elapsed, other: 1 });
   }
+  for (const v of freed) returnToTray(state.tray, v);
+  for (const v of taken) takeFromTray(state.tray, v);
   if (!undoSteps.length) return true;
   state.history = [undoSteps];    // nur der letzte Zug ist rückgängig machbar
 
