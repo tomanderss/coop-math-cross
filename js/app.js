@@ -1,15 +1,19 @@
 // app.js — Coop Math Cross (Vue 3, esm-browser). Solo-Spiel; Coop folgt später.
 import { createApp, reactive, computed, watch, nextTick, onMounted, markRaw, ref } from './vue.esm-browser.prod.js';
 import { BUILD, CHANGELOG } from './buildinfo.js';
-import { createBot, nextAction as botNextAction, applyAction as botApplyAction, botPct, targetMsFor, clampProfile, clampAvgMs, PRESET_LEVELS, PRESET_PROFILES, DEFAULT_AVG_MS } from './duelbot.js';
-import { analyzeGame, buildProfile, MIN_GAMES as CLONE_MIN_GAMES } from './playstyle.js';
-import { DIFFICULTIES, DIFF_BY_ID, REGION_COLORS, COOP_COLORS, COOP_COLORS_CB, DEFAULT_GAME_OPTIONS, bigNumbersAllowed, LIVES, HINTS, COOP_MAX_PLAYERS, DONATE_URL, regionChipInk, coinReward, coinMultiplier, coinBaseForIndex, coinStreakBonus, COIN_STREAK_STEP, hexToRgb } from './config.js';
-import { generatePuzzle, remapColorsForMarkVisibility } from './generator.js';
+import { DIFFICULTIES, DIFF_BY_ID, REGION_COLORS, COOP_COLORS, COOP_COLORS_CB, DEFAULT_GAME_OPTIONS, bigNumbersAllowed, genOptionsFor, LIVES, HINTS, COOP_MAX_PLAYERS, DONATE_URL, coinReward, coinMultiplier, coinBaseForIndex, coinStreakBonus, COIN_STREAK_STEP, hexToRgb } from './config.js';
+import { generatePuzzle } from './generator.js';
+import { validPuzzleShape as puzzleShapeOk } from './model.js';
+import {
+  buildDisplay, buildTray, sortTray as sortTrayList, takeFromTray, returnToTray, trayLeft,
+  emptyPlaced, currentValues, equationsAt, placementBreaksEquation, solvedEquationSet,
+  isBoardSolved, progressOf, solutionAt, OP_SYMBOL,
+} from './board.js';
 import { todayDateStr } from './streak.js';
 import * as Coop from './coop.js';
 import { log, exportLogToFile } from './debuglog.js';
 import { ACHIEVEMENTS, evaluate as evaluateAchievements } from './achievements.js';
-import { findTrainingStep, isFullyTier1Solvable } from './training.js';
+import { nextTrainingStep } from './training.js';
 import { buildHintTutorial } from './hinttutor.js';
 import * as Music from './music.js';
 import {
@@ -84,8 +88,12 @@ const state = reactive({
   isTrainingGame: false,      // true, während der Trainingsmodus (Schritt-für-Schritt-Erklärung) läuft
   trainingStep: null,         // aktuell erklärter Schritt { r, c, action, reason, group } oder null
   trainingDone: false,        // true, sobald keine weiteren Tier-1-Schritte mehr gefunden wurden
-  marks: [],                 // 'none' | 'kept' | 'removed'
-  cellMeta: [],              // pro Zelle: { region, color, edges, chip, hint, hintMark }
+  placed: [],                // 2D-Raster der GELEGTEN Zahlen (null = Lücke noch offen)
+  tray: [],                  // Vorrat [{ id, v, used }] — ein benutzter Stein hinterlässt eine Lücke
+  display: null,             // Anzeige-Raster (2*rows-1 × 2*cols-1) aus board.buildDisplay
+  drag: null,                // laufendes Ziehen { v, from:{r,c}|null, tileId, x, y } oder null
+  pick: null,                // per Antippen gewählter Stein { v, from:{r,c}|null, tileId } oder null
+  hintCells: {},             // "r*1000+c" -> true: kurzer Leucht-Puls für per Hinweis gelegte Felder
   lives: 0, maxLives: 0,
   hintsLeft: 0,
   hintsUsed: 0,
@@ -113,10 +121,10 @@ const state = reactive({
   elapsed: 0,
   history: [],               // Undo-Stack
   flash: {},                 // "r-c" -> true (rote Fehler-Animation)
-  justResolved: {},          // "row-3" | "col-1" | "region-2" -> true (Fertig-Puls)
+  justResolved: {},          // "eq-3" -> true (Fertig-Puls einer gelösten Rechnung)
   cellPx: 48,
   zoom: 1,
-  markedBy: [],               // 2D-Array parallel zu marks: Coop-Spieler-Id, LOCAL_PLAYER_ID (solo/Wettkampf) oder null
+  markedBy: [],               // 2D-Array parallel zu placed: Coop-Spieler-Id, LOCAL_PLAYER_ID (solo/Wettkampf) oder null
 
   // Auswahl im Setup
   sel: { ...DEFAULT_GAME_OPTIONS },
@@ -199,20 +207,6 @@ const state = reactive({
     // Der Transport (raceProgress/{uid}) ist bereits pro-Spieler; hier halten wir
     // die Liste aller Gegner statt genau eines. Die 1v1-Felder oben bleiben für
     // den klassischen 1v1-Ergebnis-/HUD-Text erhalten.
-    // ── KI-Duell ──────────────────────────────────────────────────────────────
-    // Ein KI-Duell ist ein vollwertiges Race-Match, aber OHNE Firebase/Raum: der
-    // Gegner ist ein lokaler opponents-Eintrag, dessen pct ein Scheduler treibt
-    // (s. startAiDuel/scheduleBotAction). Funktioniert daher auch offline.
-    ai: false,              // true, wenn der Gegner der KI-Bot ist
-    aiLevel: 'medium',      // feste Stärke-Stufe (PRESET_LEVELS)
-    aiSkill: 1,             // fester Faktor 1 — die Stärke steuert allein die Stufe
-                            // (der frühere Prozent-Regler war überflüssig neben den Stufen)
-    aiTargetMs: 0,          // kalibrierte Zielzeit dieses Duells (nur Diagnose)
-    aiMode: 'preset',       // 'preset' = feste Stärke-Stufe · 'individual' = Klon (eigener oder Freund)
-    aiClone: false,         // true = gegen den EIGENEN Klon spielen (Spielstil aus eigenen Partien)
-    aiFriend: null,         // uid eines FREUNDES-Klons (schlägt aiClone/Stufe) oder null
-    friendClones: {},       // uid → Cloud-Eintrag aus /aiProfiles (beim Öffnen des Screens geholt)
-    clonesLoading: false,   // true, solange die Freundes-Klone geladen werden
     ffa: false,             // true, wenn dieses Race-Match ein FFA (≥3 Spieler) ist
     opponents: [],          // [{ id, name, color, pct, mistakes, out }] — alle Gegner (ohne mich)
     winnerName: '',         // Name des ersten Fertigen (für den FFA-Ergebnis-Text)
@@ -596,7 +590,7 @@ function pauseGame(broadcast = true, remoteElapsed) {
     // Race: state.coop.active bleibt absichtlich false (siehe state.race-Kommentar),
     // coopSend() wäre hier also ein No-op -- analog zum MSG.START-Versand direkt
     // über Coop.send(), damit der Gegner trotzdem mitpausiert/-startet wird.
-    if (state.race.active && !state.race.ai) Coop.send({ type: Coop.MSG.PAUSE, paused: true, elapsed: state.elapsed });
+    if (state.race.active) Coop.send({ type: Coop.MSG.PAUSE, paused: true, elapsed: state.elapsed });
     else if (state.coop.active) coopSend({ type: Coop.MSG.PAUSE, paused: true, elapsed: state.elapsed });
   }
   persistGame();          // aktuellen Stand lokal sichern …
@@ -610,7 +604,7 @@ function resumeFromPause(broadcast = true) {
   startTimer();
   updateMusic();
   if (broadcast) {
-    if (state.race.active && !state.race.ai) Coop.send({ type: Coop.MSG.PAUSE, paused: false });
+    if (state.race.active) Coop.send({ type: Coop.MSG.PAUSE, paused: false });
     else if (state.coop.active) coopSend({ type: Coop.MSG.PAUSE, paused: false });
   }
 }
@@ -643,7 +637,7 @@ function startResumeCountdown(fromRemote = false) {
   if (!fromRemote) {
     // Partner sollen den Countdown SYNCHRON sehen (das Pausenmenü schließt
     // sonst bei ihnen erst abrupt mit dem fertigen RESUME).
-    if (state.race.active && !state.race.ai) Coop.send({ type: Coop.MSG.RESUME_COUNT });
+    if (state.race.active) Coop.send({ type: Coop.MSG.RESUME_COUNT });
     else if (state.coop.active) coopSend({ type: Coop.MSG.RESUME_COUNT });
   }
   resumeCountdownTimer = setTimeout(() => {
@@ -1000,13 +994,26 @@ const skinPresetOwned = computed(() => SKINPRESET_ITEMS.some((p) => ownsShopItem
 const skinActive = computed(() => (skinUnlocked.value || skinPresetOwned.value) && state.settings.skinEnabled);
 const skinVars = computed(() => skinActive.value ? buildSkinVars(state.settings) : {});
 const skinBoardClasses = computed(() => buildSkinClasses(state.settings, skinActive.value));
-const gridStyle = computed(() => ({
-  gridTemplateColumns: `var(--hdr) repeat(${state.puzzle?.cols || 1}, var(--cell))`,
-  gridTemplateRows: `var(--hdr) repeat(${state.puzzle?.rows || 1}, var(--cell))`,
-  '--cell': state.cellPx + 'px',
-  '--hdr': state.cellPx + 'px',
-  '--fs': Math.max(11, Math.round(state.cellPx * 0.4)) + 'px',
-}));
+// Das Anzeige-Raster wechselt Zahl- und Operator-Spalten ab. Operator-Felder
+// sind schmaler (OP_RATIO) — sonst passen breite Bretter (bis 7 Zahl-Spalten =
+// 13 Anzeige-Spalten) auf einem Telefon nicht mehr nebeneinander.
+const OP_RATIO = 0.62;
+function gridTracks(n) {
+  const out = [];
+  for (let i = 0; i < n; i++) out.push(i % 2 ? 'var(--opcell)' : 'var(--cell)');
+  return out.join(' ');
+}
+const gridStyle = computed(() => {
+  const cols = state.puzzle ? state.puzzle.cols * 2 - 1 : 1;
+  const rows = state.puzzle ? state.puzzle.rows * 2 - 1 : 1;
+  return {
+    gridTemplateColumns: gridTracks(cols),
+    gridTemplateRows: gridTracks(rows),
+    '--cell': state.cellPx + 'px',
+    '--opcell': Math.round(state.cellPx * OP_RATIO) + 'px',
+    '--fs': Math.max(11, Math.round(state.cellPx * 0.44)) + 'px',
+  };
+});
 // Aktive Paletten-Transformation für cellStyle (null = Klassisch/unverändert).
 function activePaletteFx() {
   const it = shopItemById(shopEquippedId('palette'));
@@ -1111,55 +1118,25 @@ function startCoopRound() {
   else coopSend({ type: Coop.MSG.START, startTime });
 }
 
-// ─── ZELLEN-METADATEN (Regionen, Ränder, Chips) ───────────────────────────────
-function buildCellMeta(puzzle) {
-  const { rows, cols, regions } = puzzle;
-  const meta = Array.from({ length: rows }, () =>
-    Array.from({ length: cols }, () => ({ region: -1, color: null, edges: {}, chip: null, hint: false, hintMark: false })));
-  // Regions-ID-Gitter aufbauen
-  const rid = Array.from({ length: rows }, () => Array(cols).fill(-1));
-  regions.forEach((reg, ri) => { for (const [r, c] of reg.cells) rid[r][c] = ri; });
-  const same = (r, c, ri) => r >= 0 && r < rows && c >= 0 && c < cols && rid[r][c] === ri;
-
-  regions.forEach((reg, ri) => {
-    const color = REGION_COLORS[reg.colorIndex % REGION_COLORS.length];
-    let chipCell = null;
-    for (const [r, c] of reg.cells) {
-      const m = meta[r][c];
-      m.region = ri; m.color = color;
-      // Rand auf einer Seite, wenn der Nachbar zu einer anderen Region gehört (oder außerhalb)
-      m.edges = {
-        t: !same(r - 1, c, ri), b: !same(r + 1, c, ri),
-        l: !same(r, c - 1, ri), r: !same(r, c + 1, ri),
-      };
-      if (chipCell === null || r < chipCell[0] || (r === chipCell[0] && c < chipCell[1])) chipCell = [r, c];
+// ─── BRETT-AUFBAU ─────────────────────────────────────────────────────────────
+// Das Anzeige-Raster (Zahlen auf geraden, Operatoren auf ungeraden Koordinaten)
+// wird EINMAL je Partie gebaut — es ändert sich während des Spiels nie, nur die
+// gelegten Zahlen tun das.
+function buildBoardState(puzzle, saved) {
+  state.display = markRaw(buildDisplay(puzzle));
+  state.placed = Coop.normalizeGrid(saved?.placed, puzzle.rows, puzzle.cols, null);
+  // Vorrat aus dem Rätsel aufbauen und alles abziehen, was schon auf dem Brett liegt.
+  const tray = saved?.tray && Array.isArray(saved.tray) && saved.tray.length
+    ? saved.tray.map((t, i) => ({ id: i, v: t.v, used: !!t.used }))
+    : buildTray(puzzle);
+  if (!saved?.tray) {
+    for (let r = 0; r < puzzle.rows; r++) {
+      for (let c = 0; c < puzzle.cols; c++) if (state.placed[r][c] != null) takeFromTray(tray, state.placed[r][c]);
     }
-    if (chipCell) meta[chipCell[0]][chipCell[1]].chip = reg.target;
-  });
-  return meta;
-}
-
-// Cage-Farben so wählen, dass die eigene(n) Markierungsfarbe(n) darauf sichtbar
-// bleiben — eine pinke Cage macht einen pinken Einkreis-Ring unsichtbar. Läuft
-// beim Brettaufbau, bei Farb-/Palettenwechsel (setSetting) und wenn im Coop
-// neue Spieler(farben) dazukommen. Bewusst clientseitig: jedes Gerät färbt für
-// SEINE Spielerfarbe sicher (das Puzzle selbst bleibt identisch).
-function applyMarkSafeRegionColors() {
-  const p = state.puzzle;
-  if (!p || !p.regions || !state.cellMeta.length) return;
-  const fx = activePaletteFx();
-  const effectiveColors = REGION_COLORS.map((c) => applyPaletteFx(c, fx));
-  const avoid = [state.settings.coopMyColor, ...(state.coop.active ? state.coop.players.map((pl) => pl.color) : [])]
-    .map(hexToRgb).filter(Boolean);
-  const idxs = remapColorsForMarkVisibility({ regions: p.regions, rows: p.rows, cols: p.cols, effectiveColors, avoidRgbs: avoid });
-  let remapped = 0;
-  p.regions.forEach((reg, ri) => {
-    const color = REGION_COLORS[idxs[ri]];
-    if (idxs[ri] !== ((reg.colorIndex || 0) % REGION_COLORS.length)) remapped++;
-    for (const [r, c] of reg.cells) state.cellMeta[r][c].color = color;
-  });
-  cellStyleCache = [];   // gecachte --rc-*-Styles gehören zur alten Färbung
-  if (remapped) log('game', 'Cage-Farben wegen Spielerfarbe umgelenkt', { remapped });
+  }
+  state.tray = tray;
+  state.drag = null;
+  state.pick = null;
 }
 
 // ─── OFF-THREAD-GENERIERUNG (on-demand) ───────────────────────────────────────
@@ -1231,7 +1208,7 @@ function finishNewGame(puzzle) {
     state.coop.awaitingStart = true;
     resetReadyFlags();
     startTimer();
-    coopSend({ type: Coop.MSG.INIT, puzzle: state.puzzle, marks: state.marks, markedBy: wireMarkedBy(), startTime: state.startTime });
+    coopSend({ type: Coop.MSG.INIT, puzzle: state.puzzle, placed: wirePlaced(), tray: state.tray.map(t => ({ v: t.v, used: t.used ? 1 : 0 })), markedBy: wireMarkedBy(), startTime: state.startTime });
   } else {
     startTimer();
     syncCloudNow('gameStart'); // Solo-Start: frisches Spiel sofort in die Cloud
@@ -1435,7 +1412,7 @@ function endlessLevelSolved(remote) {
     // Verlauf + Missionen + Achievements/Prestige — exakt wie ein normaler Sieg.
     state.puzzleHistory = recordHistory({
       difficulty: diff, dim: { r: state.puzzle.rows, c: state.puzzle.cols },
-      seed: state.puzzle.seed, marks: state.marks.map(row => row.slice()),
+      seed: state.puzzle.seed, placed: state.placed.map(row => row.slice()), tray: state.tray.map(t => ({ v: t.v, used: t.used })),
       timeMs: state.elapsed, outcome: 'won', coop: state.coop.active,
     });
     recordMissionEvent({
@@ -1505,7 +1482,7 @@ function endlessGameOver() {
     applyStreakAfterGame();
     state.puzzleHistory = recordHistory({
       difficulty: state.puzzle.difficulty, dim: { r: state.puzzle.rows, c: state.puzzle.cols },
-      seed: state.puzzle.seed, marks: state.marks.map(row => row.slice()),
+      seed: state.puzzle.seed, placed: state.placed.map(row => row.slice()), tray: state.tray.map(t => ({ v: t.v, used: t.used })),
       timeMs: state.elapsed, outcome: 'lost', coop: false,
     });
   }
@@ -1644,7 +1621,7 @@ function finishCoopEndlessLevel(puzzle) {
   e.advancing = false;
   // Fertiges Level als LAUFENDES INIT an die Gäste (endless-Marker + Level + Leben +
   // kumulierte Herz-Verluste); sie steigen sofort ein (running:true).
-  coopSend({ type: Coop.MSG.INIT, gameId, running: true, puzzle: state.puzzle, marks: state.marks, markedBy: wireMarkedBy(), startTime, lives: e.lives, maxLives: LIVES, endless: true, endlessLevel: e.level, lifeLossBy: carryLoss.map(x => x || '') });
+  coopSend({ type: Coop.MSG.INIT, gameId, running: true, puzzle: state.puzzle, placed: wirePlaced(), tray: state.tray.map(t => ({ v: t.v, used: t.used ? 1 : 0 })), markedBy: wireMarkedBy(), startTime, lives: e.lives, maxLives: LIVES, endless: true, endlessLevel: e.level, lifeLossBy: carryLoss.map(x => x || '') });
   coopSend({ type: Coop.MSG.START, startTime });
   startCoopGame(startTime);
   requestWakeLock();
@@ -1672,7 +1649,7 @@ function endlessCoopGameOver() {
     applyStreakAfterGame();
     state.puzzleHistory = recordHistory({
       difficulty: state.puzzle.difficulty, dim: { r: state.puzzle.rows, c: state.puzzle.cols },
-      seed: state.puzzle.seed, marks: state.marks.map(row => row.slice()),
+      seed: state.puzzle.seed, placed: state.placed.map(row => row.slice()), tray: state.tray.map(t => ({ v: t.v, used: t.used })),
       timeMs: state.elapsed, outcome: 'lost', coop: true,
     });
   }
@@ -1774,7 +1751,7 @@ function startTrainingGame() {
 // -- die Markierung selbst passiert erst im "anwenden"-Klick (applyTrainingStep),
 // damit die Begründung zuerst gelesen werden kann, bevor sich das Feld ändert.
 function trainingNextStep() {
-  state.trainingStep = findTrainingStep(state.puzzle, state.marks);
+  state.trainingStep = nextTrainingStep(state.puzzle, state.placed, trayValues.value);
   state.trainingDone = !state.trainingStep;
 }
 
@@ -1810,9 +1787,8 @@ function loadPuzzleIntoState(puzzle, saved) {
   state.sessionRev = 0;
   state.sessionReadonly = false;
   state.puzzle = puzzle;
-  state.cellMeta = buildCellMeta(puzzle);
-  applyMarkSafeRegionColors();   // Cage-Farben meiden die (lokalen) Spielerfarben
-  if (saved && saved.hintMarks) for (const [r, c] of saved.hintMarks) state.cellMeta[r][c].hintMark = true;
+  buildBoardState(puzzle, saved);
+  state.hintCells = {};
   // Raster IMMER dicht normalisieren (nie roh uebernehmen): ein per Coop-INIT
   // empfangenes markedBy kommt aus Firebase RTDB und ist dort loechrig, weil RTDB
   // null-Werte nicht speichert — leere Zeilen fehlen ganz, Luecken machen aus dem
@@ -1821,7 +1797,6 @@ function loadPuzzleIntoState(puzzle, saved) {
   // komplett im DOM (gemeldeter „Blackscreen beim Beitritt", belegt durch das
   // Beitritts-Render-Protokoll: cells 0 / w 0 / h 0 bei geladenem Spielstand).
   // Gilt genauso fuer einen alten/beschaedigten Spielstand aus dem Speicher.
-  state.marks = Coop.normalizeGrid(saved?.marks, puzzle.rows, puzzle.cols, 'none');
   state.markedBy = Coop.normalizeGrid(saved?.markedBy, puzzle.rows, puzzle.cols, null);
   // Einmal je Brett-Aufbau (nicht pro Zelle) protokollieren, WENN tatsaechlich ein
   // loechriges Raster geheilt wurde — macht einen erneuten Blackscreen-Bericht
@@ -1845,7 +1820,6 @@ function loadPuzzleIntoState(puzzle, saved) {
   state.history = [];
   state.flash = {};
   state.justResolved = {};
-  state.tool = state.settings.confirmTool || 'pen';
   state.status = 'playing';
   state.newHighscore = false;
   state.wouldHaveBeenBest = false;
@@ -1900,8 +1874,12 @@ function computeCellSize() {
   // breiter/höher als der verfügbare Raum und ragt aus dem Bildschirm.
   const framePad = boardFrameClass() ? 20 : 0;
   availW -= framePad; availH -= framePad;
-  const idealW = Math.floor(availW / (cols + 1)); // +1 für Kopfspalte
-  const idealH = Math.floor(availH / (rows + 1)); // +1 für Kopfzeile
+  // Das Anzeige-Raster hat zwischen je zwei Zahl-Feldern ein SCHMALES
+  // Operator-Feld (OP_RATIO), also cols + (cols-1)*OP_RATIO Zellbreiten.
+  const unitsW = cols + (cols - 1) * OP_RATIO;
+  const unitsH = rows + (rows - 1) * OP_RATIO;
+  const idealW = Math.floor(availW / unitsW);
+  const idealH = Math.floor(availH / unitsH);
   const ideal = Math.min(idealW, idealH);
   // Deckel für die Auto-Einpassung: begrenzt die Zellgröße, damit kleine Bretter
   // auf großen Displays nicht riesig wirken. Skaliert mit der kürzeren Bildschirm-
@@ -1916,7 +1894,7 @@ function computeCellSize() {
   // (availW/availH) — der Deckel ist nur die Obergrenze, kein fixer Wert.
   const shortSide = Math.min(window.innerWidth || 0, window.innerHeight || 0);
   const cap = desktopBoard() ? 128
-    : (shortSide >= 600 ? Math.min(120, Math.round(shortSide * 0.14)) : 56);
+    : (shortSide >= 600 ? Math.min(120, Math.round(shortSide * 0.14)) : 72);
   // KEIN hoher Mindestwert mehr: Beim Öffnen MUSS das ganze Brett passen — lieber
   // kleine Zellen als eine abgeschnittene Zeile/Spalte. Der frühere 26px-Boden
   // ließ das größte Brett (14×14 = 15 Einheiten) auf schmalen Handys eine Spalte
@@ -1953,63 +1931,34 @@ function resetZoom() {
 }
 
 // ─── SUMMEN & FERTIG-STATUS ───────────────────────────────────────────────────
-function rowSum(r) {
-  let s = 0; const p = state.puzzle; for (let c = 0; c < p.cols; c++) if (state.marks[r][c] === 'kept') s += p.values[r][c]; return s;
-}
-function colSum(c) {
-  let s = 0; const p = state.puzzle; for (let r = 0; r < p.rows; r++) if (state.marks[r][c] === 'kept') s += p.values[r][c]; return s;
-}
-function regionSum(i) {
-  let s = 0; const p = state.puzzle; for (const [r, c] of p.regions[i].cells) if (state.marks[r][c] === 'kept') s += p.values[r][c]; return s;
-}
-// Eine Gruppe gilt erst als "aufgelöst", wenn JEDE Zelle korrekt markiert ist
-// (Lösungszellen eingekreist, alle anderen gelöscht) — nicht schon, wenn die
-// Summe stimmt. Kein automatisches Auflösen.
-const cellCorrect = (r, c) => state.puzzle.solution[r][c]
-  ? state.marks[r][c] === 'kept'
-  : state.marks[r][c] === 'removed';
-function rowResolved(r) { const p = state.puzzle; for (let c = 0; c < p.cols; c++) if (!cellCorrect(r, c)) return false; return true; }
-function colResolved(c) { const p = state.puzzle; for (let r = 0; r < p.rows; r++) if (!cellCorrect(r, c)) return false; return true; }
-function regionResolved(i) { const p = state.puzzle; for (const [r, c] of p.regions[i].cells) if (!cellCorrect(r, c)) return false; return true; }
-// ── Render-Performance: aufgelöste Zeilen/Spalten/Käfige EINMAL vorberechnen ──
-// Vorher scannte jede der bis zu 196 Zellen (14×14 „R.I.P.") bei JEDEM Render ihren
-// Käfig/ihre Zeile/Spalte neu (regionResolved/…). Das lief nicht nur pro Zug, sondern
-// bei JEDEM Re-Render (z.B. den vielen Puls-Animationen gegen Spielende) → CPU-Dauerlast,
-// Hitze, zunehmendes Ruckeln. Diese Sets rechnen nur neu, wenn sich state.marks ändert
-// (ein Zug); die Render-Nutzung (cellClasses/Template) ist dann ein O(1)-Set-Lookup.
-const resolvedRowSet = computed(() => { const p = state.puzzle; const s = new Set(); if (p) for (let r = 0; r < p.rows; r++) if (rowResolved(r)) s.add(r); return s; });
-const resolvedColSet = computed(() => { const p = state.puzzle; const s = new Set(); if (p) for (let c = 0; c < p.cols; c++) if (colResolved(c)) s.add(c); return s; });
-const resolvedRegionSet = computed(() => { const p = state.puzzle; const s = new Set(); if (p) for (let i = 0; i < p.regions.length; i++) if (regionResolved(i)) s.add(i); return s; });
-// Render-Helfer (O(1)) — NUR im Template/cellClasses verwenden (Spiellogik nutzt
-// weiter die rohen row/col/regionResolved für die punktuelle Vorher/Nachher-Prüfung).
-function rowResolvedR(r) { return resolvedRowSet.value.has(r); }
-function colResolvedR(c) { return resolvedColSet.value.has(c); }
-function regionResolvedR(i) { return resolvedRegionSet.value.has(i); }
-// Zeilen-/Spaltensummen ebenfalls EINMAL pro Zug cachen statt in jedem Header-
-// Render (mehrfach: Wert + Match-Klasse) die ganze Zeile/Spalte neu aufzusummieren.
-const rowSums = computed(() => { const p = state.puzzle; if (!p) return []; const a = new Array(p.rows); for (let r = 0; r < p.rows; r++) { let s = 0; for (let c = 0; c < p.cols; c++) if (state.marks[r][c] === 'kept') s += p.values[r][c]; a[r] = s; } return a; });
-const colSums = computed(() => { const p = state.puzzle; if (!p) return []; const a = new Array(p.cols); for (let c = 0; c < p.cols; c++) { let s = 0; for (let r = 0; r < p.rows; r++) if (state.marks[r][c] === 'kept') s += p.values[r][c]; a[c] = s; } return a; });
-function rowSumR(r) { return rowSums.value[r] || 0; }
-function colSumR(c) { return colSums.value[c] || 0; }
-// aktuelle Summen stimmen (Hilfsanzeige): Summe der eingekreisten == Ziel — aus dem Cache.
-const rowSumMatch = r => rowSums.value[r] === state.puzzle.rowTargets[r];
-const colSumMatch = c => colSums.value[c] === state.puzzle.colTargets[c];
-// Regionfarben-Cache: die (statische) Käfig-Basisfarbe × ausgerüstete Palette EINMAL
-// je distinkter Farbe transformieren — vorher lief applyPaletteFx (HSL-Mathe + 2 Shop-
-// Lookups) in cellStyle PRO ZELLE PRO RENDER (×196 auf dem 14×14). m.color ist eine
-// Referenz in REGION_COLORS, daher als Map-Key nutzbar. Neu nur bei Paletten-Wechsel.
-const colorKey = (c) => c.h + '-' + c.s + '-' + c.l;  // stabiler Key (unabhängig von Objekt-Referenz)
-const regionColorVars = computed(() => {
-  const fx = activePaletteFx();
-  const map = new Map();
-  for (const color of REGION_COLORS) {
-    const col = applyPaletteFx(color, fx);
-    map.set(colorKey(color), { '--rc-h': col.h, '--rc-s': col.s + '%', '--rc-l': col.l + '%', '--rc-ink': regionChipInk(col) });
+// ─── ABGELEITETER BRETT-ZUSTAND ───────────────────────────────────────────────
+// Alle Brett-Ableitungen laufen über CACHENDE computeds: sie rechnen nur neu,
+// wenn sich state.placed ändert (ein Zug) — nie pro Zelle und pro Render.
+// (Kernregel aus CLAUDE.md: das Brett darf im Render nichts durchsuchen.)
+const boardValues = computed(() => (state.puzzle ? currentValues(state.puzzle, state.placed) : []));
+const solvedEquations = computed(() => (state.puzzle ? solvedEquationSet(state.puzzle, state.placed) : new Set()));
+function eqSolvedR(i) { return solvedEquations.value.has(i); }
+// Felder, die zu einer fertig gerechneten Gleichung gehören (grüner Rahmen).
+const solvedCellSet = computed(() => {
+  const p = state.puzzle;
+  const set = new Set();
+  if (!p) return set;
+  for (const i of solvedEquations.value) {
+    for (const [r, c] of eqCellsOf(p.equations[i])) set.add(r * 1000 + c);
   }
-  return map;
+  return set;
 });
+function eqCellsOf(eq) {
+  const out = [];
+  for (let i = 0; i <= eq.n; i++) out.push(eq.dir === 'h' ? [eq.r, eq.c + i] : [eq.r + i, eq.c]);
+  return out;
+}
+function cellInSolvedEq(r, c) { return solvedCellSet.value.has(r * 1000 + c); }
+// Noch nicht gelegte Steine (Vorrat) — auch als reine Zahlenliste für den Solver.
+const trayValues = computed(() => state.tray.filter(t => !t.used).map(t => t.v));
+function trayRemaining() { return trayValues.value.length; }
 
-// Kurzer, smoother Leucht-Puls für eine gerade fertig gewordene Reihe/Spalte/Cage.
+// Kurzer Leucht-Puls für eine gerade fertig gewordene Rechnung.
 function pulseResolved(kind, idx) {
   const key = `${kind}-${idx}`;
   state.justResolved[key] = true;
@@ -2018,123 +1967,213 @@ function pulseResolved(kind, idx) {
 
 // ─── SPIELZÜGE ────────────────────────────────────────────────────────────────
 
-// ─── LANGES DRÜCKEN (Markierung zurücksetzen, nur Solo + "Beim Prüfen") ───────
-// Nur hier kann eine Zelle ohne festen Fehler-Status falsch markiert worden
-// sein (im 'instant'-Modus lehnt setMark falsche Züge sofort ab) — daher ist
-// das Zurückholen per langem Drücken auf diesen Modus beschränkt, und auf
-// Solo, da Coop-Markierungen mit dem Partner synchron bleiben müssen.
-const LONGPRESS_MS = 500;          // Haltedauer bis zum Zurücksetzen auf 'none'
-const LONGPRESS_TOLERANCE_PX = 10; // Bewegungstoleranz während des Haltens
-                                    // (verhindert Fehlauslösung beim Schwenken eines gezoomten Felds)
-let pressState = null;       // { r, c, x, y, timer } während eines Pointer-Holds, sonst null
-let suppressClickUntil = 0;  // Date.now()-Zeitstempel; bis dahin wird der nächste Klick auf der Zelle ignoriert
+// ─── SPIELZÜGE: Steine legen, verschieben, tauschen ───────────────────────────
+// Bedienung ist Drag & Drop: ein Stein wird aus dem Vorrat oder von einem Feld
+// aufgenommen und auf ein Feld fallen gelassen. Liegt dort schon ein Stein,
+// TAUSCHEN beide den Platz. Zieht man einen Stein zurück in den Vorrat, wird das
+// Feld wieder frei. Zusätzlich gibt es den Antipp-Weg (Stein wählen → Feld
+// antippen): gleiche Wirkung, bedienbar per Tastatur und auf kleinen Geräten.
+//
+// FEHLER-REGEL (Nutzervorgabe): Ein Fehler ist NUR, wenn ein Zug eine Rechnung
+// VOLLSTÄNDIG macht, die dann nicht aufgeht — das ist geraten. Eine Zahl an der
+// falschen Stelle, bei der alle vollen Rechnungen weiter stimmen, ist KEIN
+// Fehler; sie fällt erst am Ende auf, wenn Steine übrig bleiben.
 
-function canLongPressRestore(r, c) {
-  // Long-Press-Zurücknahme gab es nur im entfernten „Beim Prüfen"-Modus. Fehler
-  // werden jetzt immer sofort aufgedeckt (falsche Markierung greift gar nicht
-  // erst), daher gibt es nichts zurückzunehmen → Feature deaktiviert.
+function boardLocked() {
+  // Nur-Lese: ein anderes Gerät hat diese Solo-Partie übernommen — Brett gesperrt,
+  // bis der Nutzer im Banner „Hier weiterspielen" wählt.
+  if (state.sessionReadonly) return true;
+  if (state.status !== 'playing' || state.generating || state.paused) return true;
+  // Im Trainingsmodus führt der Tutor, solange er noch Schritte hat.
+  if (state.isTrainingGame && !state.trainingDone) return true;
   return false;
 }
-
-function onCellPointerDown(e, r, c) {
-  if (!canLongPressRestore(r, c)) return;
-  if (pressState) clearTimeout(pressState.timer);
-  pressState = { r, c, x: e.clientX, y: e.clientY, timer: null };
-  pressState.timer = setTimeout(() => {
-    if (!pressState || pressState.r !== r || pressState.c !== c) return;
-    suppressClickUntil = Date.now() + 400;
-    pressState = null;
-    setMark(r, c, 'none', true);
-  }, LONGPRESS_MS);
+function isBlankCell(r, c) {
+  const sl = state.puzzle && state.puzzle.slots[r] && state.puzzle.slots[r][c];
+  return !!sl && !sl.given;
 }
 
-function onCellPointerMove(e) {
-  if (!pressState) return;
-  const dx = e.clientX - pressState.x, dy = e.clientY - pressState.y;
-  if (Math.hypot(dx, dy) > LONGPRESS_TOLERANCE_PX) {
-    clearTimeout(pressState.timer);
-    pressState = null;
-  }
+// ── Aufnehmen per Antippen ───────────────────────────────────────────────────
+function pickTile(v, from = null, tileId = null) {
+  if (boardLocked()) return;
+  if (state.pick && state.pick.tileId === tileId && state.pick.v === v && !from) { state.pick = null; return; }
+  state.pick = { v, from, tileId };
 }
-
-function onCellPointerCancel() {
-  if (pressState) { clearTimeout(pressState.timer); pressState = null; }
+function pickFromCell(r, c) {
+  if (boardLocked() || !isBlankCell(r, c) || state.placed[r][c] == null) return;
+  state.pick = { v: state.placed[r][c], from: { r, c }, tileId: null };
 }
+function cancelPick() { state.pick = null; }
 
-function onCellTap(r, c) {
-  if (Date.now() < suppressClickUntil) { suppressClickUntil = 0; return; }
-  // Nur-Lese: ein anderes Gerät hat diese Solo-Partie übernommen — Brett gesperrt,
-  // bis der Nutzer im Banner „Hier weiterspielen" wählt (holt den Besitz zurück).
-  if (state.sessionReadonly) return;
-  if (state.status !== 'playing' || state.generating || state.paused) return;
-  // Solange noch erzwungene Schritte existieren, steuert ausschließlich der
-  // "nächster Schritt"-Button -- erst wenn Tier-1-Logik nicht mehr weiterkommt
-  // (trainingDone, sollte dank TRAINING_GEN_BUDGET praktisch nie vorkommen),
-  // darf frei zu Ende getippt werden.
-  if (state.isTrainingGame && !state.trainingDone) return;
-  const cur = state.marks[r][c];
-  if (cur !== 'none') return; // already marked — only undo can reverse
-  const next = state.tool === 'pen' ? 'kept' : 'removed';
-  setMark(r, c, next, true);
-}
+// ── Kern: eine Menge von Feld-Änderungen prüfen und übernehmen ───────────────
+// changes = [{ r, c, v }] mit v = Zahl oder null (Feld räumen).
+function applyChanges(changes, { user = true, fromId = null, hint = false } = {}) {
+  const p = state.puzzle;
+  if (!p) return false;
+  if (user) state.hintTutor = null; // eigene Aktion verwirft den offenen Tipp-Tutor
 
-function setMark(r, c, next, user, fromId) {
-  if (user) state.hintTutor = null; // eigene Aktion verwirft den offenen Tipp-Tutor (Zahlen wären veraltet)
-  const cur = state.marks[r][c];
-  if (cur === next) return;
-
-  // Fehler werden IMMER sofort aufgedeckt: eine falsche Markierung wird gar nicht
-  // erst gesetzt, sondern rot geblitzt und als Fehler gezählt.
-  if (user) {
-    const sol = state.puzzle.solution[r][c];
-    const wrong = (next === 'kept' && !sol) || (next === 'removed' && sol);
-    if (wrong) {
-      // Der Fehlgriff gehört MIT ins Zug-Log (nur ein Array-Push): erst dadurch
-      // lässt sich später sagen, WO jemand danebengreift — in welcher Spielphase
-      // und bei welcher Art von Deduktion — statt bloß WIE OFT.
-      if (moveLog) moveLog.push({ r, c, want: next, t: state.elapsed, err: 1 });
-      flashError(r, c); registerMistake(); return;
+  // 1. Probelage bauen und prüfen, ob dadurch eine VOLLE Rechnung falsch wird.
+  const trial = state.placed.map(row => row.slice());
+  for (const ch of changes) trial[ch.r][ch.c] = ch.v;
+  if (user && !hint) {
+    const bad = [];
+    for (const ch of changes) {
+      if (ch.v == null) continue;
+      const before = trial[ch.r][ch.c];
+      trial[ch.r][ch.c] = null;
+      const breaks = placementBreaksEquation(p, trial, ch.r, ch.c, ch.v);
+      trial[ch.r][ch.c] = before;
+      if (breaks) bad.push(ch);
+    }
+    if (bad.length) {
+      for (const ch of bad) flashError(ch.r, ch.c);
+      if (moveLog) for (const ch of bad) moveLog.push({ r: ch.r, c: ch.c, v: ch.v, t: state.elapsed, err: 1 });
+      registerMistake();
+      return false;
     }
   }
 
-  const region = state.cellMeta[r][c].region;
-  const wasRow = rowResolved(r), wasCol = colResolved(c);
-  const wasRegion = region >= 0 ? regionResolved(region) : false;
+  // 2. Übernehmen — Vorrat mitführen, damit Brett und Vorrat nie auseinanderlaufen.
+  const wasSolved = new Set(solvedEquations.value);
+  const undoSteps = [];
+  for (const ch of changes) {
+    const prev = state.placed[ch.r][ch.c];
+    if (prev === ch.v) continue;
+    undoSteps.push({ r: ch.r, c: ch.c, prev });
+    if (prev != null) returnToTray(state.tray, prev);
+    if (ch.v != null) takeFromTray(state.tray, ch.v);
+    state.placed[ch.r][ch.c] = ch.v;
+    state.markedBy[ch.r][ch.c] = ch.v == null ? null : (user ? (state.coop.myId || LOCAL_PLAYER_ID) : fromId);
+    if (moveLog && ch.v != null) moveLog.push(user ? { r: ch.r, c: ch.c, v: ch.v, t: state.elapsed } : { r: ch.r, c: ch.c, v: ch.v, t: state.elapsed, other: 1 });
+  }
+  if (!undoSteps.length) return true;
+  state.history = [undoSteps];    // nur der letzte Zug ist rückgängig machbar
 
-  // Spielstil-Aufzeichnung: NUR ein Array-Push (kein localStorage, keine Analyse)
-  // — der Tap-Pfad muss billig bleiben (Board-Render-Regeln in CLAUDE.md). Die
-  // Auswertung läuft einmal am Spielende, s. recordPlaySample().
-  // FREMDE Züge (Coop/Team, geteiltes Brett) wandern MIT ins Log, markiert als
-  // `other`: die Auswertung stellt das Brett Zug für Zug nach, und ohne die Züge
-  // des Partners wäre dieser Nachbau ab dem ersten fremden Zug falsch — die
-  // Deduktions-Einordnung MEINER Züge damit auch. Gemessen werden sie nicht.
-  if (next !== 'none' && moveLog && (user || state.coop.active || state.team.active)) {
-    moveLog.push(user ? { r, c, want: next, t: state.elapsed } : { r, c, want: next, t: state.elapsed, other: 1 });
+  if (user && (state.coop.active || state.team.active)) {
+    coopSend({ type: Coop.MSG.MOVE, cells: changes.map(ch => ({ r: ch.r, c: ch.c, v: ch.v == null ? '' : ch.v })), from: state.coop.myId });
   }
 
-  state.history = [{ r, c, prev: cur }]; // nur der letzte Zug ist rückgängig machbar
-  state.marks[r][c] = next;
-  // Außerhalb einer aktiven Coop-/Team-/Wettkampf-Lobby ist state.coop.myId
-  // null (keine Firebase-Identität nötig) -- LOCAL_PLAYER_ID markiert eigene
-  // Züge trotzdem als "meine", damit die eigene Farbe (state.settings.coopMyColor)
-  // auch solo greift (siehe cellStyle()).
-  state.markedBy[r][c] = next === 'none' ? null : (user ? (state.coop.myId || LOCAL_PLAYER_ID) : fromId);
-  if (user && state.coop.active) coopSend({ type: Coop.MSG.MOVE, r, c, mark: next, from: state.coop.myId });
-
-  // Aktions-Sound nur für eigene Züge (sonst klingelt jeder Partner-Tap im Coop).
+  // 3. Klang + Puls für jede Rechnung, die dieser Zug fertig gemacht hat.
   if (user) {
-    if (next === 'kept' && state.settings.sfxKeep) Music.sfxKeep();
-    else if (next === 'removed' && state.settings.sfxRemove) Music.sfxRemove();
+    if (changes.some(ch => ch.v != null)) { if (state.settings.sfxKeep) Music.sfxKeep(); }
+    else if (state.settings.sfxRemove) Music.sfxRemove();
   }
-
-  // Wie viele Strukturen löst dieser eine Zug gleichzeitig auf? -> Stufung.
-  let resolved = 0;
-  if (!wasRow && rowResolved(r)) { pulseResolved('row', r); resolved++; }
-  if (!wasCol && colResolved(c)) { pulseResolved('col', c); resolved++; }
-  if (region >= 0 && !wasRegion && regionResolved(region)) { pulseResolved('region', region); resolved++; }
-  if (resolved > 0 && state.settings.sfxComplete) Music.sfxComplete(resolved);
+  let done = 0;
+  for (const i of solvedEquations.value) if (!wasSolved.has(i)) { pulseResolved('eq', i); done++; }
+  if (done > 0 && state.settings.sfxComplete) Music.sfxComplete(done);
 
   afterMove();
+  return true;
+}
+
+/** Legt einen Stein auf ein Feld (öffentlicher Einstieg, auch für Tests). */
+function placeAt(r, c, v, opts = {}) {
+  if (!isBlankCell(r, c)) return false;
+  return applyChanges([{ r, c, v }], opts);
+}
+/** Räumt ein Feld (Stein zurück in den Vorrat). */
+function clearAt(r, c, opts = {}) {
+  if (!isBlankCell(r, c) || state.placed[r][c] == null) return false;
+  return applyChanges([{ r, c, v: null }], opts);
+}
+
+/**
+ * Ablegen des aufgenommenen Steins auf Feld (r,c).
+ * Belegtes Ziel → die beiden Steine TAUSCHEN (vom Brett) bzw. der alte geht
+ * zurück in den Vorrat (aus dem Vorrat).
+ */
+function dropOn(r, c, src = state.pick) {
+  if (boardLocked() || !src) return false;
+  if (!isBlankCell(r, c)) { state.pick = null; return false; }
+  const target = state.placed[r][c];
+  const from = src.from;
+  if (from && from.r === r && from.c === c) { state.pick = null; return false; }
+
+  let changes;
+  if (from) {
+    // Brett → Brett: Tausch (bzw. Verschieben, wenn das Ziel leer ist).
+    changes = [{ r, c, v: src.v }, { r: from.r, c: from.c, v: target }];
+  } else {
+    changes = [{ r, c, v: src.v }];
+  }
+  const ok = applyChanges(changes);
+  state.pick = null;
+  return ok;
+}
+/** Ablegen im Vorrat: das Herkunftsfeld wird frei. */
+function dropOnTray(src = state.pick) {
+  if (boardLocked() || !src || !src.from) { state.pick = null; return false; }
+  const ok = clearAt(src.from.r, src.from.c);
+  state.pick = null;
+  return ok;
+}
+/** Sortier-Knopf: aufsteigend sortieren und aufrücken. */
+function sortTray() {
+  state.tray = sortTrayList(state.tray);
+  log('game', 'Vorrat sortiert', { left: trayRemaining() });
+}
+
+// ── Drag & Drop (Zeiger) ─────────────────────────────────────────────────────
+// Der Ziehschatten ist ein DIREKT manipuliertes DOM-Element: eine reaktive
+// x/y-Position würde bei jeder Zeigerbewegung das ganze App-Template neu
+// rendern (Kernregel „keine hochfrequenten reaktiven Writes", CLAUDE.md).
+let dragGhost = null;
+let dragSrc = null;
+let dragMoved = false;
+
+function ensureGhost(v) {
+  if (!dragGhost) {
+    dragGhost = document.createElement('div');
+    dragGhost.className = 'drag-ghost';
+    document.body.appendChild(dragGhost);
+  }
+  dragGhost.textContent = String(v);
+  dragGhost.style.display = 'block';
+  return dragGhost;
+}
+function moveGhost(x, y) {
+  if (dragGhost) dragGhost.style.transform = `translate3d(${Math.round(x)}px, ${Math.round(y)}px, 0) translate(-50%, -50%)`;
+}
+function hideGhost() { if (dragGhost) dragGhost.style.display = 'none'; }
+
+function onDragStart(e, v, from, tileId) {
+  if (boardLocked()) return;
+  dragSrc = { v, from: from || null, tileId: tileId ?? null };
+  dragMoved = false;
+  state.drag = { v, from: dragSrc.from };
+  ensureGhost(v);
+  moveGhost(e.clientX, e.clientY);
+  try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+}
+function onDragMove(e) {
+  if (!dragSrc) return;
+  dragMoved = true;
+  moveGhost(e.clientX, e.clientY);
+  e.preventDefault();
+}
+function onDragEnd(e) {
+  if (!dragSrc) return;
+  const src = dragSrc;
+  dragSrc = null;
+  state.drag = null;
+  hideGhost();
+  if (!dragMoved) { pickTile(src.v, src.from, src.tileId); return; }  // reiner Tipp = auswählen
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  const cell = el && el.closest && el.closest('.cell[data-r]');
+  if (cell) { dropOn(parseInt(cell.dataset.r, 10), parseInt(cell.dataset.c, 10), src); return; }
+  if (el && el.closest && el.closest('.tray')) { dropOnTray(src); return; }
+  state.pick = null;
+}
+function onDragCancel() {
+  if (!dragSrc) return;
+  dragSrc = null; state.drag = null; hideGhost(); state.pick = null;
+}
+
+// Klick auf ein Feld: mit aufgenommenem Stein ablegen, sonst den dort liegenden aufnehmen.
+function onCellTap(r, c) {
+  if (boardLocked()) return;
+  if (state.pick) { dropOn(r, c); return; }
+  pickFromCell(r, c);
 }
 
 function afterMove() {
@@ -2148,7 +2187,7 @@ function afterMove() {
 // wodurch (Auflösen, Coop-Partner-Zug): die Erklärung wäre dann veraltet.
 function clearStaleTutor() {
   const tt = state.hintTutor;
-  if (tt && state.marks[tt.target.r][tt.target.c] !== 'none') state.hintTutor = null;
+  if (tt && state.placed[tt.target.r][tt.target.c] != null) state.hintTutor = null;
 }
 
 let lastErrorSfx = 0;
@@ -2208,11 +2247,15 @@ function applyRemoteMistake(by, n) {
 
 // Gelöst, wenn JEDE Zelle korrekt markiert ist (Lösung eingekreist, Rest gelöscht).
 function isSolved() {
-  const p = state.puzzle; if (!p) return false;
-  for (let r = 0; r < p.rows; r++)
-    for (let c = 0; c < p.cols; c++)
-      if (!cellCorrect(r, c)) return false;
-  return true;
+  return !!state.puzzle && isBoardSolved(state.puzzle, state.placed);
+}
+/** Wie viele Steine liegen bereits? (0–100, für Coop-/Wettkampf-Anzeige) */
+function countPlaced() {
+  const p = state.puzzle;
+  if (!p) return 0;
+  let n = 0;
+  for (let r = 0; r < p.rows; r++) for (let c = 0; c < p.cols; c++) if (state.placed[r][c] != null) n++;
+  return n;
 }
 
 // ─── TEAM-VS-TEAM / RACE: aggregierter Fortschritt für die Gegenseite ─────────
@@ -2222,10 +2265,7 @@ function isSolved() {
 // Namen), da beide Modi denselben reinen Puzzle-Fortschritt brauchen.
 function progressPct() {
   const p = state.puzzle; if (!p) return 0;
-  let total = 0, correct = 0;
-  for (let r = 0; r < p.rows; r++)
-    for (let c = 0; c < p.cols; c++) { total++; if (cellCorrect(r, c)) correct++; }
-  return total ? Math.round((correct / total) * 100) : 0;
+  return Math.round(progressOf(p, state.placed) * 100);
 }
 let teamProgressThrottle = 0;
 let teamProgressTimer = null;
@@ -2268,7 +2308,6 @@ let raceProgressTimer = null;
 // kamen. Der Timer garantiert, dass der letzte Stand spätestens nach Ablauf
 // des Throttle-Fensters nachgereicht wird.
 function pushRaceProgress() {
-  if (state.race.ai) return;   // KI-Duell ist rein lokal — es gibt keinen Raum
   const now = Date.now();
   const elapsed = now - raceProgressThrottle;
   if (elapsed >= 2000) {
@@ -2296,58 +2335,20 @@ function onRaceProgressUpdate(progressByUid) {
   if (opp) { state.race.opponentPct = opp.pct || 0; state.race.opponentMistakes = opp.mistakes || 0; }
 }
 
-// "Prüfen"-Modus (Fehler erst auf Knopfdruck). by: wer den Check ausgelöst hat
-// (für die Fehler-/Lebenszuordnung im Coop) — bleibt beim Weiterleiten an weitere
-// Mitspieler unverändert, damit die Zuordnung auch beim Host-Relay erhalten bleibt.
-function doCheck(by = state.coop.active ? state.coop.myId : null, broadcast = true) {
-  if (state.status !== 'playing') return;
-  if (broadcast && state.coop.active) coopSend({ type: Coop.MSG.CHECK, from: by });
-  const p = state.puzzle; const wrong = [];
-  for (let r = 0; r < p.rows; r++)
-    for (let c = 0; c < p.cols; c++) {
-      const mk = state.marks[r][c], sol = p.solution[r][c];
-      if ((mk === 'kept' && !sol) || (mk === 'removed' && sol)) wrong.push([r, c]);
-    }
-  if (wrong.length === 0) {
-    if (isSolved()) { win(); return; }
-    showToast(t('game.stillCorrect'), 'info');
-    return;
-  }
-  log('game', `Check ausgeführt`, { errors: wrong.length });
-  wrong.forEach(([r, c]) => flashError(r, c));
-  state.mistakes += wrong.length;
-  if (by) state.coop.mistakesByPlayer[by] = (state.coop.mistakesByPlayer[by] || 0) + wrong.length;
-  // Leben sind immer aktiv.
-  state.lives--;
-  if (state.coop.active) state.coop.lifeLossBy.push(by);
-  showBestTimeNotice(t('game.lifeLostNotice'));
-  if (state.lives <= 0) { state.lives = 0; lose(); return; }
-  showToast(t('game.errorsFound', { count: wrong.length }), 'error');
-  persistGame();
-}
-
 // Wendet einen Hinweis auf eine Zelle an (lokal ausgelöst oder vom Coop-Partner empfangen).
 // user kennzeichnet, wer den Hinweis ausgelöst hat (für die Coop-Farbmarkierung).
-function applyHintEffect(r, c, mark, user = true, fromId) {
-  const region = state.cellMeta[r][c].region;
-  const wasRow = rowResolved(r), wasCol = colResolved(c);
-  const wasRegion = region >= 0 ? regionResolved(region) : false;
-
-  state.history = [{ r, c, prev: state.marks[r][c] }];
-  state.marks[r][c] = mark;
-  state.markedBy[r][c] = state.coop.active ? (user ? state.coop.myId : fromId) : null;
-  // .hint = kurzer Leucht-Puls (Quadrat), .hintMark = bleibt für den Rest des Rätsels
-  state.cellMeta[r][c].hint = true;
-  state.cellMeta[r][c].hintMark = true;
-  setTimeout(() => { if (state.cellMeta[r]) state.cellMeta[r][c].hint = false; }, 1400);
-
-  let resolved = 0;
-  if (!wasRow && rowResolved(r)) { pulseResolved('row', r); resolved++; }
-  if (!wasCol && colResolved(c)) { pulseResolved('col', c); resolved++; }
-  if (region >= 0 && !wasRegion && regionResolved(region)) { pulseResolved('region', region); resolved++; }
-  if (resolved > 0 && state.settings.sfxComplete) Music.sfxComplete(resolved);
-
-  afterMove();
+function applyHintEffect(cells, user = true, fromId) {
+  // Ein Hinweis darf nie als Fehler zählen (hint:true) — er legt die Zahl, die
+  // der Solver zwingend ableitet. Liegt dort schon ein falscher Stein, geht er
+  // vorher zurück in den Vorrat.
+  const changes = [];
+  for (const a of cells) {
+    if (state.placed[a.r][a.c] != null && state.placed[a.r][a.c] !== a.v) changes.push({ r: a.r, c: a.c, v: null });
+    changes.push({ r: a.r, c: a.c, v: a.v });
+    state.hintCells[a.r * 1000 + a.c] = true;
+  }
+  applyChanges(changes, { user, fromId, hint: true });
+  setTimeout(() => { for (const a of cells) delete state.hintCells[a.r * 1000 + a.c]; }, 1400);
 }
 
 // ── Tipp-Tutor (keine Stufen mehr) ───────────────────────────────────────────
@@ -2374,12 +2375,12 @@ function confirmThenStartHint() {
 }
 function startHint() {
   const t0 = Date.now();
-  const tut = buildHintTutorial(state.puzzle, state.marks);
-  if (!tut) return;
+  const tut = buildHintTutorial(state.puzzle, state.placed, trayValues.value);
+  if (!tut) { showToast(t('game.noHint'), 'info'); return; }
   registerHintPenalty();
   if (state.settings.sfxHint) Music.sfxHint();
   state.hintTutor = { steps: tut.steps, i: 0, target: tut.target };
-  log('game', 'Tipp-Tutor gestartet', { reason: tut.reason, steps: tut.steps.length, tookMs: Date.now() - t0 });
+  log('game', 'Tipp-Tutor gestartet', { tier: tut.tier, steps: tut.steps.length, tookMs: Date.now() - t0 });
 }
 // „Weiter"-Knopf: nächster Schritt; auf dem LETZTEN Schritt wird der erklärte
 // Zug ausgeführt (inkl. Coop-Sync via doRevealCell).
@@ -2387,26 +2388,19 @@ function tutorNext() {
   const tt = state.hintTutor;
   if (!tt) return;
   if (tt.i < tt.steps.length - 1) { tt.i++; return; }
-  const a = tt.target;
+  const cells = tt.steps[tt.steps.length - 1].action || [];
   state.hintTutor = null;
-  log('game', 'Tipp-Tutor abgeschlossen', { r: a.r, c: a.c });
-  doRevealCell(a.r, a.c, a.want);
+  log('game', 'Tipp-Tutor abgeschlossen', { cells: cells.length });
+  doRevealCells(cells);
 }
 function dismissTutor() { state.hintTutor = null; }
 // Text des aktuellen Tutor-Schritts: i18n-Key + konkrete Zahlen; {unit}/{unit2}
 // werden hier zu menschenlesbaren Bereichs-Labels („Zeile 3", „Käfig") aufgelöst.
-function tutorUnitLabel(u) {
-  if (!u) return '';
-  return t('training.group.' + u.kind, { n: u.ref + 1 });
-}
 function tutorStepText() {
   const tt = state.hintTutor;
   if (!tt) return '';
-  const s = tt.steps[tt.i];
-  const params = { ...s.params, unit: tutorUnitLabel(s.unit), unit2: tutorUnitLabel(s.unit2) };
-  let text = t('tutor.' + s.key, params);
-  if (s.key === 'combos' && s.params.more > 0) text += ' ' + t('tutor.moreCombos', { n: s.params.more });
-  return text;
+  const st = tt.steps[tt.i];
+  return t(st.key, st.params);
 }
 // Strafe für die Hinweis-Nutzung: zählt den Hinweis (entwertet die Bestzeit) und
 // meldet das einmal sichtbar. Läuft genau einmal je Hinweis-Sequenz (in Stufe 1).
@@ -2416,11 +2410,12 @@ function registerHintPenalty() {
 }
 // Auflöse-Kern: deckt Zelle (r,c) mit der korrekten Markierung auf und synct sie
 // im Coop. Zählt NICHT erneut — die Strafe lief bereits in Stufe 1.
-function doRevealCell(r, c, want) {
-  log('game', `Hinweis aufgelöst`, { r, c });
-  if (state.settings.sfxHint) Music.sfxHint(); // Stufe 3 — Ton bei jeder Hinweis-Instanz
-  applyHintEffect(r, c, want);
-  if (state.coop.active) coopSend({ type: Coop.MSG.HINT, r, c, mark: want, from: state.coop.myId });
+function doRevealCells(cells) {
+  if (!cells.length) return;
+  log('game', 'Hinweis aufgelöst', { n: cells.length });
+  if (state.settings.sfxHint) Music.sfxHint();
+  applyHintEffect(cells);
+  if (state.coop.active) coopSend({ type: Coop.MSG.HINT, cells, from: state.coop.myId });
 }
 
 function undo(broadcast = true) {
@@ -2429,9 +2424,14 @@ function undo(broadcast = true) {
   // UNDO (broadcast=false) soll lokal keinen Sound auslösen.
   if (broadcast && state.settings.sfxUndo) Music.sfxUndo();
   const last = state.history.pop();
-  state.marks[last.r][last.c] = last.prev;
-  state.markedBy[last.r][last.c] = null; // prev ist immer 'none' (siehe Markier-Sperre)
-  log('game', `Rückgängig`);
+  for (const stepUndo of last) {
+    const cur = state.placed[stepUndo.r][stepUndo.c];
+    if (cur != null) returnToTray(state.tray, cur);
+    if (stepUndo.prev != null) takeFromTray(state.tray, stepUndo.prev);
+    state.placed[stepUndo.r][stepUndo.c] = stepUndo.prev;
+    state.markedBy[stepUndo.r][stepUndo.c] = stepUndo.prev == null ? null : state.markedBy[stepUndo.r][stepUndo.c];
+  }
+  log('game', 'Rückgängig');
   persistGame();
   if (broadcast && state.coop.active) coopSend({ type: Coop.MSG.UNDO });
 }
@@ -2577,12 +2577,7 @@ const COOP_LIVE_ACTIVITY = new Set([Coop.MSG.MOVE, Coop.MSG.UNDO, Coop.MSG.CHECK
 // Minimale Struktur-Prüfung eines per INIT empfangenen Puzzles: alles, was das
 // Brett-Template/loadPuzzleIntoState zwingend braucht. Verhindert, dass ein
 // kaputtes INIT die App halb lädt (Spiel-Screen ohne Brett = Blackscreen).
-function validPuzzleShape(p) {
-  return !!(p && Number.isInteger(p.rows) && p.rows > 0 && Number.isInteger(p.cols) && p.cols > 0
-    && Array.isArray(p.values) && p.values.length === p.rows && Array.isArray(p.values[0])
-    && Array.isArray(p.solution) && p.solution.length === p.rows
-    && Array.isArray(p.rowTargets) && Array.isArray(p.colTargets));
-}
+function validPuzzleShape(p) { return puzzleShapeOk(p); }
 // ── Resync-Watchdog (Gast-Selbstheilung) ──────────────────────────────────────
 // Hängt ein Beitretender verbunden im Raum, hat aber nach ein paar Sekunden kein
 // Brett (INIT verloren/verworfen/fehlgeschlagen), fordert er den Rundenstand
@@ -2623,11 +2618,13 @@ function handleCoopMsg(msg) {
     // Coop-Endlos: zwischen zwei Leveln (advancing) keine verspäteten Züge des
     // gerade gelösten Bretts mehr anwenden — sie träfen sonst das nächste Level.
     if (state.endless.active && state.endless.coop && state.endless.advancing) return;
-    setMark(msg.r, msg.c, msg.mark, false, msg.from);
+    // Ein Zug kann mehrere Felder betreffen (Tausch, Hinweis mit mehreren Feldern).
+    const cells = (msg.cells || []).map(ch => ({ r: ch.r, c: ch.c, v: ch.v === '' || ch.v == null ? null : ch.v }));
+    if (cells.length) applyChanges(cells, { user: false, fromId: msg.from });
   } else if (msg.type === Coop.MSG.UNDO) {
     undo(false);
   } else if (msg.type === Coop.MSG.CHECK) {
-    doCheck(msg.from, false);
+    // „Prüfen" gibt es nicht mehr — Fehler zeigen sich sofort beim Legen.
   } else if (msg.type === Coop.MSG.MISTAKE) {
     applyRemoteMistake(msg.by, msg.n);
   } else if (msg.type === Coop.MSG.PAUSE) {
@@ -2637,7 +2634,7 @@ function handleCoopMsg(msg) {
     // zeigen (das eigentliche RESUME kommt am Balken-Ende vom Drücker).
     if (state.paused && state.screen === 'game') startResumeCountdown(true);
   } else if (msg.type === Coop.MSG.HINT) {
-    applyHintEffect(msg.r, msg.c, msg.mark, false, msg.from);
+    applyHintEffect(msg.cells || [], false, msg.from);
   } else if (msg.type === Coop.MSG.INIT) {
     // Ein ERNEUT gesendetes INIT (der Host holt einen mitten in der Runde
     // Beigetretenen zuverlässig ab, s. broadcastRunningInit) darf eine bereits
@@ -2664,7 +2661,7 @@ function handleCoopMsg(msg) {
     }
     // Coop-Flags ZUERST setzen (VOR loadPuzzleIntoState): der Beitretende lädt so
     // im Coop-Kontext — saveSlot='coop' (nicht versehentlich 'solo', was den
-    // Solo-Slot mit einem Coop-Brett überschrieb) und applyMarkSafeRegionColors
+    // Solo-Slot mit einem Coop-Brett überschrieb)
     // rechnet gleich mit den Coop-Spielerfarben statt erst nachträglich per watch.
     state.coop.active = true;
     state.coop.connected = true;
@@ -2692,7 +2689,7 @@ function handleCoopMsg(msg) {
     // Leben/Hinweisen in eine halb gespielte Runde einsteigen. gameId übernehmen,
     // damit ein späteres Wiederhol-INIT (s.o.) als Duplikat erkannt wird.
     loadPuzzleIntoState(msg.puzzle, {
-      marks: msg.marks, markedBy: msg.markedBy, startTime: msg.startTime, gameId: msg.gameId,
+      placed: msg.placed, tray: msg.tray, markedBy: msg.markedBy, startTime: msg.startTime, gameId: msg.gameId,
       lives: msg.lives, maxLives: msg.maxLives, hintsLeft: msg.hintsLeft, hintsUsed: msg.hintsUsed, mistakes: msg.mistakes,
     });
     // Coop-Endlos: kumulierte Herz-Verluste (wer welches Leben verbrauchte) vom
@@ -2779,7 +2776,7 @@ function handleCoopMsg(msg) {
         broadcastRunningInit();
       } else if (state.coop.awaitingStart) {
         log('coop', 'RESYNC-Anfrage → sende Lobby-INIT erneut', { from: msg.author });
-        Coop.send({ type: Coop.MSG.INIT, gameId: state.gameId, puzzle: state.puzzle, marks: state.marks, markedBy: wireMarkedBy(), startTime: state.startTime });
+        Coop.send({ type: Coop.MSG.INIT, gameId: state.gameId, puzzle: state.puzzle, placed: wirePlaced(), tray: state.tray.map(t => ({ v: t.v, used: t.used ? 1 : 0 })), markedBy: wireMarkedBy(), startTime: state.startTime });
       }
     }
   } else if (msg.type === Coop.MSG.TEAM_START) {
@@ -2886,9 +2883,6 @@ function coopReset({ keepRoom = false } = {}) {
   state.coop.myId = null; state.coop.hostId = null; state.coop.players = []; state.coop.awaitingStart = false;
   state.coop.generating = false;
   state.coop.teamMode = false;
-  stopBot();
-  botState = null;
-  state.race.ai = false;
   state.coop.raceMode = false;
   state.coop.ffaMode = false;
   state.coop.invitePickerOpen = false; state.coop.invitedUids = [];
@@ -2921,7 +2915,6 @@ function pickAvailableColor(requested, others) {
   return `hsl(${hue} 75% 55%)`;
 }
 function upsertPlayer(id, name, requestedColor, username, badge) {
-  queueMicrotask(applyMarkSafeRegionColors);   // neue Spielerfarbe → Cage-Sichtbarkeit neu prüfen
   const others = state.coop.players.filter(p => p.id !== id);
   const color = pickAvailableColor(requestedColor, others);
   const existing = state.coop.players.find(p => p.id === id);
@@ -3128,7 +3121,7 @@ function broadcastRunningInit() {
   const endlessExtra = e.active ? { endless: true, endlessLevel: e.level, lifeLossBy: (state.coop.lifeLossBy || []).map(x => x || '') } : {};
   Coop.send({
     type: Coop.MSG.INIT, gameId: state.gameId, running: true,
-    puzzle: state.puzzle, marks: state.marks, markedBy: wireMarkedBy(), startTime: state.startTime,
+    puzzle: state.puzzle, placed: wirePlaced(), tray: state.tray.map(t => ({ v: t.v, used: t.used ? 1 : 0 })), markedBy: wireMarkedBy(), startTime: state.startTime,
     lives: state.lives, maxLives: state.maxLives, hintsLeft: state.hintsLeft, hintsUsed: state.hintsUsed, mistakes: state.mistakes,
     ...endlessExtra,
   });
@@ -3415,7 +3408,7 @@ function startCoopMatch() {
     state.coop.generating = false;
     // gameId mitsenden, damit Gäste sie übernehmen und ein späteres Wiederhol-
     // INIT (Nachzügler-Nachversand, s. broadcastRunningInit) als Duplikat erkennen.
-    Coop.send({ type: Coop.MSG.INIT, gameId: state.gameId, puzzle: state.puzzle, marks: state.marks, markedBy: wireMarkedBy(), startTime: state.startTime });
+    Coop.send({ type: Coop.MSG.INIT, gameId: state.gameId, puzzle: state.puzzle, placed: wirePlaced(), tray: state.tray.map(t => ({ v: t.v, used: t.used ? 1 : 0 })), markedBy: wireMarkedBy(), startTime: state.startTime });
   }).catch(e => onLobbyGenFailed(e, 'Coop'));
 }
 // Gemeinsamer Fehlerpfad, falls die Lobby-Generierung (Coop-Host/Race/Team)
@@ -3712,15 +3705,6 @@ function broadcastTeamDone(outcome) {
 // Team-vs-Team).
 function broadcastRaceDone(outcome) {
   state.race.matchOver = true;
-  if (state.race.ai) {
-    // KI-Duell: Ergebnis nur lokal festhalten, kein Coop.send (kein Raum).
-    state.race.winner = outcome === 'won' ? 'me' : 'opponent';
-    if (outcome === 'won') state.race.winnerName = myUsername() || t('common.you');
-    state.race.endReason = outcome;
-    state.race.myPct = progressPct();
-    stopBot();
-    return;
-  }
   if (state.race.ffa && outcome === 'lost') {
     // FFA: selbst ausgeschieden (Leben verloren/aufgegeben) -- das Match läuft für
     // die Übrigen weiter, deshalb 'out' statt eines Gegner-Siegs anzeigen.
@@ -3867,7 +3851,7 @@ function win(remote) {
       }
     }
     if (!state.isTrainingGame) applyStreakAfterGame();
-    if (state.isRaceGame) state.raceStats = recordRaceWin(state.race.ai ? 'ai' : state.race.ffa ? 'ffa' : '1v1', state.elapsed);
+    if (state.isRaceGame) state.raceStats = recordRaceWin(state.race.ffa ? 'ffa' : '1v1', state.elapsed);
     if (state.team.active) state.raceStats = recordRaceWin('2v2', state.elapsed);
     // Trainingsrätsel landen bewusst nicht im Verlauf/in den Achievements (siehe
     // oben) -- sie werden beliebig oft wiederholt und sollen den Ringpuffer bzw.
@@ -3875,7 +3859,7 @@ function win(remote) {
     if (!state.isTrainingGame) {
       state.puzzleHistory = recordHistory({
         difficulty: state.puzzle.difficulty, dim: { r: state.puzzle.rows, c: state.puzzle.cols },
-        seed: state.puzzle.seed, marks: state.marks.map(row => row.slice()),
+        seed: state.puzzle.seed, placed: state.placed.map(row => row.slice()), tray: state.tray.map(t => ({ v: t.v, used: t.used })),
         timeMs: state.elapsed, outcome: 'won', coop: state.coop.active,
       });
       recordMissionEvent({
@@ -3936,12 +3920,12 @@ function lose(remote) {
   // Klon — der Spieler hat bis zum Aus normal gespielt.
   recordPlaySample();
   if (!state.isTrainingGame) applyStreakAfterGame();
-  if (state.isRaceGame) state.raceStats = recordRaceLoss(state.race.ai ? 'ai' : state.race.ffa ? 'ffa' : '1v1');
+  if (state.isRaceGame) state.raceStats = recordRaceLoss(state.race.ffa ? 'ffa' : '1v1');
   if (state.team.active) state.raceStats = recordRaceLoss('2v2');
   if (!state.isTrainingGame) {
     state.puzzleHistory = recordHistory({
       difficulty: state.puzzle.difficulty, dim: { r: state.puzzle.rows, c: state.puzzle.cols },
-      seed: state.puzzle.seed, marks: state.marks.map(row => row.slice()),
+      seed: state.puzzle.seed, placed: state.placed.map(row => row.slice()), tray: state.tray.map(t => ({ v: t.v, used: t.used })),
       timeMs: state.elapsed, outcome: 'lost', coop: state.coop.active,
     });
     recordMissionEvent({
@@ -4058,7 +4042,7 @@ function continueSoloAlone(silent = false) {
   state.sessionRev = 0;
   state.startTime = Date.now() - elapsedNow;   // lokale Uhr neu verankern
   state.elapsed = elapsedNow;
-  applyMarkSafeRegionColors();
+  cellStyleCache = [];
   persistGame();
   refreshResume();
   if (!silent) showToast(t('coop.continueSoloDone'), 'success', 3200);
@@ -4255,14 +4239,12 @@ function cancelSoloInvite() {
 // ─── PERSISTENZ DES LAUFENDEN SPIELS ──────────────────────────────────────────
 function collectHintMarks() {
   const out = [];
-  for (let r = 0; r < state.cellMeta.length; r++)
-    for (let c = 0; c < state.cellMeta[r].length; c++)
-      if (state.cellMeta[r][c].hintMark) out.push([r, c]);
+  for (const key of Object.keys(state.hintCells)) out.push([Math.floor(key / 1000), key % 1000]);
   return out;
 }
 function activeSnapshot() {
   return {
-    puzzle: state.puzzle, marks: state.marks, markedBy: wireMarkedBy(), lives: state.lives, maxLives: state.maxLives,
+    puzzle: state.puzzle, placed: wirePlaced(), tray: state.tray.map(t => ({ v: t.v, used: t.used ? 1 : 0 })), markedBy: wireMarkedBy(), lives: state.lives, maxLives: state.maxLives,
     hintsLeft: state.hintsLeft, hintsUsed: state.hintsUsed, mistakes: state.mistakes,
     elapsed: state.elapsed, difficulty: state.puzzle.difficulty,
     hintMarks: collectHintMarks(),
@@ -5060,7 +5042,7 @@ function setSetting(key, val) {
 // Eigene Markierungsfarbe oder Brett-Palette geändert → Cage-Farben neu auf
 // Sichtbarkeit der Markierung prüfen. Als watch statt setSetting-Hook, weil der
 // Custom-Farbwähler per v-model DIREKT in state.settings schreibt (kein setSetting).
-watch(() => [state.settings.coopMyColor, state.settings.boardPalette], () => applyMarkSafeRegionColors());
+watch(() => [state.settings.coopMyColor, state.settings.boardPalette], () => { cellStyleCache = []; });
 // Settings-Persist ENTPRELLT (Trailing 250 ms): der Werkzeug-Umschalter schreibt
 // bei JEDEM Wechsel state.settings.confirmTool — das synchrone JSON.stringify +
 // localStorage.setItem lag damit mitten im Tap-Pfad (Teil der gemeldeten
@@ -5176,38 +5158,21 @@ function doDeleteAllData() {
 // Undo, siehe state.history), siehe ROADMAP/Plan.
 function openHistoryDetail(entry) {
   const puzzle = generatePuzzle({ difficulty: entry.difficulty, seed: entry.seed, dim: entry.dim });
-  state.historyDetail = { entry, puzzle, cellMeta: buildCellMeta(puzzle) };
+  state.historyDetail = { entry, puzzle, display: markRaw(buildDisplay(puzzle)) };
 }
 function closeHistoryDetail() { state.historyDetail = null; }
 function historyGridStyle(puzzle) {
   const avail = Math.min(window.innerWidth - 80, 420);
-  const cellPx = Math.max(20, Math.min(40, Math.floor(avail / (puzzle.cols + 1))));
+  const cols = puzzle.cols * 2 - 1, rows = puzzle.rows * 2 - 1;
+  const cellPx = Math.max(14, Math.min(34, Math.floor(avail / (puzzle.cols + (puzzle.cols - 1) * 0.62))));
   return {
-    gridTemplateColumns: `var(--hdr) repeat(${puzzle.cols}, var(--cell))`,
-    gridTemplateRows: `var(--hdr) repeat(${puzzle.rows}, var(--cell))`,
-    '--cell': cellPx + 'px', '--hdr': cellPx + 'px',
-    '--fs': Math.max(9, Math.round(cellPx * 0.4)) + 'px',
+    gridTemplateColumns: gridTracks(cols),
+    gridTemplateRows: gridTracks(rows),
+    '--cell': cellPx + 'px', '--opcell': Math.round(cellPx * 0.62) + 'px',
+    '--fs': Math.max(9, Math.round(cellPx * 0.42)) + 'px',
   };
 }
-function historyCellClasses(r, c) {
-  const m = state.historyDetail.cellMeta[r][c];
-  const mk = state.historyDetail.entry.marks?.[r]?.[c] || 'none';
-  return {
-    kept: mk === 'kept', removed: mk === 'removed', region: m.region >= 0,
-    strike: mk === 'removed' && state.settings.eraseStyle === 'strike',
-  };
-}
-function historyCellStyle(r, c) {
-  const m = state.historyDetail.cellMeta[r][c];
-  const st = { fontSize: 'var(--fs)' };
-  if (m.color) {
-    // Ausgerüstete Brett-Palette (Shop): reine HSL-Transformation der Cage-Farbe —
-    // Rotation/Skalierung erhält die optimierten Farb-Abstände (shopitems.js).
-    const col = applyPaletteFx(m.color, activePaletteFx());
-    st['--rc-h'] = col.h; st['--rc-s'] = col.s + '%'; st['--rc-l'] = col.l + '%'; st['--rc-ink'] = regionChipInk(col);
-  }
-  return st;
-}
+
 // Erzeugt per Seed exakt dasselbe Rätsel neu und startet eine frische,
 // spielbare Partie damit (kein zugweises Fortsetzen — ein neuer Versuch).
 function replayHistoryEntry(entry) {
@@ -5501,11 +5466,15 @@ function gridIsDense(g, rows, cols) {
 function wireMarkedBy() {
   return (state.markedBy || []).map(row => (row || []).map(v => v || ''));
 }
+// Gelegte Zahlen fuer die RTDB: leere Felder als '' (siehe wireMarkedBy) —
+// sonst zerfaellt das Raster unterwegs zu einem loechrigen Objekt.
+function wirePlaced() {
+  return (state.placed || []).map(row => (row || []).map(v => (v == null ? '' : v)));
+}
 let joinFreezeTimer = null;
 function countMarked() {
   let n = 0;
-  const m = state.marks || [];
-  for (const row of m) for (const v of (row || [])) if (v && v !== 'none') n++;
+  for (const row of (state.placed || [])) for (const v of (row || [])) if (v != null) n++;
   return n;
 }
 function startJoinFreeze(marked) {
@@ -6709,362 +6678,14 @@ function dismissWhatsNew() { state.showWhatsNew = false; saveSeenVersion(BUILD);
 function dismissStreakLostNotice() { state.streakLostNotice = false; }
 function dismissStreakExtended() { state.streakExtended = null; }
 
-// ─── SPIELSTIL-AUFZEICHNUNG (Basis des eigenen KI-Klons) ─────────────────────
-// Während der Partie wird nur roh mitgeschrieben (s. setMark). Ausgewertet wird
-// EINMAL am Spielende in der afterPaint-Buchhaltung — dort ist Rechenzeit
-// unkritisch, im Tap-Pfad wäre sie es nicht.
+// ─── ZUG-PROTOKOLL ───────────────────────────────────────────────────────────
+// (Der KI-Duell-Modus aus der Schwester-App gibt es hier nicht: ein Bot müsste
+//  das Rechenkreuz eigenständig deduzieren, das ist ein eigenes Vorhaben.
+//  moveLog bleibt als leichter Zug-Puffer erhalten, damit die Zug-Pfade
+//  unverändert bleiben.)
 let moveLog = null;
-
-// Nur ECHTE eigene Solo-Partien taugen als Trainingsdaten: Training ist geführt,
-// Coop/Team sind fremdbestimmt, und KI-Duelle würden den Klon auf sich selbst
-// zurückkoppeln.
-// JEDER Modus zählt für den Klon: Solo, Endlos, Coop, Team, Duell 1v1/FFA und
-// auch das KI-Duell — überall spielt der Nutzer selbst, und nur die Summe aller
-// Partien ergibt einen Klon, der wirklich er ist. Ausgenommen bleibt EINZIG der
-// Trainingsmodus: dort setzt der Tutor die Züge (`applyTrainingStep` ruft setMark),
-// die Deduktion kommt also von der App und nicht vom Spieler — als Stilprobe wäre
-// das eine Aufzeichnung der App über sich selbst.
-function playSampleEligible() {
-  return !state.isTrainingGame;
-}
-function startPlayLog() { moveLog = playSampleEligible() ? [] : null; }
-
-// Am Spielende: Zug-Log auswerten und als kompakte Stichprobe sichern.
-function recordPlaySample() {
-  if (!moveLog || !moveLog.length || !state.puzzle) { moveLog = null; return; }
-  const moves = moveLog;
-  moveLog = null;
-  try {
-    const t0 = Date.now();
-    const sample = analyzeGame({
-      puzzle: state.puzzle, moves, mistakes: state.mistakes,
-      totalMs: state.elapsed, difficulty: state.puzzle.difficulty,
-    });
-    if (!sample) return;
-    const all = addPlaySample(sample);
-    log('game', 'Spielstil-Stichprobe gesichert', { games: all.length, tookMs: Date.now() - t0, thinkCount: sample.thinkCount });
-    // Genau EIN Ort für die Veröffentlichung: hier ist der Klon gerade frisch
-    // geworden. Der Aufruf ist bewusst nicht abgewartet — die Spielende-
-    // Buchhaltung darf nicht auf das Netz warten.
-    publishMyClone();
-  } catch (e) {
-    log('error', 'Spielstil-Auswertung fehlgeschlagen', e);
-  }
-}
-
-// Der eigene Klon: aus den gesammelten Stichproben abgeleitet. `ready` erst ab
-// genug Partien — vorher zeigt die UI den Fortschritt statt eines halbgaren Klons.
-function myClone() {
-  return buildProfile(loadPlaySamples());
-}
-
-// ─── KI-DUELL ─────────────────────────────────────────────────────────────────
-// Ein KI-Duell ist ein vollwertiges Race-Match (state.isRaceGame = true, damit
-// alle Duell-Achievements greifen), aber ohne Firebase: der Gegner ist ein
-// lokaler opponents-Eintrag, den ein setTimeout-Scheduler treibt. Läuft deshalb
-// auch offline. Die Duell-UI (HUD-Balken, duelBars, .duel-graph-Ergebniskarte)
-// bleibt unverändert — für sie ist der Bot einfach ein weiterer Gegner.
-let botState = null;        // Bot-Instanz (js/duelbot.js), null = kein KI-Duell
-let botTimer = null;
-
-function stopBot() {
-  if (botTimer) { clearTimeout(botTimer); botTimer = null; }
-}
-// Der Bot darf NICHT weiterlaufen, während der Spieler pausiert oder die App im
-// Hintergrund ist — sonst „rennt" er, obwohl die eigene Uhr steht.
-function botPaused() {
-  return state.paused || !!state.resumeCountdown || (typeof document !== 'undefined' && document.hidden);
-}
-// setTimeout-Kette statt Frame-Loop: ein Bot-Zug kostet nichts am Brett (der Bot
-// hat keins) und schreibt nur den ganzzahligen Fortschritt des Gegners — das
-// Brett rendert dabei nicht neu (s. Board-Render-Regeln in CLAUDE.md).
-function scheduleBotAction() {
-  stopBot();
-  if (!botState || !state.race.ai || state.race.matchOver || state.status !== 'playing') return;
-  const action = botNextAction(botState);
-  if (action.kind === 'done') return;
-  const wait = botPaused() ? 400 : Math.max(50, action.delayMs);
-  botTimer = setTimeout(() => {
-    botTimer = null;
-    if (!botState || !state.race.ai || state.race.matchOver || state.status !== 'playing') return;
-    // Während Pause/Hintergrund NICHT ausführen, nur erneut nachsehen.
-    if (botPaused()) { scheduleBotAction(); return; }
-    const res = botApplyAction(botState, action);
-    const opp = state.race.opponents[0];
-    if (opp) { opp.pct = res.pct; opp.mistakes = botState.mistakes; }
-    state.race.opponentPct = res.pct;
-    state.race.opponentMistakes = botState.mistakes;
-    if (res.out) { onBotEliminated(); return; }
-    if (res.done) { onBotSolved(); return; }
-    scheduleBotAction();
-  }, wait);
-}
-
-// Der Bot hat gelöst → das Match ist verloren (Spiegel des RACE_DONE-1v1-Zweigs,
-// nur ohne Netzwerk).
-function onBotSolved() {
-  stopBot();
-  if (state.race.matchOver || state.status !== 'playing') return;
-  state.race.matchOver = true;
-  state.race.winner = 'opponent';
-  state.race.endReason = 'won';
-  state.race.winnerName = state.race.opponentName;
-  state.race.opponentPct = 100;
-  state.race.myPct = progressPct();
-  log('game', 'KI-Duell: Bot hat gelöst', { level: state.race.aiLevel, botMistakes: botState?.mistakes, myPct: state.race.myPct });
-  lose({ timeMs: state.elapsed, mistakes: state.mistakes, hintsUsed: state.hintsUsed });
-}
-// Der Bot hat alle Leben verloren → er ist ausgeschieden, der Spieler gewinnt.
-function onBotEliminated() {
-  stopBot();
-  if (state.race.matchOver || state.status !== 'playing') return;
-  const opp = state.race.opponents[0];
-  if (opp) opp.out = true;
-  state.race.matchOver = true;
-  state.race.winner = 'me';
-  state.race.winnerName = myUsername() || t('common.you');
-  state.race.endReason = 'won';
-  state.race.myPct = progressPct();
-  log('game', 'KI-Duell: Bot ausgeschieden (alle Leben verloren)', { level: state.race.aiLevel });
-  win();
-}
-
-// Zielzeit des Duells: Grundlage sind die EIGENEN DURCHSCHNITTSzeiten aus den
-// Statistiken (sumTimeMs / won), nicht die Bestzeiten — ein Gegner, der immer
-// Bestzeit spielt, wäre unfair. Fehlt für eine Schwierigkeit ein eigener Wert,
-// greift die Vorgabetabelle in duelbot.js.
-function aiTargetFor(difficulty, spec = aiOpponentSpec()) {
-  return targetMsFor({
-    avgMs: spec.avgMs,
-    difficulty,
-    level: spec.level,
-    skill: state.race.aiSkill,
-  });
-}
-
-// Der gewählte Gegner, aufgelöst zu allem, was Zielzeit und Verhalten brauchen.
-// Bewusst EINE Stelle für die drei Fälle (feste Stufe / eigener Klon /
-// Freundes-Klon), damit die angezeigte Erwartungszeit und das tatsächliche Duell
-// garantiert dieselbe Grundlage benutzen.
-function aiOpponentSpec() {
-  const individual = state.race.aiMode === 'individual';
-  const fuid = individual ? state.race.aiFriend : null;
-  if (fuid) {
-    const entry = state.race.friendClones[fuid] || null;
-    const friend = (state.friends.list || []).find((f) => f.uid === fuid);
-    // FREMDDATEN aus der Cloud, ungeprüft: Profil UND Durchschnittszeiten müssen
-    // beide durch ihre Klemme. Ohne clampAvgMs hätte eine manipulierte 1-ms-Zeit
-    // den Klon sofort gewinnen lassen — clampProfile fasst die Zeit nicht an.
-    return {
-      kind: 'friend',
-      name: (entry && entry.username) || (friend && friend.username) || t('aiduel.oppFriend'),
-      profile: clampProfile(entry && entry.profile),
-      avgMs: clampAvgMs(entry && entry.avgMs),
-      level: 'medium',
-    };
-  }
-  if (individual && state.race.aiClone) {
-    const c = myClone();
-    return {
-      kind: 'clone',
-      name: t('aiduel.oppCloneName'),
-      // Der eigene Klon behält bewusst den searchMax des Presets: der Wert steuert
-      // die U-Kurve der Suche, nicht den persönlichen Stil.
-      profile: (c.ready && c.profile)
-        ? { ...PRESET_PROFILES.medium, ...c.profile, searchMax: PRESET_PROFILES.medium.searchMax }
-        : { ...PRESET_PROFILES.medium },
-      avgMs: avgTimesByDifficulty(state.stats),
-      level: 'medium',
-    };
-  }
-  const level = PRESET_LEVELS[state.race.aiLevel] ? state.race.aiLevel : 'medium';
-  return {
-    kind: 'preset',
-    name: t('aiduel.opponentName', { level: t('aiduel.level.' + level) }),
-    profile: { ...PRESET_PROFILES.medium, mistakesPerGame: PRESET_LEVELS[level].mistakesPerGame, stallRate: PRESET_LEVELS[level].stallRate },
-    avgMs: avgTimesByDifficulty(state.stats),
-    level,
-  };
-}
-
-// Hat der Spieler für diese Schwierigkeit eigene Durchschnittsdaten? (Nur für die
-// Anzeige „kalibriert auf dich" vs. „Vorgabewert".) Beim Freundes-Klon zählt
-// dessen Kalibrierung, nicht die eigene.
-function aiCalibrated(difficulty) {
-  return aiOpponentSpec().avgMs[difficulty] != null;
-}
-// Status des eigenen Klons für die Gegnerauswahl: kalibriert oder „lernt noch".
-function cloneStatus() {
-  const c = myClone();
-  return { ready: c.ready, games: c.games, need: CLONE_MIN_GAMES };
-}
-function aiTargetLabel(difficulty) {
-  return fmtTime(aiTargetFor(difficulty));
-}
-
-// Alle Freundes-Klone mit ihrem Kalibrier-Stand. Fertige zuerst, danach alphabetisch.
-function friendClones() {
-  return (state.friends.list || []).map((f) => {
-    const e = state.race.friendClones[f.uid] || null;
-    const games = Number(e && e.games) || 0;
-    return {
-      uid: f.uid,
-      name: (e && e.username) || f.username || '?',
-      games,
-      need: CLONE_MIN_GAMES,
-      ready: !!(e && e.profile) && games >= CLONE_MIN_GAMES,
-    };
-  }).sort((a, b) => (Number(b.ready) - Number(a.ready)) || a.name.localeCompare(b.name));
-}
-
-// Die Auswahl zeigt NUR spielbereite Klone. Unfertige gehören bewusst NICHT in
-// die Liste: bei inaktiven Freunden wird ihr Klon nie fertig, sie würden also für
-// immer Platz belegen. Sie stecken stattdessen in einer eigenen Übersicht
-// (aiLearning-Modal), die man nur öffnet, wenn man wissen will, wer noch lernt.
-function readyClones() {
-  return friendClones().filter((c) => c.ready);
-}
-function learningClones() {
-  return friendClones().filter((c) => !c.ready);
-}
-// Gibt es überhaupt einen spielbaren individuellen Gegner (eigener Klon oder Freund)?
-function anyCloneReady() {
-  return cloneStatus().ready || readyClones().length > 0;
-}
-
-// Modus umschalten. Beim Wechsel auf „individuell" gleich etwas Spielbares
-// vorauswählen (eigener Klon zuerst, sonst der erste fertige Freund), damit der
-// Start-Knopf nie ins Leere zeigt.
-function setAiMode(mode) {
-  state.race.aiMode = mode === 'individual' ? 'individual' : 'preset';
-  if (state.race.aiMode !== 'individual') return;
-  const stillValid = state.race.aiFriend
-    ? readyClones().some((c) => c.uid === state.race.aiFriend)
-    : (state.race.aiClone && cloneStatus().ready);
-  if (stillValid) return;
-  if (cloneStatus().ready) pickAiOpponent('clone');
-  else if (readyClones().length) pickAiOpponent('friend', readyClones()[0].uid);
-  else pickAiOpponent('preset');
-}
-
-function pickAiOpponent(kind, uid = null) {
-  state.race.aiClone = kind === 'clone';
-  state.race.aiFriend = kind === 'friend' ? uid : null;
-}
-
-// Die Klon-Profile der Freunde beim Öffnen des Duell-Screens einmal holen (kein
-// Dauer-Listener — ein Profil ändert sich höchstens einmal je Partie des Freundes).
-async function loadFriendClones() {
-  const uids = (state.friends.list || []).map((f) => f.uid).filter(Boolean);
-  if (!uids.length || state.account.status !== 'in' || !isOnline()) return;
-  state.race.clonesLoading = true;
-  const t0 = Date.now();
-  try {
-    state.race.friendClones = await Account.fetchAiProfiles(uids);
-    log('game', 'Freundes-Klone geladen', {
-      asked: uids.length, found: Object.keys(state.race.friendClones).length,
-      ready: readyClones().length, tookMs: Date.now() - t0,
-    });
-    // Erst jetzt steht fest, wer spielbereit ist — eine im leeren Zustand
-    // getroffene Vorauswahl nachziehen.
-    if (state.race.aiMode === 'individual') setAiMode('individual');
-  } catch (e) {
-    log('error', 'Freundes-Klone laden fehlgeschlagen', e);
-  } finally {
-    state.race.clonesLoading = false;
-  }
-}
-
-// Den eigenen Klon veröffentlichen, sobald er fertig kalibriert ist — damit
-// Freunde gegen ihn spielen können. Läuft am Spielende (nach der Auswertung der
-// Partie) und ist bewusst „fire and forget": ein Fehlschlag darf die
-// Spielende-Buchhaltung nicht stören.
-function publishMyClone() {
-  try {
-    if (state.account.status !== 'in' || !isOnline()) return;
-    const c = myClone();
-    // BEWUSST auch den noch unfertigen Klon veröffentlichen. Vorher stand hier
-    // `!c.ready` — dadurch existierte `/aiProfiles/{uid}` erst ab der achten
-    // Partie, und für jeden lernenden Freund zeigte die Übersicht zwangsläufig
-    // „0/8" mit leerem Balken. Der Fortschritt war also strukturell nicht
-    // darstellbar. Die Empfängerseite entscheidet ohnehin selbst über die
-    // Spielbereitschaft (`games >= CLONE_MIN_GAMES` in friendClones), das
-    // vorläufige Profil wird nie als Gegner ausgewählt.
-    if (!c.profile) return;
-    Account.publishAiProfile({
-      profile: c.profile,
-      games: c.games,
-      avgMs: avgTimesByDifficulty(state.stats),
-      username: state.account.username,
-      badge: myBadge(),
-    });
-  } catch (e) { log('error', 'KI-Klon veröffentlichen fehlgeschlagen', e); }
-}
-
-function goAiDuel() {
-  state.modal = null;
-  coopReset();
-  pushNav(() => { coopReset(); navigate('home'); });
-  navigate('aiduel');
-  loadFriendClones();
-}
-
-// Startet das KI-Duell: Rätsel generieren, Bot auf die Zielzeit kalibrieren,
-// Timer + Scheduler anwerfen. Kein Raum, keine Lobby, kein awaitingStart.
-function startAiDuel(diffId) {
-  const difficulty = diffId || state.sel.difficulty;
-  state.isTrainingGame = false;
-  state.isRaceGame = true;
-  state.race.active = true;
-  state.race.ai = true;
-  state.race.ffa = false;
-  state.race.matchOver = false;
-  state.race.winner = null;
-  state.race.winnerName = '';
-  state.race.endReason = null;
-  state.race.myPct = 0;
-  state.race.opponentPct = 0;
-  state.race.opponentMistakes = 0;
-  if (!PRESET_LEVELS[state.race.aiLevel]) state.race.aiLevel = 'medium';
-  // Gegner EINMAL auflösen und festhalten: Zielzeit, Name und Profil müssen aus
-  // derselben Momentaufnahme kommen — die Auswahl darf sich während der
-  // Generierung nicht mehr auswirken.
-  const spec = aiOpponentSpec();
-  state.race.opponentId = 'ai';
-  state.race.opponentName = spec.name;
-  state.race.opponentColor = '#7c8cff';
-  state.race.opponents = [{ id: 'ai', name: state.race.opponentName, color: state.race.opponentColor, pct: 0, mistakes: 0, out: false }];
-  state.screen = 'game';
-  state.generating = true;
-  const targetMs = aiTargetFor(difficulty, spec);
-  state.race.aiTargetMs = targetMs;
-  log('game', 'KI-Duell gestartet', { difficulty, kind: spec.kind, level: spec.level, targetMs, calibrated: spec.avgMs[difficulty] != null });
-  const t0 = Date.now();
-  generateAsync({ difficulty, bigNumbers: false }).then(puzzle => {
-    if (!state.race.ai) return;   // zwischenzeitlich abgebrochen
-    loadPuzzleIntoState(puzzle, null);
-    state.generating = false;
-    // Das Profil bestimmt nur, WIE sich die Zeit über die Züge verteilt (Tier-Mix,
-    // Bursts, Hänger, Fehler); die absolute Dauer kommt aus targetMs.
-    botState = createBot({ puzzle, profile: spec.profile, skill: state.race.aiSkill, seed: (Date.now() ^ 0x9e3779b9) >>> 0, targetMs });
-    startTimer();
-    scheduleBotAction();
-    log('game', 'KI-Duell: Brett bereit', { tookMs: Date.now() - t0, timeScale: Number(botState.timeScale.toFixed(3)) });
-  }).catch(e => {
-    log('error', 'KI-Duell: Generierung fehlgeschlagen', e);
-    state.generating = false;
-    showToast(t('toast.genFailed'), 'error', 3000);
-    aiDuelReset();
-    navigate('home');
-  });
-}
-function aiDuelReset() {
-  stopBot();
-  botState = null;
-  state.race.ai = false;
-  state.race.active = false;
-  state.isRaceGame = false;
-}
+function startPlayLog() { moveLog = []; }
+function recordPlaySample() { moveLog = null; }
 
 // ─── APP-UPDATE (Service Worker) ──────────────────────────────────────────────
 // Läuft gerade ein Spiel oder eine Coop-/Wettkampf-Session? Dann darf NICHTS die
@@ -7498,52 +7119,61 @@ let boardRenderCount = 0;
 const BoardGrid = {
   setup() {
     return {
-      state, cellClasses, cellStyle, cellAriaLabel, onCellTap,
-      onCellPointerDown, onCellPointerMove, onCellPointerCancel,
-      rowResolvedR, colResolvedR, regionResolvedR, rowSumR, colSumR, rowSumMatch, colSumMatch,
-      skinBoardClasses, skinVars, gridStyle, boardFontClass, boardFrameClass,
+      state, cellClasses, cellStyle, cellValue, onCellTap, onDragStart, onDragMove, onDragEnd, onDragCancel,
+      eqSolvedR, skinBoardClasses, skinVars, gridStyle, boardFontClass, boardFrameClass,
       countRender: () => { boardRenderCount++; return ''; },
     };
   },
   template: `
           <div class="board" :class="[skinBoardClasses, boardFontClass(), boardFrameClass(), { 'skin-freeze': state.paused || state.joinFreeze, 'mp-colors': state.coop.active || state.team.active, 'big-num': state.puzzle.bigNumbers, 'tutor-dim': !!state.hintTutor }]" :style="[gridStyle, skinVars]" :data-rc="countRender()">
-            <div class="corner"></div>
-            <div v-for="c in state.puzzle.cols" :key="'ch'+c" class="hdr col-hdr" :class="{resolved: colResolvedR(c-1), pulse: state.justResolved['col-'+(c-1)]}">
-              <template v-if="!colResolvedR(c-1)">
-                <span class="cur" :class="{match: colSumMatch(c-1)}">{{ colSumR(c-1) }}</span>
-                <span class="tgt">{{ state.puzzle.colTargets[c-1] }}</span>
+            <template v-for="(row, dr) in state.display.cells" :key="'dr'+dr">
+              <template v-for="(cell, dc) in row" :key="dr+'-'+dc">
+                <div v-if="!cell" class="gapcell"></div>
+                <div v-else-if="cell.t==='op'" class="opcell" :class="{ done: eqSolvedR(cell.eqIndex), pulse: !!state.justResolved['eq-'+cell.eqIndex] }">{{ cell.sym }}</div>
+                <div v-else class="cell" :class="cellClasses(cell)" :style="cellStyle(cell)"
+                     :data-r="cell.r" :data-c="cell.c"
+                     role="button" :tabindex="cell.given ? -1 : 0"
+                     @click="onCellTap(cell.r, cell.c)"
+                     @keydown.enter.prevent="onCellTap(cell.r, cell.c)"
+                     @keydown.space.prevent="onCellTap(cell.r, cell.c)"
+                     @pointerdown="!cell.given && cellValue(cell)!=null && onDragStart($event, cellValue(cell), { r: cell.r, c: cell.c })"
+                     @pointermove="onDragMove($event)"
+                     @pointerup="onDragEnd($event)"
+                     @pointercancel="onDragCancel()"
+                     @contextmenu.prevent>
+                  <span class="cnum">{{ cellValue(cell) }}</span>
+                </div>
               </template>
-            </div>
-            <template v-for="r in state.puzzle.rows" :key="'r'+r">
-              <div class="hdr row-hdr" :class="{resolved: rowResolvedR(r-1), pulse: state.justResolved['row-'+(r-1)]}">
-                <template v-if="!rowResolvedR(r-1)">
-                  <span class="cur" :class="{match: rowSumMatch(r-1)}">{{ rowSumR(r-1) }}</span>
-                  <span class="tgt">{{ state.puzzle.rowTargets[r-1] }}</span>
-                </template>
-              </div>
-              <div v-for="c in state.puzzle.cols" :key="r+'-'+c"
-                   class="cell" :class="cellClasses(r-1,c-1)" :style="cellStyle(r-1,c-1)"
-                   role="button" tabindex="0" :aria-label="cellAriaLabel(r-1,c-1)"
-                   @click="onCellTap(r-1,c-1)"
-                   @keydown.enter.prevent="onCellTap(r-1,c-1)"
-                   @keydown.space.prevent="onCellTap(r-1,c-1)"
-                   @pointerdown="onCellPointerDown($event,r-1,c-1)"
-                   @pointermove="onCellPointerMove($event)"
-                   @pointerup="onCellPointerCancel"
-                   @pointerleave="onCellPointerCancel"
-                   @pointercancel="onCellPointerCancel"
-                   @contextmenu.prevent>
-                <span v-if="state.cellMeta[r-1][c-1].chip!=null && !regionResolvedR(state.cellMeta[r-1][c-1].region)" class="rchip">{{ state.cellMeta[r-1][c-1].chip }}</span>
-                <span class="cnum">{{ state.puzzle.values[r-1][c-1] }}</span>
-                <i v-if="state.marks[r-1][c-1]==='removed' && state.cellMeta[r-1][c-1].hintMark" class="hint-dot"></i>
-              </div>
             </template>
           </div>
   `,
 };
 
+// Vorrat: die noch zu legenden Zahlen. Ein benutzter Stein hinterlässt seine
+// LÜCKE (wie in der Vorlage) — der Sortier-Knopf räumt auf und sortiert.
+const TrayBar = {
+  setup() {
+    return { state, onDragStart, onDragMove, onDragEnd, onDragCancel, pickTile, dropOnTray };
+  },
+  template: `
+          <div class="tray" @click.self="dropOnTray()">
+            <div v-for="tile in state.tray" :key="tile.id" class="tray-slot">
+              <div v-if="!tile.used" class="tile"
+                   :class="{ picked: state.pick && !state.pick.from && state.pick.tileId===tile.id }"
+                   role="button" tabindex="0"
+                   @keydown.enter.prevent="pickTile(tile.v, null, tile.id)"
+                   @pointerdown="onDragStart($event, tile.v, null, tile.id)"
+                   @pointermove="onDragMove($event)"
+                   @pointerup="onDragEnd($event)"
+                   @pointercancel="onDragCancel()"
+                   @contextmenu.prevent>{{ tile.v }}</div>
+            </div>
+          </div>
+  `,
+};
+
 const App = {
-  components: { DifficultySlider, BoardGrid },
+  components: { DifficultySlider, BoardGrid, TrayBar },
   setup() {
     const livesArr = computed(() => Array.from({ length: state.maxLives }, (_, i) => i < state.lives));
     // Coop/Race/Team: zeigt der Coop-Screen gerade die Host-Schwierigkeitsauswahl?
@@ -7576,15 +7206,15 @@ const App = {
       if (!roster.length) return [];
       const p = state.puzzle;
       const raw = roster.map(pl => {
-        let correctKept = 0, correctRemoved = 0;
+        // „Richtig" = ein Stein dieses Spielers, der am Ende auf seinem Platz liegt.
+        let correct = 0;
         for (let r = 0; r < p.rows; r++)
           for (let c = 0; c < p.cols; c++) {
             if (state.markedBy[r][c] !== pl.id) continue;
-            if (state.marks[r][c] === 'kept' && p.solution[r][c]) correctKept++;
-            else if (state.marks[r][c] === 'removed' && !p.solution[r][c]) correctRemoved++;
+            if (state.placed[r][c] != null && state.placed[r][c] === solutionAt(p, r, c)) correct++;
           }
         const mistakes = state.coop.mistakesByPlayer[pl.id] || 0;
-        return { id: pl.id, name: pl.name, username: pl.username, color: pl.color, correctKept, correctRemoved, mistakes, correct: correctKept + correctRemoved };
+        return { id: pl.id, name: pl.name, username: pl.username, color: pl.color, correct, mistakes };
       });
       const totalCorrect = raw.reduce((s, pl) => s + pl.correct, 0);
       return raw.map(pl => ({
@@ -7615,12 +7245,8 @@ const App = {
     });
     const progress = computed(() => {
       if (!state.puzzle) return { kept: 0, total: 0 };
-      let kept = 0, total = 0;
       const p = state.puzzle;
-      for (let r = 0; r < p.rows; r++) for (let c = 0; c < p.cols; c++) {
-        if (p.solution[r][c]) { total++; if (state.marks[r][c] === 'kept') kept++; }
-      }
-      return { kept, total };
+      return { kept: countPlaced(), total: p.tray.length };
     });
     // Eigener Fortschritt (0-100) für die Fortschrittsanzeige im HUD -- reaktiver
     // Wrapper um progressPct(), das dieselbe Berechnung schon fürs Team-/Race-
@@ -7750,8 +7376,8 @@ const App = {
       state, BUILD, CHANGELOG, DIFFICULTIES, DIFF_BY_ID, ACHIEVEMENTS, achievementsUnlockedCount,
       livesArr, lifeLossColor, opponentLivesArr, opponentTeamLivesArr, coopPerformance, mvpId, opponentTeamPerformance, progress, myProgressPct, gridStyle, coopAvailable,
       navigate, navTo, goBack, newGame, setupStart, goNextPuzzle, startEndless, endlessAgain, endlessContinue, endlessTotalMs, closeEndlessSummary, resumeGame, resumeCoopGame, resumeEndlessGame, onCellTap,
-      openMissions, claimMissionReward, missionsClaimable, missionProgressVal, missionDone, missionClaimedUI, missionClaimableUI, onCellPointerDown, onCellPointerMove, onCellPointerCancel, undo, useHint, tutorNext, dismissTutor, tutorStepText, doCheck,
-      rowSum, colSum, regionSum, rowSumR, colSumR, rowResolved, colResolved, regionResolved, rowResolvedR, colResolvedR, regionResolvedR, rowSumMatch, colSumMatch,
+      openMissions, claimMissionReward, missionsClaimable, missionProgressVal, missionDone, missionClaimedUI, missionClaimableUI, onDragStart, onDragMove, onDragEnd, onDragCancel, undo, useHint, tutorNext, dismissTutor, tutorStepText,
+      eqSolvedR, cellValue, sortTray, pickTile, dropOn, dropOnTray, trayRemaining,
       fmtTime, toggleSetting, setSetting, doExport, doExportLog, doImport,
       resetStats, doDeleteAllData, ask, confirmYes, confirmNo, dismissWhatsNew, dismissStreakLostNotice, dismissStreakExtended,
       checkForUpdate, restartForUpdate, dismissUpdateDialog, safetyBackups, restoreSafetyBackup,
@@ -7767,15 +7393,13 @@ const App = {
       masterInfo, isMasterEquipped, equipMaster, dismissMasterUnlock, MASTER_BADGE,
       WIN_EFFECTS, effectPrice, ownsWinFx, winFxActive, activeWinFxId, ownedWinFx, buyWinFx, activateWinFx, previewWinFx, winFxStyle, winShape, winShapeDefs,
       SETTINGS_SECTIONS, selectSettingsSection, toggleSettingsCard,
-      cellClasses, cellStyle, cellAriaLabel, toggleTool,
+      cellClasses, cellStyle, cellAriaLabel,
       desktopKeyLabel, startDesktopKeyCapture, cancelDesktopKeyCapture, clearDesktopToolKey,
       isMultiplayer, sendChat, openChat, closeChat, toggleChat, toggleMuteAll, onChatTyping, typingPlayers,
       reclaimSession, dismissDeviceNotice,
       resolveVersionMismatch, fmtMismatchTime, mismatchSubText,
       openSaves, closeSaves, resumeSave, deleteSave, saveProgress, saveIsEndless, saveDifficulty, saveDim, saveIsCurrent, saveWhen, SAVES_MAX,
       soloResume, resumeSolo, otherSavesCount, savesLabel, resumeSubline, saveLivesArr, saveLivesLeft,
-      goAiDuel, startAiDuel, aiTargetLabel, aiCalibrated, aiLevels: Object.keys(PRESET_LEVELS), cloneStatus,
-      friendClones, readyClones, learningClones, anyCloneReady, pickAiOpponent, setAiMode,
       startHosting, startJoining, coopReset, avgTimeFor, coopAvgTimeFor, lobbyIsCompetition, lobbyAvgTimeFor, lobbyBestTimeMs, racePct,
       doSignUp, doSignIn, doSignOut, doResetPassword, doChangePassword, doDeleteAccount, refreshAccount, doSyncNow, fmtSyncTime,
       startUsernameEdit, doChangeUsername, onUsernameInput, canSaveUsername, playerLabel,
@@ -7797,7 +7421,7 @@ const App = {
       canInviteToSolo, canInviteMore, inviteCode, openInvite, inviteToSoloGame, cancelSoloInvite, bigNumbersAllowed,
       canContinueSolo, continueSoloAlone, startResumeCountdown,
       startTrainingGame, applyTrainingStep,
-      openHistoryDetail, closeHistoryDetail, historyGridStyle, historyCellClasses, historyCellStyle, replayHistoryEntry,
+      openHistoryDetail, closeHistoryDetail, historyGridStyle, replayHistoryEntry,
       isOnline,
       t, i18nState, SUPPORTED_LOCALES,
     };
@@ -7900,71 +7524,6 @@ const App = {
          orientiert sich an den eigenen DURCHSCHNITTSzeiten (nicht Bestzeiten);
          die feste Stufe und der Prozent-Regler wirken beide auf dieselbe
          Zielzeit. Kein Raum/keine Lobby -> laeuft auch offline. -->
-    <section v-else-if="state.screen==='aiduel'" class="screen setup setup-slider" :style="diffVars(state.sel.difficulty)">
-      <div class="setup-aura" aria-hidden="true"><b></b><b></b><b></b></div>
-      <header class="topbar setup-top">
-        <button class="icon-btn" @click="goBack()">‹</button>
-        <h2><span class="ei" v-html="ic('robot')"></span> {{ t('aiduel.title') }}</h2>
-        <button class="icon-btn" @click="openSettings" :aria-label="t('home.settings')" :title="t('home.settings')"><span class="ico-wrap" v-html="ic('gear')"></span></button>
-      </header>
-
-      <difficulty-slider v-model="state.sel.difficulty" @randomstart="startAiDuel($event)"></difficulty-slider>
-
-      <div class="ai-setup">
-        <!-- Gegner: Standard-Stufen ODER der eigene Klon (Spielstil aus den
-             eigenen Partien). Der Klon ist erst ab genug aufgezeichneten
-             Partien spielbar — vorher zeigt der Knopf den Fortschritt, statt
-             einen halbgaren „Klon" vorzugaukeln. -->
-        <!-- Zwei Grundoptionen statt einer langen Knopfreihe: Standard-KI (feste
-             Stufen) ODER individuelle KI (Klone). Erst in der zweiten Sektion
-             geht es um einzelne Klone — und dort NUR um spielbereite. -->
-        <div class="ai-row">
-          <b class="ai-label">{{ t('aiduel.opponent') }}</b>
-          <div class="ai-levels">
-            <button class="ai-opp" :class="{ on: state.race.aiMode!=='individual' }" @click="setAiMode('preset')">{{ t('aiduel.modePreset') }}</button>
-            <button class="ai-opp" :class="{ on: state.race.aiMode==='individual' }" @click="setAiMode('individual')">{{ t('aiduel.modeIndividual') }}</button>
-          </div>
-        </div>
-
-        <div class="ai-row" v-if="state.race.aiMode!=='individual'">
-          <b class="ai-label">{{ t('aiduel.strength') }}</b>
-          <div class="ai-levels">
-            <button v-for="lv in aiLevels" :key="lv" class="ai-lv" :class="{ on: state.race.aiLevel===lv }"
-                    @click="state.race.aiLevel=lv">{{ t('aiduel.level.'+lv) }}</button>
-          </div>
-        </div>
-
-        <!-- Individuelle KI: NUR spielbereite Klone. Wer noch lernt, steckt in der
-             Extra-Übersicht — bei inaktiven Freunden wird der Klon nie fertig, die
-             würden sonst dauerhaft die Auswahl zustellen. -->
-        <div class="ai-row ai-clones" v-else>
-          <b class="ai-label">{{ t('aiduel.clone') }}</b>
-          <p class="ai-hint" v-if="state.race.clonesLoading">{{ t('aiduel.clonesLoading') }}</p>
-          <div class="ai-levels" v-else-if="anyCloneReady()">
-            <button v-if="cloneStatus().ready" class="ai-opp ai-clone" :class="{ on: state.race.aiClone }"
-                    @click="pickAiOpponent('clone')">{{ t('aiduel.oppClone') }}</button>
-            <button v-for="fc in readyClones()" :key="fc.uid" class="ai-opp ai-friend"
-                    :class="{ on: state.race.aiFriend===fc.uid }" @click="pickAiOpponent('friend', fc.uid)">{{ fc.name }}</button>
-          </div>
-          <p class="ai-hint" v-else>{{ t('aiduel.noClones', { need: cloneStatus().need }) }}</p>
-        </div>
-        <button v-if="state.race.aiMode==='individual' && !state.race.clonesLoading && (learningClones().length || !cloneStatus().ready)"
-                class="ai-learning-link" @click="state.modal='aiLearning'">
-          {{ t('aiduel.learningCount', { n: learningClones().length + (cloneStatus().ready ? 0 : 1) }) }}
-        </button>
-
-        <p class="ai-target">
-          <span class="ei" v-html="ic('hourglass')"></span>
-          {{ t('aiduel.expected', { time: aiTargetLabel(state.sel.difficulty) }) }}
-          <small>{{ aiCalibrated(state.sel.difficulty) ? t('aiduel.calibrated') : t('aiduel.default') }}</small>
-        </p>
-      </div>
-
-      <button class="btn btn-primary diff-start" @click="startAiDuel(state.sel.difficulty)">
-        <span class="ei" v-html="ic('versus')"></span> {{ t('aiduel.start') }}
-      </button>
-    </section>
-
     <section v-else-if="state.screen==='setup'" class="screen setup setup-slider" :style="diffVars(state.sel.difficulty)">
       <div class="setup-aura" aria-hidden="true"><b></b><b></b><b></b></div>
       <header class="topbar setup-top">
@@ -8155,23 +7714,20 @@ const App = {
           <board-grid></board-grid>
         </div>
 
+        <!-- Vorrat: alle noch zu legenden Zahlen. Eigene Child-Komponente, damit
+             ein HUD-/Sekunden-Render die Steine nicht mit neu rendert. -->
+        <tray-bar v-if="!state.paused && !state.coop.awaitingStart"></tray-bar>
+
         <div class="game-sidebar-bottom">
         <!-- Kein Undo-Knopf mehr (Nutzerwunsch) — Fehlzüge werden ohnehin sofort
              aufgedeckt und nie gesetzt; undo() bleibt nur für Coop-UNDO-Events
              älterer Clients erhalten. -->
         <div v-if="!state.isTrainingGame || state.trainingDone" class="toolbar">
-          <!-- Unsichtbarer Ausgleich in Hinweis-Knopf-Breite: hält den Werkzeug-
-               Umschalter EXAKT mittig, obwohl links kein Undo-Knopf mehr sitzt. -->
-          <span v-if="!state.isRaceGame && !state.team.active" class="toolbar-spacer" aria-hidden="true"></span>
-          <div class="tool-toggle" @click="toggleTool">
-            <div class="tool-pill" :class="{ pen: state.tool==='pen' }"></div>
-            <span class="tool-ic eraser" :class="{active: state.tool==='eraser'}" :title="t('game.eraserTitle')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 20H20"/><path d="m3.6 14.5 5.9 5.9 9.4-9.4a2 2 0 0 0 0-2.8l-3.1-3.1a2 2 0 0 0-2.8 0L3.6 11.7a2 2 0 0 0 0 2.8z"/><path d="m9 8.5 6.5 6.5"/></svg>
-            </span>
-            <span class="tool-ic pen" :class="{active: state.tool==='pen'}" :title="t('game.penTitle')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="11" cy="13" rx="8" ry="7"/><path d="m16.5 7.5 3.2-3.2a1.6 1.6 0 0 1 2.3 2.3l-3.2 3.2-2.3-2.3z"/></svg>
-            </span>
-          </div>
+          <!-- Links: Vorrat aufsteigend sortieren + aufrücken. Rechts: Tipp. -->
+          <button class="round-btn" @click="sortTray" :title="t('game.sortTitle')" :aria-label="t('game.sortTitle')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h11"/><path d="M4 12h8"/><path d="M4 18h5"/><path d="M18 4v16"/><path d="m15 17 3 3 3-3"/></svg>
+          </button>
+          <span class="toolbar-spacer" aria-hidden="true"></span>
           <button v-if="!state.isRaceGame && !state.team.active" class="round-btn" :disabled="state.hintsLeft<=0" @click="useHint" :title="t('game.hintTitle')" :aria-label="t('game.hintTitle')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 18h5"/><path d="M10 21.5h4"/><path d="M12 2.5a6.5 6.5 0 0 0-4 11.6c.8.7 1.2 1.3 1.3 2.4h5.4c.1-1.1.5-1.7 1.3-2.4A6.5 6.5 0 0 0 12 2.5z"/></svg>
           </button>
@@ -8187,8 +7743,8 @@ const App = {
       <div v-if="state.isTrainingGame && state.status==='playing' && !state.paused" class="training-banner">
         <template v-if="state.trainingStep">
           <div class="training-text">
-            <b>{{ t('training.group.'+state.trainingStep.group.kind, { n: state.trainingStep.group.ref+1 }) }} ({{ t('training.target', { n: state.trainingStep.group.target }) }})</b>
-            <span>{{ t('training.reason.'+state.trainingStep.reason) }}</span>
+            <b>{{ t('training.title') }}</b>
+            <span>{{ t(state.trainingStep.key, state.trainingStep.params) }}</span>
           </div>
           <button class="btn btn-primary btn-sm" @click="applyTrainingStep">{{ t('training.apply') }}</button>
         </template>
@@ -8346,7 +7902,7 @@ const App = {
                 <span v-if="pl.id===mvpId" class="perf-mvp"><span class="ei" v-html="ic('crown')"></span>{{ t('win.mvp') }}</span>
               </div>
               <div class="perf-stats">
-                <span class="pm good"><span class="ei" v-html="ic('check')"></span>{{ pl.correctKept + pl.correctRemoved }}</span>
+                <span class="pm good"><span class="ei" v-html="ic('check')"></span>{{ pl.correct }}</span>
                 <span class="pm bad"><span class="ei" v-html="ic('heart-broken')"></span>{{ pl.mistakes }}</span>
                 <span class="perf-pct">{{ pl.contributionPct }}%</span>
               </div>
@@ -8409,7 +7965,7 @@ const App = {
                 <span v-if="pl.id===mvpId" class="perf-mvp"><span class="ei" v-html="ic('crown')"></span>{{ t('win.mvp') }}</span>
               </div>
               <div class="perf-stats">
-                <span class="pm good"><span class="ei" v-html="ic('check')"></span>{{ pl.correctKept + pl.correctRemoved }}</span>
+                <span class="pm good"><span class="ei" v-html="ic('check')"></span>{{ pl.correct }}</span>
                 <span class="pm bad"><span class="ei" v-html="ic('heart-broken')"></span>{{ pl.mistakes }}</span>
                 <span class="perf-pct">{{ pl.contributionPct }}%</span>
               </div>
@@ -8521,7 +8077,6 @@ const App = {
             <div class="diff-sub">
               <div class="diff-sub-label">{{ t('stats.raceAi') }}</div>
               <div class="diff-row-sub">
-                <span class="chip"><span class="ei" v-html="ic('robot')"></span> {{ state.raceStats['ai'].racesWon }} / {{ state.raceStats['ai'].racesPlayed }}<span class="chip-label">{{ t('stats.wonPlayedLabel') }}</span></span>
                 <span class="chip"><span class="ei" v-html="ic('chart-up')"></span> {{ racePct(state.raceStats['ai']) }}%<span class="chip-label">{{ t('stats.winPctLabel') }}</span></span>
                 <span class="chip best-time-chip"><span class="ei" v-html="ic('trophy')"></span> {{ state.raceStats['ai'].fastestWinMs!=null ? fmtTime(state.raceStats['ai'].fastestWinMs) : '-:--' }}<span class="chip-label">{{ t('stats.bestTimeLabel') }}</span></span>
               </div>
@@ -9713,9 +9268,6 @@ const App = {
         <button class="btn btn-ghost" :disabled="!coopAvailable || !isOnline()" @click="goRace('2v2')">
           <span class="btn-ic"><span class="ei" v-html="ic('users')"></span></span><span class="btn-tx"><b>{{ t('race.choice2v2') }}</b><small>{{ t('team.assignHint') }}</small></span>
         </button>
-        <button class="btn btn-ghost" @click="goAiDuel">
-          <span class="btn-ic"><span class="ei" v-html="ic('robot')"></span></span><span class="btn-tx"><b>{{ t('aiduel.title') }}</b><small>{{ t('aiduel.hint') }}</small></span>
-        </button>
         <button class="btn btn-ghost" style="margin-top:8px" @click="state.modal=null">{{ t('common.cancel') }}</button>
       </div>
     </div>
@@ -9787,26 +9339,6 @@ const App = {
       </div>
     </div>
 
-    <div v-if="state.modal==='aiLearning'" class="modal-bg" @click.self="state.modal=null">
-      <div class="modal modal-learning">
-        <h3><span class="ei" v-html="ic('robot')"></span> {{ t('aiduel.learningTitle') }}</h3>
-        <p class="ai-hint">{{ t('aiduel.learningIntro', { need: cloneStatus().need }) }}</p>
-        <div class="learn-list">
-          <div v-if="!cloneStatus().ready" class="learn-row me">
-            <div class="learn-name">{{ t('aiduel.oppClone') }}</div>
-            <div class="learn-bar"><div class="learn-bar-fill" :style="{ width: Math.min(100, Math.round(cloneStatus().games / cloneStatus().need * 100)) + '%' }"></div></div>
-            <div class="learn-num">{{ cloneStatus().games }} / {{ cloneStatus().need }}</div>
-          </div>
-          <div v-for="fc in learningClones()" :key="fc.uid" class="learn-row">
-            <div class="learn-name">{{ fc.name }}</div>
-            <div class="learn-bar"><div class="learn-bar-fill" :style="{ width: Math.min(100, Math.round(fc.games / fc.need * 100)) + '%' }"></div></div>
-            <div class="learn-num">{{ fc.games }} / {{ fc.need }}</div>
-          </div>
-        </div>
-        <button class="btn btn-primary" @click="state.modal=null">{{ t('common.close') }}</button>
-      </div>
-    </div>
-
     <div v-if="state.modal==='missions'" class="modal-bg" @click.self="state.modal=null">
       <div class="modal modal-missions">
         <h3><span class="ei" v-html="ic('flag')"></span> {{ t('missions.title') }}</h3>
@@ -9859,20 +9391,15 @@ const App = {
       <div class="modal modal-history">
         <h3><span class="ei" v-html="ic(DIFF_BY_ID[state.historyDetail.entry.difficulty]?.emoji)"></span> {{ t('difficulty.'+state.historyDetail.entry.difficulty) }} · {{ state.historyDetail.entry.dim.r }}×{{ state.historyDetail.entry.dim.c }}</h3>
         <div class="board-wrap">
-          <div class="board" :style="historyGridStyle(state.historyDetail.puzzle)">
-            <div class="corner"></div>
-            <div v-for="c in state.historyDetail.puzzle.cols" :key="'hch'+c" class="hdr col-hdr">
-              <span class="tgt">{{ state.historyDetail.puzzle.colTargets[c-1] }}</span>
-            </div>
-            <template v-for="r in state.historyDetail.puzzle.rows" :key="'hr'+r">
-              <div class="hdr row-hdr">
-                <span class="tgt">{{ state.historyDetail.puzzle.rowTargets[r-1] }}</span>
-              </div>
-              <div v-for="c in state.historyDetail.puzzle.cols" :key="'h'+r+'-'+c"
-                   class="cell" :class="historyCellClasses(r-1,c-1)" :style="historyCellStyle(r-1,c-1)">
-                <span v-if="state.historyDetail.cellMeta[r-1][c-1].chip!=null" class="rchip">{{ state.historyDetail.cellMeta[r-1][c-1].chip }}</span>
-                <span class="cnum">{{ state.historyDetail.puzzle.values[r-1][c-1] }}</span>
-              </div>
+          <div class="board history-board" :style="historyGridStyle(state.historyDetail.puzzle)">
+            <template v-for="(row, dr) in state.historyDetail.display.cells" :key="'hdr'+dr">
+              <template v-for="(cell, dc) in row" :key="'h'+dr+'-'+dc">
+                <div v-if="!cell" class="gapcell"></div>
+                <div v-else-if="cell.t==='op'" class="opcell">{{ cell.sym }}</div>
+                <div v-else class="cell" :class="{ given: cell.given, filled: !cell.given, done: true }">
+                  <span class="cnum">{{ state.historyDetail.puzzle.slots[cell.r][cell.c].v }}</span>
+                </div>
+              </template>
             </template>
           </div>
         </div>
@@ -10125,18 +9652,11 @@ const App = {
   `,
 };
 
-// Methoden, die das Template über setup() referenziert
-function toggleTool() {
-  state.tool = state.tool === 'pen' ? 'eraser' : 'pen';
-  state.settings.confirmTool = state.tool;
-  if (state.settings.sfxToolSwitch) Music.sfxToolSwitch();
-}
-
-// ─── Desktop-Tastenkürzel (Werkzeug wechseln) ─────────────────────────────────
-// Eine frei belegbare Taste (Standard „Tab") schaltet WÄHREND einer Partie
-// zwischen Einkreisen und Radiergummi um — praktisch am Desktop, ohne die Maus
-// zum Werkzeug-Button zu bewegen. WICHTIG: keydown wird preventDefault()et, damit
-// z.B. Tab nicht den Browser-Fokus verschiebt, sondern im Spiel greift.
+// ─── Desktop-Tastenkürzel (Vorrat sortieren) ──────────────────────────────────
+// Eine frei belegbare Taste (Standard „Tab") sortiert WÄHREND einer Partie den
+// Vorrat — praktisch am Desktop, ohne die Maus zum Knopf zu bewegen. WICHTIG:
+// keydown wird preventDefault()et, damit z.B. Tab nicht den Browser-Fokus
+// verschiebt, sondern im Spiel greift.
 function normKey(k) { return typeof k === 'string' && k.length === 1 ? k.toLowerCase() : k; }
 // Menschenlesbares Label einer Taste (für die Anzeige in den Einstellungen).
 function desktopKeyLabel(k) {
@@ -10169,70 +9689,49 @@ function onDesktopKeydown(e) {
   if (tag === 'INPUT' || tag === 'TEXTAREA' || (el && el.isContentEditable)) return;
   if (normKey(e.key) !== bind) return;
   e.preventDefault();
-  toggleTool();
+  sortTray();
 }
 
-// Liefert, welche Seiten dieser Zelle zum ÄUSSEREN Rand einer gerade fertig
-// gewordenen Reihe/Spalte/Cage gehören (für den Fertig-Puls, Punkt 3: nur die
-// äußersten Ränder der ganzen Struktur leuchten, keine Querstriche dazwischen).
-const NO_PULSE_EDGES = { t: false, b: false, l: false, r: false };
-const anyPulseActive = computed(() => Object.keys(state.justResolved).length > 0);
-function pulseEdges(r, c) {
-  if (!anyPulseActive.value) return NO_PULSE_EDGES;   // Normalfall: kein Puls → 0 Lookups
-  const p = state.puzzle;
-  let t = false, b = false, l = false, rr = false;
-  if (state.justResolved[`row-${r}`]) { t = true; b = true; if (c === 0) l = true; if (c === p.cols - 1) rr = true; }
-  if (state.justResolved[`col-${c}`]) { l = true; rr = true; if (r === 0) t = true; if (r === p.rows - 1) b = true; }
-  const region = state.cellMeta[r][c].region;
-  if (region >= 0 && state.justResolved[`region-${region}`]) {
-    const e = state.cellMeta[r][c].edges;
-    if (e.t) t = true; if (e.b) b = true; if (e.l) l = true; if (e.r) rr = true;
-  }
-  return { t, b, l, r: rr };
-}
 
 // Aria-Labels je Zelle EINMAL pro Zug/Sprachwechsel berechnen statt ×169 bei
 // JEDEM Render (die t()-Interpolation war ein messbarer Teil des Tick-Renders
-// auf großen Brettern). Computed trackt state.marks + i18n-Locale.
+// auf großen Brettern). Computed trackt state.placed + i18n-Locale.
 const cellAriaLabels = computed(() => {
   const p = state.puzzle; if (!p) return [];
   const out = new Array(p.rows);
   for (let r = 0; r < p.rows; r++) {
     out[r] = new Array(p.cols);
     for (let c = 0; c < p.cols; c++) {
-      const mk = state.marks[r][c];
-      const status = mk === 'kept' ? t('a11y.cellKept') : mk === 'removed' ? t('a11y.cellRemoved') : t('a11y.cellUnmarked');
-      out[r][c] = t('a11y.cellLabel', { row: r + 1, col: c + 1, value: p.values[r][c], status });
+      const sl = p.slots[r][c];
+      if (!sl) { out[r][c] = ''; continue; }
+      const v = sl.given ? sl.v : state.placed[r][c];
+      const status = sl.given ? t('a11y.cellGiven') : v == null ? t('a11y.cellEmpty') : t('a11y.cellFilled', { value: v });
+      out[r][c] = t('a11y.cellLabel', { row: r + 1, col: c + 1, status });
     }
   }
   return out;
 });
 function cellAriaLabel(r, c) { return (cellAriaLabels.value[r] && cellAriaLabels.value[r][c]) || ''; }
-function cellClasses(r, c) {
-  const m = state.cellMeta[r][c];
-  const mk = state.marks[r][c];
-  // Cage-Färbung nur solange die Cage NICHT aufgelöst ist (dann verschwindet sie).
-  const colored = m.region >= 0 && !regionResolvedR(m.region);
-  const pe = pulseEdges(r, c);
+function cellClasses(cell) {
+  const { r, c } = cell;
+  const v = cell.given ? state.puzzle.slots[r][c].v : state.placed[r][c];
+  const who = state.markedBy[r] && state.markedBy[r][c];
+  const picked = state.pick && state.pick.from && state.pick.from.r === r && state.pick.from.c === c;
   return {
-    kept: mk === 'kept', removed: mk === 'removed',
-    region: colored,
+    given: cell.given,
+    filled: !cell.given && v != null,
+    empty: !cell.given && v == null,
+    done: cellInSolvedEq(r, c),
     flash: !!state.flash[`${r}-${c}`],
-    hinted: m.hint,
-    hintmark: m.hintMark,
-    'pulse-edge': pe.t || pe.b || pe.l || pe.r,
-    'region-pulse': m.region >= 0 && !!state.justResolved[`region-${m.region}`],
-    'row-pulse': !!state.justResolved[`row-${r}`],
-    'col-pulse': !!state.justResolved[`col-${c}`],
-    strike: mk === 'removed' && state.settings.eraseStyle === 'strike',
-    'coop-mark': !!state.markedBy[r][c],
-    // EIGENE Markierung: im Multiplayer behaelt sie den eigenen Skin (Regenbogen,
-    // Preset, Verlauf) — nur die Zellen der MITSPIELER fallen auf deren zugewiesene
-    // Farbe zurueck, damit erkennbar bleibt, wer was gesetzt hat (s. .mp-colors).
-    mine: !!state.markedBy[r][c] && state.markedBy[r][c] === (state.coop.myId || LOCAL_PLAYER_ID),
-    'coop-mark-removed': state.coop.active && !!state.markedBy[r][c] && mk === 'removed' && state.settings.coopRemovedOutline,
-    'training-highlight': state.isTrainingGame && state.trainingStep?.r === r && state.trainingStep?.c === c,
+    hinted: !!state.hintCells[r * 1000 + c],
+    picked: !!picked,
+    droppable: !cell.given && !!state.drag,
+    'coop-mark': !cell.given && !!who,
+    // EIGENE Steine behalten im Mehrspieler-Modus den eigenen Skin — nur die der
+    // MITSPIELER fallen auf deren Farbe zurück (s. .mp-colors in styles.css).
+    mine: !!who && who === (state.coop.myId || LOCAL_PLAYER_ID),
     'hint-group': inHintGroup(r, c),
+    'training-highlight': state.isTrainingGame && state.trainingStep && state.trainingStep.r === r && state.trainingStep.c === c,
   };
 }
 // Fokus-Zellen des aktuellen Tutor-Schritts als Set (r*1000+c) — cached
@@ -10240,36 +9739,32 @@ function cellClasses(r, c) {
 const tutorFocusSet = computed(() => {
   const tt = state.hintTutor;
   if (!tt) return null;
-  const s = tt.steps[tt.i];
-  return new Set(s.cells.map(([r, c]) => r * 1000 + c));
+  const st = tt.steps[tt.i];
+  return new Set(st.cells.map(([r, c]) => r * 1000 + c));
 });
 function inHintGroup(r, c) {
   const set = tutorFocusSet.value;
   return !!set && set.has(r * 1000 + c);
 }
+// Wert, der in einem Zahl-Feld steht (Vorgabe oder gelegter Stein).
+function cellValue(cell) {
+  return cell.given ? state.puzzle.slots[cell.r][cell.c].v : state.placed[cell.r][cell.c];
+}
 // Style-Objekte je Zelle CACHEN und bei unveränderten Eingaben DIESELBE Referenz
-// zurückgeben: Vue patcht :style nur, wenn sich die Referenz/Werte ändern — bei
-// einem neuen Objekt pro Render setzte es dagegen JEDE CSS-Custom-Property
-// (--rc-*/--markcol) für ALLE ~169 Zellen bei JEDEM Render erneut (setProperty
-// war im Profil ein Top-Posten des Tick-Renders auf großen Brettern).
+// zurückgeben: Vue patcht :style nur, wenn sich die Referenz ändert — bei einem
+// neuen Objekt pro Render setzte es sonst JEDE CSS-Custom-Property für ALLE
+// Zellen bei JEDEM Render erneut (im Profil ein Top-Posten).
 let cellStyleCache = [];
-function cellStyle(r, c) {
-  const m = state.cellMeta[r][c];
-  const cv = m.color ? regionColorVars.value.get(colorKey(m.color)) : null;
-  const who = state.markedBy[r][c];
+function cellStyle(cell) {
+  const { r, c } = cell;
+  const who = state.markedBy[r] && state.markedBy[r][c];
   const col = who ? (who === LOCAL_PLAYER_ID ? state.settings.coopMyColor : playerColor(who)) : null;
-  const pe = pulseEdges(r, c);
-  const key = `${cv ? cv['--rc-h'] + cv['--rc-s'] + cv['--rc-l'] : ''}|${col || ''}|${pe.t ? 1 : 0}${pe.b ? 1 : 0}${pe.l ? 1 : 0}${pe.r ? 1 : 0}`;
+  const key = col || '';
   const row = cellStyleCache[r] || (cellStyleCache[r] = []);
   const hit = row[c];
   if (hit && hit.key === key) return hit.style;
   const st = { fontSize: 'var(--fs)' };
-  if (cv) { st['--rc-h'] = cv['--rc-h']; st['--rc-s'] = cv['--rc-s']; st['--rc-l'] = cv['--rc-l']; st['--rc-ink'] = cv['--rc-ink']; }
   if (col) st['--markcol'] = col;
-  if (pe.t) st['--pt'] = '3px';
-  if (pe.b) st['--pb'] = '3px';
-  if (pe.l) st['--pl'] = '3px';
-  if (pe.r) st['--pr'] = '3px';
   row[c] = { key, style: st };
   return st;
 }
@@ -10285,33 +9780,8 @@ app.mount('#app');
 // nachweisen können, ohne einen echten Firebase-Schreibzugriff zu brauchen
 // (Coop.setTeamProgress/setRaceProgress sind selbst nicht spionierbar, da
 // `import * as Coop` ein eingefrorenes Modul-Namespace-Objekt liefert).
-if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') window.__cns = { state, onCellTap, isSolved, handleCoopMsg, handleCoopConnection, coopSend, upsertPlayer, removePlayer, onSoloInviteRoomOpen, onSoloInviteJoin, cellStyle, cellClasses, Music, launchWinFx, toggleTool, useHint, // KI-Duell-Testhaken: spult den Bot bis 100 % vor bzw. lässt ihn ausscheiden,
-  // damit E2E beide Match-Enden ohne Echtzeit-Warten prüfen kann.
-  aiBotFastForward: () => {
-    if (!botState) return false;
-    stopBot();
-    let guard = 0;
-    while (botPct(botState) < 100 && guard++ < 20000) {
-      const a = botNextAction(botState);
-      if (a.kind === 'done') break;
-      if (a.kind === 'mistake') continue;   // Fehler ignorieren, wir wollen den Durchlauf
-      botApplyAction(botState, a);
-      if (botPct(botState) >= 100) break;
-    }
-    const opp = state.race.opponents[0];
-    if (opp) opp.pct = botPct(botState);
-    state.race.opponentPct = botPct(botState);
-    onBotSolved();
-    return true;
-  },
-  aiBotEliminate: () => {
-    if (!botState) return false;
-    stopBot();
-    botState.lives = 0;
-    botState.mistakes = 3;
-    onBotEliminated();
-    return true;
-  },
+if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') window.__cns = { state, isSolved, handleCoopMsg, handleCoopConnection, coopSend, upsertPlayer, removePlayer, onSoloInviteRoomOpen, onSoloInviteJoin, cellStyle, cellClasses, Music, launchWinFx, useHint,
+  placeAt, clearAt, sortTray, pickTile, dropOn,
   boardRenders: () => boardRenderCount, getProgressThrottle: () => ({ team: teamProgressThrottle, race: raceProgressThrottle }) };
 
 nextTick(() => {

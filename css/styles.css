@@ -1046,141 +1046,93 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
    bleibt). */
 .board-wrap { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; overflow: auto; padding: 6px; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; }
 .board { display: grid; gap: 0; background: var(--grid); border-radius: 12px; padding: 0; overflow: hidden; box-shadow: 0 6px 24px var(--shadow); margin: auto; flex-shrink: 0; transition: filter .3s, opacity .3s; }
-.corner { background: var(--accent-soft); border: 1px solid var(--grid); }
-.hdr {
-  display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1;
-  background: var(--hdr-bg); color: var(--text); border: 1px solid var(--grid);
+
+/* ─── RECHENKREUZ-BRETT ──────────────────────────────────────────────────────
+   Das Anzeige-Raster wechselt Zahl- und Operator-Felder ab (siehe board.js).
+   Leere Rasterplätze (.gapcell) bleiben unsichtbar — daraus entstehen die
+   typischen Löcher und Ausläufer des Kreuzworts. */
+.board { background: transparent; box-shadow: none; overflow: visible; gap: 2px; }
+.gapcell { background: transparent; }
+
+/* Operator- und Gleichheitszeichen */
+.opcell {
+  display: flex; align-items: center; justify-content: center;
+  background: var(--hdr-bg); color: var(--text);
+  font-weight: 800; font-size: calc(var(--fs) * .92); line-height: 1;
+  border-radius: 4px; user-select: none;
+  transition: background .2s, color .2s;
 }
-/* aktuelle (temporäre) Summe + Zielsumme (Punkt 8) */
-.hdr .cur { font-size: calc(var(--fs) * .58); font-weight: 700; color: var(--text3); }
-.hdr .tgt { font-size: calc(var(--fs) * .92); font-weight: 800; }
-/* aufgelöste Reihe/Spalte: Zielsumme verschwindet (Punkt 7) */
-.hdr.resolved { background: transparent; border-color: transparent; }
-/* kurzer, smoother Leucht-Puls beim Fertigwerden */
-.hdr.pulse { animation: resolvePulse .8s ease-out; }
-@keyframes resolvePulse {
-  0% { background: var(--hdr-bg); box-shadow: inset 0 0 0 0 var(--good); }
-  30% { background: var(--good-soft); box-shadow: inset 0 0 0 3px var(--good); }
-  100% { background: transparent; box-shadow: inset 0 0 0 0 var(--good); }
-}
+.opcell.done { background: var(--good-soft); color: var(--good); }
+.opcell.pulse { animation: resolvePulse .8s ease-out; }
 
 .cell {
   position: relative; display: flex; align-items: center; justify-content: center;
-  background: var(--cell-bg); color: var(--ink); font-weight: 700; font-size: var(--fs);
-  border: 1px solid var(--grid); user-select: none; transition: background .12s;
+  background: var(--cell-bg); color: var(--ink); font-weight: 800; font-size: var(--fs);
+  border: 1px solid var(--grid); border-radius: 4px; user-select: none;
+  transition: background .12s, box-shadow .12s;
   --rcol: var(--cell-bg);
   /* Layout-/Style-Containment: bei einem Zug patcht Vue alle Zellen; so muss der
-     Browser Layout/Style nur pro Zelle isoliert neu rechnen (kein Paint-Clipping
-     → keine optische Änderung). Hilft spürbar auf großen Brettern (14×14). */
+     Browser Layout/Style nur pro Zelle isoliert neu rechnen. */
   contain: layout style;
 }
-.cell:active { filter: brightness(1.15); }
 .cell:focus-visible { outline: 3px solid var(--accent); outline-offset: -2px; z-index: 4; }
 .cell .cnum { position: relative; z-index: 2; transition: opacity .15s; }
-/* „Big Numbers"-Modus: zweistellige Zellwerte (10–19) sollen nicht über den
-   Zellrand laufen — etwas kleiner + enger setzen, damit sie sicher passen. */
-.board.big-num .cnum { font-size: .74em; letter-spacing: -.03em; }
-/* Cages werden eingefärbt (keine Umrandung); die Färbung verschwindet, sobald
-   die Cage aufgelöst ist (dann fehlt die .region-Klasse → normaler Hintergrund). */
-.cell.region {
-  background: hsl(var(--rc-h) var(--rc-s) var(--rc-l) / .64);
-  /* Summen-Chip-Hintergrund: opake Cage-Farbe, Helligkeit in ein lesbares Band
-     geklemmt (24–54 %, l−14; identisch zu CHIP_L_MIN/MAX/OFFSET + regionChipInk()
-     in config.js, das darauf die Schriftfarbe --rc-ink wählt). So erreicht jede
-     Farbe mit Schwarz oder Weiß mind. WCAG-AA (4.5:1); ohne Klemmung war der Chip
-     bei hellen Cages fast weiß → weiße Ziffer unlesbar. */
-  --rcol: hsl(var(--rc-h) var(--rc-s) clamp(24%, calc(var(--rc-l) - 14%), 54%));
-  transition: background .25s;
-}
-:root[data-theme="light"] .cell.region { background: hsl(var(--rc-h) var(--rc-s) var(--rc-l) / .52); }
-
-.rchip {
-  position: absolute; top: 2px; left: 2px; z-index: 3;
-  font-size: calc(var(--fs) * .48); font-weight: 800; line-height: 1.4;
-  /* --rc-ink (aus cellStyle) = schwarz/weiß je nach Chip-Helligkeit → lesbar auf
-     ALLEN Cage-Farben. Drop-Shadow + feiner Rand heben den Chip zuverlässig von
-     der Cage-Füllung ab, auch wenn Chip- und Füllfarbe nahe beieinanderliegen. */
-  color: var(--rc-ink, var(--ink)); background: var(--rcol);
-  padding: 0 4px; border-radius: 4px; min-width: 1.6em; text-align: center;
-  box-shadow: 0 1px 3px rgba(0,0,0,.45), inset 0 0 0 1px rgba(0,0,0,.14);
-}
-
-/* eingekreist */
-.cell.kept::after {
-  content: ''; position: absolute; inset: 11%;
-  border: 2.5px solid var(--accent); border-radius: 50%; z-index: 1;
-  animation: ringIn .22s cubic-bezier(.2,1.4,.5,1);
-}
-@keyframes ringIn { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-/* gelöscht: je nach Einstellung verschwindet die Zahl ganz, oder bleibt
-   durchgestrichen sichtbar. Die Cage-Färbung bleibt UNVERÄNDERT (nicht
-   gedimmt) — sie geht erst weg, wenn die ganze Cage gelöst ist. */
-.cell.removed .cnum { opacity: 0; }
-.cell.removed.strike .cnum { opacity: .55; text-decoration: line-through; text-decoration-thickness: 2px; text-decoration-color: var(--bad); }
+/* Große Zahlen (dreistellige Ergebnisse) dürfen nicht über den Rand laufen. */
+.board.big-num .cnum, .cell .cnum:not(:empty) { letter-spacing: -.02em; }
+.cell.given { background: var(--hdr-bg); }
+/* Offene Lücke: klar als „hier fehlt etwas" erkennbar. */
+.cell.empty { background: color-mix(in srgb, var(--cell-bg) 84%, var(--accent) 16%); box-shadow: inset 0 0 0 1px var(--grid); }
+.cell.empty .cnum { opacity: 0; }
+/* Gelegter Stein: in der Spielerfarbe (Solo: eigene Markierungsfarbe). */
+.cell.filled { background: var(--good-soft); color: var(--markcol, var(--accent)); }
+.cell.filled .cnum { color: var(--markcol, var(--accent)); }
+/* Eine fertig gerechnete Gleichung hebt sich ab. */
+.cell.done { box-shadow: inset 0 0 0 2px var(--good); }
+.cell.picked { box-shadow: inset 0 0 0 3px var(--accent); transform: scale(1.04); z-index: 3; }
+.cell.droppable.empty { box-shadow: inset 0 0 0 2px var(--accent); }
 .cell.flash { background: var(--bad-soft) !important; animation: shake .3s; }
-.cell.flash::after { border-color: var(--bad) !important; background: var(--bad); }
 @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
 .cell.hinted { background: var(--good-soft) !important; animation: hintGlow 1.2s ease; }
-/* Trainingsmodus: hebt die Zelle hervor, die der aktuelle erklärte Schritt
-   betrifft — eigener Stil statt .hinted, da letzteres nach 1.2s verblasst und
-   hier dauerhaft sichtbar bleiben muss, bis der Schritt angewendet wird. */
+@keyframes hintGlow { 0%,100% { box-shadow: inset 0 0 0 0 var(--good); } 50% { box-shadow: inset 0 0 0 3px var(--good); } }
 .cell.training-highlight { box-shadow: inset 0 0 0 3px var(--accent2); animation: trainingPulse 1.4s ease infinite; }
 @keyframes trainingPulse { 0%,100% { box-shadow: inset 0 0 0 3px var(--accent2); } 50% { box-shadow: inset 0 0 0 5px var(--accent2); } }
-@keyframes hintGlow { 0%,100% { box-shadow: inset 0 0 0 0 var(--good); } 50% { box-shadow: inset 0 0 0 3px var(--good); } }
-/* permanente Hinweis-Markierung (anders als .hinted, das nach 1.2s verblasst):
-   eingekreiste Zahl bekommt einen grünen statt blauen Ring; gelöschte Zahl
-   bekommt einen kleinen grünen Punkt — beides bleibt für den Rest des Rätsels. */
-.cell.kept.hintmark::after { border-color: var(--good); }
-/* Hinweis-Punkt für eine GELÖSCHTE Hinweis-Zelle als eigenes Kind-Element (nicht
-   ::before): sonst kollidiert er mit dem Fertig-Rand-Puls .cell.pulse-edge::before
-   (eine Zelle hat nur ein ::before) — dann leuchtete der Rand solcher Zellen beim
-   Auflösen der Cage/Reihe/Spalte nicht korrekt auf. */
-.cell .hint-dot {
-  position: absolute; top: 3px; right: 3px; z-index: 3; pointer-events: none;
-  width: 7px; height: 7px; border-radius: 50%; background: var(--good);
+@keyframes resolvePulse {
+  0% { box-shadow: inset 0 0 0 0 var(--good); }
+  30% { box-shadow: inset 0 0 0 3px var(--good); }
+  100% { box-shadow: inset 0 0 0 0 var(--good); }
 }
-/* Fertig-Puls für eine Reihe/Spalte/Cage: nur die ÄUSSEREN Ränder der ganzen
-   Struktur leuchten kurz auf (keine Querstriche zwischen den Zellen). Welche
-   Seite einer Zelle zum Rand der Struktur gehört, wird in JS berechnet
-   (pulseEdges) und als --pt/--pb/--pl/--pr (Breite) übergeben. */
-/* inset -1.5px statt 0: das Overlay liegt sonst exakt innerhalb des
-   1px-Zellrahmens, wodurch sich an Ecken (v.a. bei unregelmäßigen Cage-Formen,
-   wo zwei Randstücke aus verschiedenen, nur diagonal benachbarten Zellen
-   stammen) durch Rundungsfehler im Grid-Layout eine sichtbare Lücke ergeben
-   kann — der kleine Überstand schließt diese Lücke zuverlässig. */
-.cell.pulse-edge::before {
-  content: ''; position: absolute; inset: -1.5px; z-index: 4; pointer-events: none;
-  border-style: solid; border-color: var(--good);
-  border-top-width: var(--pt, 0); border-bottom-width: var(--pb, 0);
-  border-left-width: var(--pl, 0); border-right-width: var(--pr, 0);
-  animation: groupPulseFade .9s ease-out;
+
+/* ─── VORRAT ─────────────────────────────────────────────────────────────────
+   Alle noch zu legenden Zahlen. Ein benutzter Stein hinterlässt seine LÜCKE —
+   erst der Sortier-Knopf räumt auf und sortiert aufsteigend. */
+.tray {
+  flex: 0 0 auto; display: flex; flex-wrap: wrap; justify-content: center;
+  gap: 6px; padding: 10px 8px; margin: 4px 0 0;
+  background: var(--card); border-radius: 14px; box-shadow: 0 4px 16px var(--shadow);
+  max-height: 30vh; overflow-y: auto; touch-action: pan-y;
 }
-@keyframes groupPulseFade {
-  0% { opacity: 0; }
-  20% { opacity: 1; }
-  70% { opacity: 1; }
-  100% { opacity: 0; }
+.tray-slot { width: 44px; height: 44px; flex: 0 0 auto; }
+.tile {
+  width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+  background: var(--good-soft); color: var(--good); border: 1.5px solid var(--good);
+  border-radius: 8px; font-weight: 800; font-size: 20px; line-height: 1;
+  cursor: grab; user-select: none; touch-action: none;
+  transition: transform .12s, box-shadow .12s;
 }
-/* Cage-Resolve-Sweep: zusätzlich zum Rand-Puls oben (der für Reihe/Spalte/Cage
-   gleich aussieht) bekommt eine vollständig gelöste Cage einen kurzen,
-   farbigen Glanz in der eigenen Cage-Farbe (--rc-h/s/l, von cellStyle()
-   gesetzt) statt nur dem statischen Rand — macht "diese Cage ist fertig"
-   visuell von "diese Reihe/Spalte ist fertig" unterscheidbar. Dieselbe
-   Animation läuft auch, wenn eine ganze Reihe/Spalte fertig wird: jede Zelle
-   behält ihre eigene Cage-Farbe in --rc-h/s/l (cellStyle() setzt die Variable
-   unabhängig davon, ob die Cage selbst schon aufgelöst ist), wodurch die
-   Reihe/Spalte als bunter Sweep aus den beteiligten Cage-Farben aufleuchtet. */
-.cell.region-pulse::after, .cell.row-pulse::after, .cell.col-pulse::after {
-  content: ''; position: absolute; inset: -1.5px; z-index: 5; pointer-events: none;
-  border-radius: 3px;
-  background: radial-gradient(circle, hsl(var(--rc-h, 0) calc(var(--rc-s, 0%) + 10%) calc(var(--rc-l, 50%) + 18%) / .7), transparent 75%);
-  animation: cageSweep .9s ease-out;
+.tile:active { cursor: grabbing; }
+.tile.picked { transform: scale(1.1); box-shadow: 0 0 0 3px var(--accent); }
+/* Der Ziehschatten hängt am <body> und wird DIREKT per transform bewegt (nie
+   reaktiv), damit eine Zeigerbewegung nie ein Vue-Render auslöst. */
+.drag-ghost {
+  position: fixed; left: 0; top: 0; z-index: 9999; pointer-events: none;
+  display: none; min-width: 44px; height: 44px; padding: 0 6px;
+  align-items: center; justify-content: center;
+  background: var(--good-soft); color: var(--good); border: 2px solid var(--good);
+  border-radius: 8px; font-weight: 800; font-size: 20px;
+  box-shadow: 0 8px 20px rgba(0,0,0,.35);
 }
-@keyframes cageSweep {
-  0% { opacity: 0; transform: scale(.55); }
-  35% { opacity: 1; transform: scale(1.08); }
-  100% { opacity: 0; transform: scale(1.35); }
-}
+.cell[data-r] { touch-action: none; }
+.history-board .cell { font-size: var(--fs); }
 
 /* ─── Querformat-Layout (Spiel-Screen) ────────────────────────────────────────
    Eine reine Web-App kann die Geräte-Rotation nicht zuverlässig sperren (das
