@@ -159,15 +159,34 @@ function opCombos(n, allowed, rng) {
   return shuffle(out, rng).slice(0, 8);
 }
 
+// Wie oft kommt jeder Wert schon auf dem Brett vor? Basis der Vielfalt:
+// ohne diese Gewichtung landete immer wieder dieselbe kleine Zahlenmenge auf
+// dem Brett (gemeldet: „viel zu viele 1en, dieselbe Rechnung zehnmal").
+function valueFreq(values) {
+  const m = new Map();
+  for (const v of values) if (v != null) m.set(v, (m.get(v) || 0) + 1);
+  return m;
+}
+// Entartete Rechnungen, die nichts zu denken geben: ×1, ÷1, x÷x.
+function trivialTerm(a, op, b) {
+  if (op === '*') return a === 1 || b === 1;
+  if (op === '/') return b === 1 || a === b;
+  return false;
+}
 function completions(eq, ops, ids, values, opts, rng, limit) {
   const known = ids.map(id => values[id]);
   const unk = [];
   for (let i = 0; i < eq.n; i++) if (known[i] == null) unk.push(i);
   const vals = known.slice();
   const out = [];
-  const pool = shuffle(range(opts.minOperand, opts.maxOperand), rng);
+  // Seltene Werte zuerst: erst mischen, dann STABIL nach Häufigkeit sortieren —
+  // gleich häufige Werte bleiben damit zufällig geordnet.
+  const freq = valueFreq(values);
+  const pool = shuffle(range(opts.minOperand, opts.maxOperand), rng)
+    .sort((a, b) => (freq.get(a) || 0) - (freq.get(b) || 0));
 
   const leaf = () => {
+    for (let i = 0; i < ops.length; i++) if (trivialTerm(vals[i], ops[i], vals[i + 1])) return;
     const res = evalExpr(vals.slice(0, eq.n), ops);
     if (res == null || res < opts.minResult || res > opts.maxResult) return;
     if (known[eq.n] != null) { if (res !== known[eq.n]) return; }
@@ -187,13 +206,28 @@ function completions(eq, ops, ids, values, opts, rng, limit) {
     vals[pos] = null;
   };
   rec(0);
-  return out;
+  // Die „frischesten" Belegungen zuerst: Kosten = wie oft die NEUEN Werte
+  // (Operanden UND Ergebnis) schon auf dem Brett stehen. Ohne das wiederholten
+  // sich vor allem die Ergebnisse, weil sie nicht frei gewählt, sondern
+  // gerechnet werden.
+  const cost = (tuple) => tuple.reduce((sum, v, i) => sum + (known[i] == null ? (freq.get(v) || 0) : 0), 0);
+  return out.map((t, i) => ({ t, i, c: cost(t) })).sort((a, b) => a.c - b.c || a.i - b.i).map(x => x.t);
+}
+
+// Signatur einer fertigen Rechnung („12+7=19"), damit dieselbe Aufgabe nicht
+// mehrfach auf demselben Brett steht.
+function termSignature(tuple, ops) {
+  const parts = [tuple[0]];
+  for (let i = 0; i < ops.length; i++) parts.push(ops[i], tuple[i + 1]);
+  parts.push('=', tuple[tuple.length - 1]);
+  return parts.join(' ');
 }
 
 export function assignValues(layout, rng, opts) {
   const { cols, equations } = layout;
   const values = new Array(layout.rows * layout.cols).fill(null);
   const done = new Set();
+  const usedTerms = new Set();
   let nodes = 0;
 
   // MRV („fail first"): Immer die Gleichung mit den WENIGSTEN offenen Feldern
@@ -216,12 +250,16 @@ export function assignValues(layout, rng, opts) {
     for (const ops of opCombos(best.n, opts.ops, rng)) {
       const cands = completions(best, ops, ids, values, opts, rng, opts.candLimit || 40);
       for (const tuple of cands) {
+        const sig = termSignature(tuple, ops);
+        if (usedTerms.has(sig)) continue;   // dieselbe Rechnung nie zweimal
         const changed = [];
         for (let i = 0; i < ids.length; i++) {
           if (values[ids[i]] == null) { values[ids[i]] = tuple[i]; changed.push(ids[i]); }
         }
         best.ops = ops.slice();
+        usedTerms.add(sig);
         if (rec()) return true;
+        usedTerms.delete(sig);
         for (const id of changed) values[id] = null;
       }
     }

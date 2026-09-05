@@ -5,13 +5,18 @@ import { gotoApp, startNewGame, playOneMove, commitMistakes } from './helpers.js
 // Zurücklegen in den Vorrat — und die Fehler-Regel (nur eine vollständig
 // falsche Rechnung zählt).
 test.describe('Rechenkreuz: Steine legen', () => {
+  // Der gezogene Stein schwebt ÜBER dem Finger (DRAG_LIFT) — abgelegt wird
+  // dort, wo der STEIN liegt. Der Zeiger muss also um genau diesen Betrag
+  // TIEFER stehen als das Zielfeld, so wie es ein Daumen auch täte.
   async function dragTo(page, from, to) {
+    const lift = await page.evaluate(() => window.__cns.dragLift);
     const a = await from.boundingBox();
     const b = await to.boundingBox();
+    const tx = b.x + b.width / 2, ty = b.y + b.height / 2 + lift;
     await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
     await page.mouse.down();
     await page.mouse.move(a.x + a.width / 2 + 12, a.y + a.height / 2 + 12, { steps: 3 });
-    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 8 });
+    await page.mouse.move(tx, ty, { steps: 8 });
     await page.mouse.up();
   }
 

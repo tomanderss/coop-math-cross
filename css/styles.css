@@ -1048,48 +1048,67 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .board { display: grid; gap: 0; background: var(--grid); border-radius: 12px; padding: 0; overflow: hidden; box-shadow: 0 6px 24px var(--shadow); margin: auto; flex-shrink: 0; transition: filter .3s, opacity .3s; }
 
 /* ─── RECHENKREUZ-BRETT ──────────────────────────────────────────────────────
-   Das Anzeige-Raster wechselt Zahl- und Operator-Felder ab (siehe board.js).
-   Leere Rasterplätze (.gapcell) bleiben unsichtbar — daraus entstehen die
-   typischen Löcher und Ausläufer des Kreuzworts. */
-.board { background: transparent; box-shadow: none; overflow: visible; gap: 2px; }
+   Das Anzeige-Raster wechselt Zahl- und Operator-Spuren ab (siehe board.js);
+   leere Rasterplätze (.gapcell) bleiben unsichtbar und schrumpfen auf ein paar
+   Pixel — daraus entstehen die typischen Löcher und Ausläufer des Kreuzworts.
+   Alles ist auf DICHTE getrimmt: die größten Bretter (9×7 = 17×13 Spuren) müssen
+   auf ein Telefon passen, ohne dass Zahlen aus der Zelle laufen. */
+.board { background: transparent; box-shadow: none; overflow: visible; gap: var(--bgap, 2px); }
 .gapcell { background: transparent; }
 
-/* Operator- und Gleichheitszeichen */
+/* Operator- und Gleichheitszeichen: KEINE eigene Kachel — nur das Zeichen.
+   Das spart die halbe Fläche und lässt die Zahlen deutlich hervortreten. */
 .opcell {
   display: flex; align-items: center; justify-content: center;
-  background: var(--hdr-bg); color: var(--text);
-  font-weight: 800; font-size: calc(var(--fs) * .92); line-height: 1;
-  border-radius: 4px; user-select: none;
-  transition: background .2s, color .2s;
+  background: transparent; color: var(--text2);
+  font-weight: 900; font-size: calc(var(--fs) * .95); line-height: 1;
+  user-select: none; transition: color .2s;
 }
-.opcell.done { background: var(--good-soft); color: var(--good); }
-.opcell.pulse { animation: resolvePulse .8s ease-out; }
+.opcell.done { color: var(--good); }
+.opcell.pulse { animation: opPulse .8s ease-out; }
+@keyframes opPulse { 0%,100% { transform: scale(1); } 40% { transform: scale(1.35); color: var(--good); } }
 
 .cell {
   position: relative; display: flex; align-items: center; justify-content: center;
   background: var(--cell-bg); color: var(--ink); font-weight: 800; font-size: var(--fs);
-  border: 1px solid var(--grid); border-radius: 4px; user-select: none;
+  border-radius: 5px; user-select: none; overflow: hidden;
   transition: background .12s, box-shadow .12s;
-  --rcol: var(--cell-bg);
   /* Layout-/Style-Containment: bei einem Zug patcht Vue alle Zellen; so muss der
      Browser Layout/Style nur pro Zelle isoliert neu rechnen. */
   contain: layout style;
 }
 .cell:focus-visible { outline: 3px solid var(--accent); outline-offset: -2px; z-index: 4; }
-.cell .cnum { position: relative; z-index: 2; transition: opacity .15s; }
-/* Große Zahlen (dreistellige Ergebnisse) dürfen nicht über den Rand laufen. */
-.board.big-num .cnum, .cell .cnum:not(:empty) { letter-spacing: -.02em; }
-.cell.given { background: var(--hdr-bg); }
-/* Offene Lücke: klar als „hier fehlt etwas" erkennbar. */
-.cell.empty { background: color-mix(in srgb, var(--cell-bg) 84%, var(--accent) 16%); box-shadow: inset 0 0 0 1px var(--grid); }
+.cell .cnum { position: relative; z-index: 2; line-height: 1; transition: opacity .15s; }
+/* Mehrstellige Werte enger und kleiner setzen, damit sie nie überlaufen. */
+.cell.d3 .cnum { font-size: .78em; letter-spacing: -.03em; }
+.cell.d4 .cnum { font-size: .62em; letter-spacing: -.04em; }
+
+/* VORGABE: kräftig, satter Grund — die feste Größe des Rätsels. */
+.cell.given {
+  background: var(--hdr-bg); color: var(--text);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 22%, transparent);
+}
+/* LÜCKE: deutlich zurückgenommen und eingelassen — „hier fehlt etwas". */
+.cell.empty {
+  background: color-mix(in srgb, var(--cell-bg) 55%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--text3) 45%, transparent);
+}
 .cell.empty .cnum { opacity: 0; }
-/* Gelegter Stein: in der Spielerfarbe (Solo: eigene Markierungsfarbe). */
-.cell.filled { background: var(--good-soft); color: var(--markcol, var(--accent)); }
+/* GELEGTER STEIN: in der Spielerfarbe (Solo: eigene Markierungsfarbe). */
+.cell.filled {
+  background: color-mix(in srgb, var(--markcol, var(--accent)) 18%, var(--cell-bg));
+  color: var(--markcol, var(--accent));
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--markcol, var(--accent)) 65%, transparent);
+}
 .cell.filled .cnum { color: var(--markcol, var(--accent)); }
-/* Eine fertig gerechnete Gleichung hebt sich ab. */
+/* Eine fertig gerechnete Gleichung bekommt einen grünen Rahmen — die FÜLLUNG
+   bleibt, wie sie ist: sie sagt, ob das Feld vorgegeben ist oder von wem der
+   Stein stammt (im Mehrspieler-Modus die Spielerfarbe). */
 .cell.done { box-shadow: inset 0 0 0 2px var(--good); }
-.cell.picked { box-shadow: inset 0 0 0 3px var(--accent); transform: scale(1.04); z-index: 3; }
+.cell.picked { box-shadow: inset 0 0 0 3px var(--accent); z-index: 3; }
 .cell.droppable.empty { box-shadow: inset 0 0 0 2px var(--accent); }
+/* Feld unter dem gezogenen Stein: klar sichtbares Ziel, bevor man loslässt. */
+.cell.drop-hot { box-shadow: inset 0 0 0 3px var(--accent); z-index: 3; }
 .cell.flash { background: var(--bad-soft) !important; animation: shake .3s; }
 @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
 .cell.hinted { background: var(--good-soft) !important; animation: hintGlow 1.2s ease; }
@@ -1104,35 +1123,45 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 
 /* ─── VORRAT ─────────────────────────────────────────────────────────────────
    Alle noch zu legenden Zahlen. Ein benutzter Stein hinterlässt seine LÜCKE —
-   erst der Sortier-Knopf räumt auf und sortiert aufsteigend. */
+   erst der Sortier-Knopf räumt auf und sortiert aufsteigend. Die Steingröße
+   (--tile) kommt aus app.js und richtet sich nach der ANZAHL: 30+ Steine
+   dürfen nicht das halbe Display belegen. */
 .tray {
-  flex: 0 0 auto; display: flex; flex-wrap: wrap; justify-content: center;
-  gap: 6px; padding: 10px 8px; margin: 4px 0 0;
-  background: var(--card); border-radius: 14px; box-shadow: 0 4px 16px var(--shadow);
-  max-height: 30vh; overflow-y: auto; touch-action: pan-y;
+  flex: 0 0 auto; display: flex; flex-wrap: wrap; justify-content: center; align-content: flex-start;
+  gap: var(--tgap, 5px); padding: 8px; margin: 2px 0 0;
+  background: var(--card); border-radius: 12px; box-shadow: 0 2px 10px var(--shadow);
+  max-height: 30vh; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
 }
-.tray-slot { width: 44px; height: 44px; flex: 0 0 auto; }
+.tray-slot { width: var(--tile, 42px); height: var(--tile, 42px); flex: 0 0 auto; }
 .tile {
   width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
-  background: var(--good-soft); color: var(--good); border: 1.5px solid var(--good);
-  border-radius: 8px; font-weight: 800; font-size: 20px; line-height: 1;
+  background: color-mix(in srgb, var(--good) 16%, var(--card));
+  color: var(--good); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--good) 70%, transparent);
+  border-radius: 7px; font-weight: 800; font-size: var(--tfs, 19px); line-height: 1;
   cursor: grab; user-select: none; touch-action: none;
   transition: transform .12s, box-shadow .12s;
 }
+.tile.d3 { font-size: calc(var(--tfs, 19px) * .8); letter-spacing: -.03em; }
+.tile.d4 { font-size: calc(var(--tfs, 19px) * .64); letter-spacing: -.04em; }
 .tile:active { cursor: grabbing; }
 .tile.picked { transform: scale(1.1); box-shadow: 0 0 0 3px var(--accent); }
 /* Der Ziehschatten hängt am <body> und wird DIREKT per transform bewegt (nie
-   reaktiv), damit eine Zeigerbewegung nie ein Vue-Render auslöst. */
+   reaktiv), damit eine Zeigerbewegung nie ein Vue-Render auslöst. Er schwebt
+   ÜBER dem Finger — sonst verdeckt die Hand genau die Zahl, die man schiebt. */
 .drag-ghost {
   position: fixed; left: 0; top: 0; z-index: 9999; pointer-events: none;
-  display: none; min-width: 44px; height: 44px; padding: 0 6px;
+  display: none; min-width: 46px; height: 46px; padding: 0 8px;
   align-items: center; justify-content: center;
   background: var(--good-soft); color: var(--good); border: 2px solid var(--good);
-  border-radius: 8px; font-weight: 800; font-size: 20px;
-  box-shadow: 0 8px 20px rgba(0,0,0,.35);
+  border-radius: 8px; font-weight: 800; font-size: 21px;
+  box-shadow: 0 10px 24px rgba(0,0,0,.45);
+}
+/* Spitze zum Finger hinunter: sie markiert den Punkt, an dem der Stein landet. */
+.drag-ghost::after {
+  content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+  border: 7px solid transparent; border-top-color: var(--good);
 }
 .cell[data-r] { touch-action: none; }
-.history-board .cell { font-size: var(--fs); }
 
 /* ─── Querformat-Layout (Spiel-Screen) ────────────────────────────────────────
    Eine reine Web-App kann die Geräte-Rotation nicht zuverlässig sperren (das

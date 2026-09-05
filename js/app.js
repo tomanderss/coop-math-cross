@@ -123,6 +123,7 @@ const state = reactive({
   flash: {},                 // "r-c" -> true (rote Fehler-Animation)
   justResolved: {},          // "eq-3" -> true (Fertig-Puls einer gelösten Rechnung)
   cellPx: 48,
+  boardW: 0,                 // gemessene Breite der Spielfläche (Basis der Vorrats-Steingröße)
   zoom: 1,
   markedBy: [],               // 2D-Array parallel zu placed: Coop-Spieler-Id, LOCAL_PLAYER_ID (solo/Wettkampf) oder null
 
@@ -997,23 +998,72 @@ const skinBoardClasses = computed(() => buildSkinClasses(state.settings, skinAct
 // Das Anzeige-Raster wechselt Zahl- und Operator-Spalten ab. Operator-Felder
 // sind schmaler (OP_RATIO) — sonst passen breite Bretter (bis 7 Zahl-Spalten =
 // 13 Anzeige-Spalten) auf einem Telefon nicht mehr nebeneinander.
-const OP_RATIO = 0.62;
-function gridTracks(n) {
-  const out = [];
-  for (let i = 0; i < n; i++) out.push(i % 2 ? 'var(--opcell)' : 'var(--cell)');
-  return out.join(' ');
+const OP_RATIO = 0.5;    // Operator-Spuren sind halb so breit wie Zahl-Felder
+const EMPTY_TRACK = 4;   // px — Breite einer KOMPLETT leeren Spur (nur Luft)
+
+// Ein ausgefranstes Kreuzwort hat Spuren, in denen gar nichts liegt — bei einem
+// Operator-Streifen zwischen zwei Zeilen ohne einzige senkrechte Rechnung etwa.
+// Bekämen die volle Breite, fräße das Nichts den Platz auf und die Zellen
+// blieben unnötig klein (gemeldet: „Standard-Zoom ist verkackt"). Leere Spuren
+// schrumpfen deshalb auf EMPTY_TRACK.
+function trackUsage(display) {
+  const rows = new Array(display ? display.rows : 0).fill(false);
+  const cols = new Array(display ? display.cols : 0).fill(false);
+  if (display) {
+    for (let r = 0; r < display.rows; r++) {
+      for (let c = 0; c < display.cols; c++) {
+        if (!display.cells[r][c]) continue;
+        rows[r] = true; cols[c] = true;
+      }
+    }
+  }
+  return { rows, cols };
+}
+const boardTracks = computed(() => trackUsage(state.display));
+function gridTracks(used) {
+  return used.map((on, i) => (on ? (i % 2 ? 'var(--opcell)' : 'var(--cell)') : 'var(--emptycell)')).join(' ');
+}
+// Wie viele Zell-/Operator-/Leerspuren hat eine Achse? (Basis der Zellgröße)
+function trackCounts(used) {
+  let cells = 0, ops = 0, empty = 0;
+  used.forEach((on, i) => { if (!on) empty++; else if (i % 2) ops++; else cells++; });
+  return { cells, ops, empty };
 }
 const gridStyle = computed(() => {
-  const cols = state.puzzle ? state.puzzle.cols * 2 - 1 : 1;
-  const rows = state.puzzle ? state.puzzle.rows * 2 - 1 : 1;
+  const t = boardTracks.value;
   return {
-    gridTemplateColumns: gridTracks(cols),
-    gridTemplateRows: gridTracks(rows),
+    gridTemplateColumns: gridTracks(t.cols),
+    gridTemplateRows: gridTracks(t.rows),
     '--cell': state.cellPx + 'px',
     '--opcell': Math.round(state.cellPx * OP_RATIO) + 'px',
-    '--fs': Math.max(11, Math.round(state.cellPx * 0.44)) + 'px',
+    '--emptycell': EMPTY_TRACK + 'px',
+    // Auf engen Brettern schrumpft auch der Rasterabstand — 2 px je Fuge summieren
+    // sich bei 17 Spuren zu 34 px, die dann den Zellen fehlen.
+    '--bgap': (state.cellPx < 34 ? 1 : 2) + 'px',
+    '--fs': Math.max(9, Math.round(state.cellPx * 0.46)) + 'px',
   };
 });
+
+// ── VORRAT: Steingröße richtet sich nach der ANZAHL ──────────────────────────
+// Ein R.I.P.-Brett hat über 30 Steine — bei fester Größe fraß der Vorrat das
+// halbe Display. Die Steine schrumpfen deshalb, bis alle in wenige Zeilen
+// passen (gemeldet: „die Zahlen unten deutlich kompakter").
+const TRAY_GAP = 5;
+const trayTilePx = computed(() => {
+  const n = Math.max(1, state.tray.length);
+  const avail = Math.max(200, (state.boardW || window.innerWidth) - 24);
+  // Je mehr Steine, desto kleiner — sonst wächst der Vorrat dem Brett davon.
+  const cap = n > 30 ? 30 : n > 20 ? 34 : n > 10 ? 40 : 46;
+  // Breite ausreizen: so viele Steine je Zeile wie hineinpassen.
+  const perRow = Math.max(1, Math.floor((avail + TRAY_GAP) / (cap + TRAY_GAP)));
+  const px = Math.floor((avail - (perRow - 1) * TRAY_GAP) / perRow);
+  return Math.max(24, Math.min(cap, px));
+});
+const trayStyle = computed(() => ({
+  '--tile': trayTilePx.value + 'px',
+  '--tgap': TRAY_GAP + 'px',
+  '--tfs': Math.round(trayTilePx.value * 0.46) + 'px',
+}));
 // Aktive Paletten-Transformation für cellStyle (null = Klassisch/unverändert).
 function activePaletteFx() {
   const it = shopItemById(shopEquippedId('palette'));
@@ -1857,13 +1907,12 @@ function desktopBoard() {
 }
 function computeCellSize() {
   if (!state.puzzle) return;
-  const cols = state.puzzle.cols;
-  const rows = state.puzzle.rows;
   const wrap = document.querySelector('.board-wrap');
   let availW, availH;
   if (wrap && wrap.clientWidth && wrap.clientHeight) {
     availW = wrap.clientWidth - 12; // 2*6px Board-Wrap-Padding
     availH = wrap.clientHeight - 12;
+    state.boardW = wrap.clientWidth;
   } else {
     availW = Math.min(window.innerWidth - 44, 496); // 2*(14px App-Padding + 6px Board-Wrap-Padding) + Sicherheitspuffer
     availH = window.innerHeight - 200; // grobe Schätzung für Kopf-/Werkzeugleiste vor dem ersten Render
@@ -1874,13 +1923,23 @@ function computeCellSize() {
   // breiter/höher als der verfügbare Raum und ragt aus dem Bildschirm.
   const framePad = boardFrameClass() ? 20 : 0;
   availW -= framePad; availH -= framePad;
-  // Das Anzeige-Raster hat zwischen je zwei Zahl-Feldern ein SCHMALES
-  // Operator-Feld (OP_RATIO), also cols + (cols-1)*OP_RATIO Zellbreiten.
-  const unitsW = cols + (cols - 1) * OP_RATIO;
-  const unitsH = rows + (rows - 1) * OP_RATIO;
-  const idealW = Math.floor(availW / unitsW);
-  const idealH = Math.floor(availH / unitsH);
-  const ideal = Math.min(idealW, idealH);
+  // Das Anzeige-Raster wechselt Zahl- und (schmalere) Operator-Spuren ab;
+  // komplett leere Spuren zählen nur mit EMPTY_TRACK. Ohne diese Rechnung wird
+  // das Brett bei ausgefransten Layouts unnötig klein.
+  const t = boardTracks.value;
+  const tw = trackCounts(t.cols), th = trackCounts(t.rows);
+  const unitsW = tw.cells + tw.ops * OP_RATIO || 1;
+  const unitsH = th.cells + th.ops * OP_RATIO || 1;
+  // Die Rasterfugen (gap) MÜSSEN mitgerechnet werden: bei 17 Spuren sind das
+  // 16 Fugen je Achse — ohne sie ragte die letzte Zeile unter den Vorrat.
+  // Der Fugen-Wert hängt selbst an der Zellgröße (s. gridStyle), daher zwei
+  // Durchgänge: erst mit 2 px rechnen, bei engem Brett mit 1 px nachrechnen.
+  const fit = (gap) => Math.floor(Math.min(
+    (availW - tw.empty * EMPTY_TRACK - (t.cols.length - 1) * gap) / unitsW,
+    (availH - th.empty * EMPTY_TRACK - (t.rows.length - 1) * gap) / unitsH,
+  ));
+  let ideal = fit(2);
+  if (ideal < 34) ideal = fit(1);
   // Deckel für die Auto-Einpassung: begrenzt die Zellgröße, damit kleine Bretter
   // auf großen Displays nicht riesig wirken. Skaliert mit der kürzeren Bildschirm-
   // kante (= bindende Achse, da das Brett in BEIDE Richtungen passen muss), damit
@@ -2120,6 +2179,11 @@ function sortTray() {
 let dragGhost = null;
 let dragSrc = null;
 let dragMoved = false;
+// Der gezogene Stein sitzt ÜBER dem Finger, sonst verdeckt die Hand genau die
+// Zahl, die man gerade schiebt. Abgelegt wird dort, wo der STEIN liegt (nicht
+// unter dem Finger) — Anzeige und Trefferpunkt sind damit dasselbe.
+const DRAG_LIFT = 52;
+const dropPoint = (e) => ({ x: e.clientX, y: e.clientY - DRAG_LIFT });
 
 function ensureGhost(v) {
   if (!dragGhost) {
@@ -2131,8 +2195,26 @@ function ensureGhost(v) {
   dragGhost.style.display = 'block';
   return dragGhost;
 }
-function moveGhost(x, y) {
-  if (dragGhost) dragGhost.style.transform = `translate3d(${Math.round(x)}px, ${Math.round(y)}px, 0) translate(-50%, -50%)`;
+function moveGhost(e) {
+  if (!dragGhost) return;
+  const p = dropPoint(e);
+  dragGhost.style.transform = `translate3d(${Math.round(p.x)}px, ${Math.round(p.y)}px, 0) translate(-50%, -50%)`;
+}
+// Feld unter dem gezogenen Stein hervorheben, damit vor dem Loslassen klar ist,
+// wo er landet. Läuft ohne Vue (Klasse direkt am Element), s. Render-Kernregeln.
+let hoverCell = null;
+function highlightUnder(e) {
+  const p = dropPoint(e);
+  const el = document.elementFromPoint(p.x, p.y);
+  const cell = el && el.closest && el.closest('.cell[data-r]');
+  if (cell === hoverCell) return;
+  if (hoverCell) hoverCell.classList.remove('drop-hot');
+  hoverCell = cell && !cell.classList.contains('given') ? cell : null;
+  if (hoverCell) hoverCell.classList.add('drop-hot');
+}
+function clearHighlight() {
+  if (hoverCell) hoverCell.classList.remove('drop-hot');
+  hoverCell = null;
 }
 function hideGhost() { if (dragGhost) dragGhost.style.display = 'none'; }
 
@@ -2142,13 +2224,14 @@ function onDragStart(e, v, from, tileId) {
   dragMoved = false;
   state.drag = { v, from: dragSrc.from };
   ensureGhost(v);
-  moveGhost(e.clientX, e.clientY);
+  moveGhost(e);
   try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
 }
 function onDragMove(e) {
   if (!dragSrc) return;
   dragMoved = true;
-  moveGhost(e.clientX, e.clientY);
+  moveGhost(e);
+  highlightUnder(e);
   e.preventDefault();
 }
 function onDragEnd(e) {
@@ -2157,8 +2240,10 @@ function onDragEnd(e) {
   dragSrc = null;
   state.drag = null;
   hideGhost();
+  clearHighlight();
   if (!dragMoved) { pickTile(src.v, src.from, src.tileId); return; }  // reiner Tipp = auswählen
-  const el = document.elementFromPoint(e.clientX, e.clientY);
+  const p = dropPoint(e);
+  const el = document.elementFromPoint(p.x, p.y);
   const cell = el && el.closest && el.closest('.cell[data-r]');
   if (cell) { dropOn(parseInt(cell.dataset.r, 10), parseInt(cell.dataset.c, 10), src); return; }
   if (el && el.closest && el.closest('.tray')) { dropOnTray(src); return; }
@@ -2166,7 +2251,7 @@ function onDragEnd(e) {
 }
 function onDragCancel() {
   if (!dragSrc) return;
-  dragSrc = null; state.drag = null; hideGhost(); state.pick = null;
+  dragSrc = null; state.drag = null; hideGhost(); clearHighlight(); state.pick = null;
 }
 
 // Klick auf ein Feld: mit aufgenommenem Stein ablegen, sonst den dort liegenden aufnehmen.
@@ -5158,13 +5243,15 @@ function openHistoryDetail(entry) {
 }
 function closeHistoryDetail() { state.historyDetail = null; }
 function historyGridStyle(puzzle) {
-  const avail = Math.min(window.innerWidth - 80, 420);
-  const cols = puzzle.cols * 2 - 1, rows = puzzle.rows * 2 - 1;
-  const cellPx = Math.max(14, Math.min(34, Math.floor(avail / (puzzle.cols + (puzzle.cols - 1) * 0.62))));
+  const t = trackUsage(state.historyDetail && state.historyDetail.display);
+  const tw = trackCounts(t.cols);
+  const avail = Math.min(window.innerWidth - 80, 420) - tw.empty * EMPTY_TRACK;
+  const cellPx = Math.max(14, Math.min(34, Math.floor(avail / (tw.cells + tw.ops * OP_RATIO || 1))));
   return {
-    gridTemplateColumns: gridTracks(cols),
-    gridTemplateRows: gridTracks(rows),
-    '--cell': cellPx + 'px', '--opcell': Math.round(cellPx * 0.62) + 'px',
+    gridTemplateColumns: gridTracks(t.cols),
+    gridTemplateRows: gridTracks(t.rows),
+    '--cell': cellPx + 'px', '--opcell': Math.round(cellPx * OP_RATIO) + 'px',
+    '--emptycell': EMPTY_TRACK + 'px',
     '--fs': Math.max(9, Math.round(cellPx * 0.42)) + 'px',
   };
 }
@@ -7146,13 +7233,13 @@ const BoardGrid = {
 // LÜCKE (wie in der Vorlage) — der Sortier-Knopf räumt auf und sortiert.
 const TrayBar = {
   setup() {
-    return { state, onDragStart, onDragMove, onDragEnd, onDragCancel, pickTile, dropOnTray };
+    return { state, onDragStart, onDragMove, onDragEnd, onDragCancel, pickTile, dropOnTray, trayStyle };
   },
   template: `
-          <div class="tray" @click.self="dropOnTray()">
+          <div class="tray" :style="trayStyle" @click.self="dropOnTray()">
             <div v-for="tile in state.tray" :key="tile.id" class="tray-slot">
               <div v-if="!tile.used" class="tile"
-                   :class="{ picked: state.pick && !state.pick.from && state.pick.tileId===tile.id }"
+                   :class="{ picked: state.pick && !state.pick.from && state.pick.tileId===tile.id, d3: String(tile.v).length===3, d4: String(tile.v).length>=4 }"
                    role="button" tabindex="0"
                    @keydown.enter.prevent="pickTile(tile.v, null, tile.id)"
                    @pointerdown="onDragStart($event, tile.v, null, tile.id)"
@@ -9690,10 +9777,15 @@ function cellClasses(cell) {
   const v = cell.given ? state.puzzle.slots[r][c].v : state.placed[r][c];
   const who = state.markedBy[r] && state.markedBy[r][c];
   const picked = state.pick && state.pick.from && state.pick.from.r === r && state.pick.from.c === c;
+  const digits = v == null ? 0 : String(v).length;
   return {
     given: cell.given,
     filled: !cell.given && v != null,
     empty: !cell.given && v == null,
+    // Drei- und vierstellige Werte müssen enger gesetzt werden, sonst laufen
+    // sie auf kleinen Brettern über den Zellrand.
+    d3: digits === 3,
+    d4: digits >= 4,
     done: cellInSolvedEq(r, c),
     flash: !!state.flash[`${r}-${c}`],
     hinted: !!state.hintCells[r * 1000 + c],
@@ -9754,7 +9846,7 @@ app.mount('#app');
 // (Coop.setTeamProgress/setRaceProgress sind selbst nicht spionierbar, da
 // `import * as Coop` ein eingefrorenes Modul-Namespace-Objekt liefert).
 if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') window.__cns = { state, isSolved, handleCoopMsg, handleCoopConnection, coopSend, upsertPlayer, removePlayer, onSoloInviteRoomOpen, onSoloInviteJoin, cellStyle, cellClasses, Music, launchWinFx, useHint,
-  placeAt, clearAt, sortTray, pickTile, dropOn, setSetting,
+  placeAt, clearAt, sortTray, pickTile, dropOn, setSetting, dragLift: DRAG_LIFT,
   // Test-Helfer: erstes offenes Feld (mit seinem richtigen Wert) bzw. genau
   // einen korrekten Stein legen — spart jedem E2E-Test dieselbe Suchschleife.
   firstBlank: () => {
