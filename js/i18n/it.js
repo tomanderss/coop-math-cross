@@ -107,7 +107,7 @@ export default {
     msgMore: 'Condividi questo codice così altri giocatori possono unirsi alla partita in corso.',
     hint: 'Il tuo amico tocca Coop ▸ Unisciti e inserisce questo codice.',
     share: 'Condividi codice',
-    shareText: 'Gioca a Number Sums con me! Unisciti alla mia partita in corso – codice stanza: {code}',
+    shareText: 'Gioca a Math Cross con me! Unisciti alla mia partita in corso – codice stanza: {code}',
     copied: 'Codice copiato',
     cancel: 'Ritira l’invito',
     joined: '{name} si è unito: ora giocate insieme!',
@@ -577,7 +577,7 @@ export default {
     master: {
       title: 'Grandmaster',
       tag: 'Coronation',
-      desc: 'The ultimate badge — unlocked when ALL 12 badges reach Legendary. Proof that you have mastered Number Sums.',
+      desc: 'The ultimate badge — unlocked when ALL 12 badges reach Legendary. Proof that you have mastered Math Cross.',
       progress: '{n} / {total} categories at Legendary',
       equip: 'Equip',
       equipWear: 'Wear with pride',
@@ -733,7 +733,7 @@ export default {
   },
   share: {
     button: 'Condividi',
-    coopInvite: 'Gioca a Coop Number Sums con me in modalità co-op! Codice: {code} — {url}',
+    coopInvite: 'Gioca a Coop Math Cross con me in modalità co-op! Codice: {code} — {url}',
   },
   howto: {
     title: 'Come si gioca',

@@ -2,7 +2,7 @@
 //
 // Lazy wie coop.js: Firebase wird nur bei tatsächlicher Account-Nutzung geladen.
 // "Anonymous-first": OHNE Login bleibt die App rein lokal/anonym — diese Datei
-// wird dann nie importiert/aktiv. Bei Login werden die lokalen cns_*-Daten nach
+// wird dann nie importiert/aktiv. Bei Login werden die lokalen cmc_*-Daten nach
 // /users/{uid} gespiegelt und umgekehrt (Erstbesitz/Union beim Inventar).
 //
 // WICHTIG (bewusste Vereinfachung, siehe Plan/Decision-Log):
@@ -63,7 +63,7 @@ export function isDivergent({ localRev, cloudRev, syncedRev }) {
 // ─── Verlustfreier Snapshot-Merge (rein, unit-testbar) ─────────────────────────
 // Formale Divergenz (beide DATA_REVs seit der Basislinie gebumpt) heißt NICHT
 // echte Daten-Differenz: schon das bloße Öffnen der App auf einem Zweitgerät
-// schreibt Kleinkram (Streak-Tages-Rollover in cns_daily, Settings-Flags,
+// schreibt Kleinkram (Streak-Tages-Rollover in cmc_daily, Settings-Flags,
 // Autosave-Zeitstempel) und bumpte die Revision — der Versions-Mismatch-Dialog
 // erschien dadurch viel zu oft. Divergenz wird jetzt INHALTLICH aufgelöst:
 // alles Mergebare wird verlustfrei zusammengeführt (Union/Maximum/Bestwert),
@@ -114,7 +114,7 @@ function mergeNumericDeep(a, b) {
   }
   return out;
 }
-// Wochen-Missionen (cns_missions): dieselbe Woche → Fortschritt je Mission =
+// Wochen-Missionen (cmc_missions): dieselbe Woche → Fortschritt je Mission =
 // Maximum, „eingelöst" = Vereinigung; verschiedene Wochen → die NEUERE Woche
 // (größerer weekKey) gewinnt komplett (ihr Stand ist für diese Woche maßgeblich).
 export function mergeMissions(a = {}, b = {}) {
@@ -127,7 +127,7 @@ export function mergeMissions(a = {}, b = {}) {
   for (const k of new Set([...Object.keys(ap), ...Object.keys(bp)])) progress[k] = Math.max(nz(ap[k]), nz(bp[k]));
   return { weekKey: ak, progress, claimed: { ...(b.claimed || {}), ...(a.claimed || {}) } };
 }
-// Streak (cns_daily): Der Anker der Serie ist das JÜNGSTE echte Spieldatum —
+// Streak (cmc_daily): Der Anker der Serie ist das JÜNGSTE echte Spieldatum —
 // die Seite mit dem späteren (GÜLTIGEN, per sanitizeLastCompleted geheilten)
 // Datum trägt die aktuellste Aktivität, also gilt IHR currentStreak; nur bei
 // gleichem Datum entscheidet das Maximum. Früher galt pauschal max(currentStreak)

@@ -128,7 +128,7 @@ test.describe('endless climb', () => {
     // Geldverlauf VOR dem App-Start seeden: zwei alte Endlos-Läufe — einer bis
     // Level 3 (Leben-Aus → zusätzlich 1 Niederlage), einer bis Level 1 abgebrochen.
     await page.addInitScript(() => {
-      localStorage.setItem('cns_wallet_log', JSON.stringify([
+      localStorage.setItem('cmc_wallet_log', JSON.stringify([
         { id: 'bk-a', ts: 1000, amount: 60, reason: 'endless', balance: 60, meta: { mode: 'endless', score: 3 } },
         { id: 'bk-b', ts: 2000, amount: 20, reason: 'endless', balance: 80, meta: { mode: 'endless', score: 1, aborted: true } },
       ]));
@@ -163,7 +163,7 @@ test.describe('endless climb', () => {
     expect(await page.evaluate(() => window.__cns.state.saveSlot)).toBe('endless');
     await page.evaluate(() => window.__cns.state.paused = false);
     await page.evaluate(() => window.__cns.state); // no-op
-    expect(await page.evaluate(() => { const g = localStorage.getItem('cns_active_game'); return g && g !== 'null'; })).toBeFalsy();
+    expect(await page.evaluate(() => { const g = localStorage.getItem('cmc_active_game'); return g && g !== 'null'; })).toBeFalsy();
   });
 
   test('a solo endless run offers "invite a player" in the pause menu', async ({ page }) => {

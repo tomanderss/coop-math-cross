@@ -36,7 +36,7 @@ test.describe('Spielstand-Bibliothek', () => {
     const second = await page.evaluate(() => window.__cns.state.gameId);
     expect(second).not.toBe(first);
 
-    const ids = await page.evaluate(() => JSON.parse(localStorage.getItem('cns_saves') || '[]').map((g) => g.id));
+    const ids = await page.evaluate(() => JSON.parse(localStorage.getItem('cmc_saves') || '[]').map((g) => g.id));
     expect(ids, 'beide Partien muessen in der Bibliothek liegen').toContain(first);
     expect(ids).toContain(second);
   });
@@ -80,7 +80,7 @@ test.describe('Spielstand-Bibliothek', () => {
     await expect(page.locator('.modal-bg', { hasText: 'Spielstand löschen?' })).toBeVisible();
     await page.locator('.modal .btn-danger').first().click();
     await expect(page.locator('.save-row')).toHaveCount(1);
-    const left = await page.evaluate(() => JSON.parse(localStorage.getItem('cns_saves') || '[]').length);
+    const left = await page.evaluate(() => JSON.parse(localStorage.getItem('cmc_saves') || '[]').length);
     expect(left).toBe(1);
   });
 

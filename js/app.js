@@ -1,4 +1,4 @@
-// app.js — Coop Number Sums (Vue 3, esm-browser). Solo-Spiel; Coop folgt später.
+// app.js — Coop Math Cross (Vue 3, esm-browser). Solo-Spiel; Coop folgt später.
 import { createApp, reactive, computed, watch, nextTick, onMounted, markRaw, ref } from './vue.esm-browser.prod.js';
 import { BUILD, CHANGELOG } from './buildinfo.js';
 import { createBot, nextAction as botNextAction, applyAction as botApplyAction, botPct, targetMsFor, clampProfile, clampAvgMs, PRESET_LEVELS, PRESET_PROFILES, DEFAULT_AVG_MS } from './duelbot.js';
@@ -5088,8 +5088,8 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 function doExport() { exportToFile('manual').then(() => showToast(t('toast.backupExported'), 'success')).catch(() => {}); }
 // ─── Sicherheitskopien (automatische Backups) einsehen & einspielen ───────────
 // Die App legt an zwei Stellen automatisch Kopien an, statt still zu löschen:
-// cns_conflict_backup (beim Geräte-Merge/Konfliktdialog verdrängter Daten-Stand)
-// und cns_active_game_backup (verdrängter Solo-Spielstand). Beide sind GERÄTE-
+// cmc_conflict_backup (beim Geräte-Merge/Konfliktdialog verdrängter Daten-Stand)
+// und cmc_active_game_backup (verdrängter Solo-Spielstand). Beide sind GERÄTE-
 // LOKAL (nie in der Cloud) — deshalb gehört die Wiederherstellung hierher in
 // die Einstellungen des Nutzers und NICHT ins Admin-Panel (der Admin sieht
 // fremde localStorage-Inhalte prinzipbedingt nicht).
@@ -5159,7 +5159,7 @@ function doImport(ev) {
 }
 function resetStats() {
   ask(t('stats.resetConfirmTitle'), t('stats.resetConfirmMsg'), () => {
-    localStorage.removeItem('cns_stats'); state.stats = loadStats(); showToast(t('stats.resetDone'), 'success');
+    localStorage.removeItem('cmc_stats'); state.stats = loadStats(); showToast(t('stats.resetDone'), 'success');
   });
 }
 function doDeleteAllData() {
@@ -7079,7 +7079,7 @@ let pendingReloadReason = null;
 // Neuladungen in localStorage (überlebt Reloads/PWA-Neustarts). Passieren zu viele
 // in kurzer Zeit, wird NICHT mehr neu geladen — so kann die App nie in einer
 // Endlos-Reload-Schleife (Splash→Menü→Splash…) hängen, egal welcher Auslöser.
-const RELOAD_LOG_KEY = 'cns_reload_log';
+const RELOAD_LOG_KEY = 'cmc_reload_log';
 // Fenster BEWUSST großzügig (3 min): ein Reload-Loop muss auch dann erkannt werden,
 // wenn die Zyklen LANGSAM sind (z.B. exakt alle ~36 s durch einen periodischen
 // Auslöser). Bei 60 s Fenster passten bei 36-s-Abstand nie 3 Reloads hinein → die
@@ -7158,10 +7158,10 @@ function initDiagnostics() {
   // → so ist der letzte bekannte Zustand VOR einem harten OS-Kill/Absturz sichtbar,
   // auch wenn kein pagehide mehr durchkam.
   try {
-    const prev = localStorage.getItem('cns_last_alive');
+    const prev = localStorage.getItem('cmc_last_alive');
     if (prev) log('app', 'Letzter Zustand vor (Neu-)Start', JSON.parse(prev));
   } catch (_) {}
-  setInterval(() => { try { localStorage.setItem('cns_last_alive', JSON.stringify({ atISO: new Date().toISOString(), ...lifeInfo() })); } catch (_) {} }, 15000);
+  setInterval(() => { try { localStorage.setItem('cmc_last_alive', JSON.stringify({ atISO: new Date().toISOString(), ...lifeInfo() })); } catch (_) {} }, 15000);
   // 2) Einmaliger Geräte-/Umgebungs-Schnappschuss. Kernfrage bei Perf-Problemen:
   //    Welches Gerät/Browser, wie viele Kerne/RAM? Genau eine Zeile -> praktisch gratis.
   try {
@@ -7245,10 +7245,10 @@ function init() {
   // kurzer Abstand (z.B. exakt ~36 s) ist der Fingerabdruck einer Reload-Schleife
   // (im Gegensatz zu unregelmäßigen iOS-Speicher-Kills). Genau ein Eintrag pro Start.
   try {
-    const prevStart = parseInt(localStorage.getItem('cns_last_start') || '0', 10);
+    const prevStart = parseInt(localStorage.getItem('cmc_last_start') || '0', 10);
     const now = Date.now();
     if (prevStart) log('app', 'Zeit seit letztem Start', { seconds: Math.round((now - prevStart) / 1000) });
-    localStorage.setItem('cns_last_start', String(now));
+    localStorage.setItem('cmc_last_start', String(now));
   } catch (_) {}
   applyTheme();
   applySfxPack(); applyMusicPack();
@@ -7829,7 +7829,7 @@ const App = {
       </div>
       <div class="brand">
         <img class="brand-logo" :src="BRAND_LOGO" decoding="sync" alt="" />
-        <h1 class="brand-title">Coop<br>Number Sums</h1>
+        <h1 class="brand-title">Coop<br>Math Cross</h1>
         <!-- Profil-Chip: öffnet den Prestige-Screen. Zeigt das ausgerüstete
              verdiente Abzeichen (oder eine Einladung, eins zu verdienen). -->
         <button class="home-profile-chip" :class="{ master: isMasterEquipped() }" @click="openPrestige">

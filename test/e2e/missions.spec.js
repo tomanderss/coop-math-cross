@@ -29,9 +29,9 @@ test.describe('weekly missions', () => {
     expect(await page.evaluate(() => window.__cns.state.wallet.balance)).toBe(before + reward);
     await expect(page.locator('.mission-card.claimed')).toHaveCount(1);
     await expect(page.locator('.mission-claim')).toHaveCount(0);
-    // Persistiert: cns_missions trägt den claimed-Eintrag.
+    // Persistiert: cmc_missions trägt den claimed-Eintrag.
     expect(await page.evaluate(() => {
-      const raw = localStorage.getItem('cns_missions');
+      const raw = localStorage.getItem('cmc_missions');
       const m = raw && JSON.parse(raw);
       return m && m.claimed && Object.keys(m.claimed).length >= 1;
     })).toBe(true);

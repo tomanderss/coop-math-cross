@@ -93,13 +93,13 @@ test.describe('resume', () => {
         markedBy: [[null, null], [null, null]],
         elapsed: 5000, ts: Date.now(),
       };
-      localStorage.setItem('cns_active_game', JSON.stringify(solved));
+      localStorage.setItem('cmc_active_game', JSON.stringify(solved));
     });
     await gotoApp(page);
     // Kein Fortsetzen-Button, und der gelöste Slot wurde aufgeräumt.
     await expect(page.locator('.btn-resume')).toHaveCount(0);
     expect(await page.evaluate(() => window.__cns.state.resumeAvailable)).toBeNull();
-    expect(await page.evaluate(() => localStorage.getItem('cns_active_game'))).toBeNull();
+    expect(await page.evaluate(() => localStorage.getItem('cmc_active_game'))).toBeNull();
   });
 
   test('an unsolved saved game IS offered as resume', async ({ page }) => {
@@ -114,7 +114,7 @@ test.describe('resume', () => {
         markedBy: [[null, null], [null, null]],
         elapsed: 5000, ts: Date.now(),
       };
-      localStorage.setItem('cns_active_game', JSON.stringify(unsolved));
+      localStorage.setItem('cmc_active_game', JSON.stringify(unsolved));
     });
     await gotoApp(page);
     await expect(page.locator('.btn-resume')).toBeVisible();

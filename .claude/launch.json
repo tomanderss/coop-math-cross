@@ -2,9 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "coop-number-sums",
+      "name": "coop-math-cross",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8080", "--directory", "C:/Users/tom-a/workspace/coop-number-sums"],
+      "runtimeArgs": ["-m", "http.server", "8080", "--directory", "C:/Users/tom-a/workspace/coop-math-cross"],
       "port": 8080
     }
   ]

@@ -12,7 +12,7 @@ test('Menü-Musik läuft im Hauptmenü (Default an)', async ({ page }) => {
 });
 
 test('Menü-Musik aus: still im Menü', async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('cns_settings', JSON.stringify({ musicMenu: false })));
+  await page.addInitScript(() => localStorage.setItem('cmc_settings', JSON.stringify({ musicMenu: false })));
   await gotoApp(page);
   await page.waitForTimeout(600);
   expect(await page.evaluate(() => window.__cns.Music.isPlaying())).toBe(false);
@@ -20,7 +20,7 @@ test('Menü-Musik aus: still im Menü', async ({ page }) => {
 
 test('Solo-Modus-Schalter steuert die Spielmusik (Menü-Musik aus isoliert den Test)', async ({ page }) => {
   // Menü-Musik aus, damit nach dem Sieg (Menü-Kontext) wirklich Stille herrscht.
-  await page.addInitScript(() => localStorage.setItem('cns_settings', JSON.stringify({ musicMenu: false })));
+  await page.addInitScript(() => localStorage.setItem('cmc_settings', JSON.stringify({ musicMenu: false })));
   await gotoApp(page);
   await startNewGame(page, 'sehrleicht');
   await page.waitForFunction(() => window.__cns.Music.isPlaying() === true, null, { timeout: 4000 });
@@ -37,7 +37,7 @@ test('Solo-Modus-Schalter steuert die Spielmusik (Menü-Musik aus isoliert den T
 });
 
 test('Pro-Modus-Schalter aus: keine Spielmusik im Solo', async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('cns_settings', JSON.stringify({ musicMenu: false, musicSolo: false })));
+  await page.addInitScript(() => localStorage.setItem('cmc_settings', JSON.stringify({ musicMenu: false, musicSolo: false })));
   await gotoApp(page);
   await startNewGame(page, 'sehrleicht');
   await page.waitForTimeout(800);

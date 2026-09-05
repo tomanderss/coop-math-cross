@@ -4,7 +4,7 @@
 // (z.B. von Firebase abgelehnte Schreibzugriffe) lassen sich anhand eines vom
 // Nutzer exportierten Protokolls nachträglich diagnostizieren.
 
-const KEY = 'cns_debuglog';
+const KEY = 'cmc_debuglog';
 const MAX_ENTRIES = 400;
 
 function read() {
@@ -40,9 +40,9 @@ export async function exportLogToFile() {
     const extra = e.extra !== undefined ? ' ' + JSON.stringify(e.extra) : '';
     return `[${time}] [${e.category}] ${e.message}${extra}`;
   });
-  const header = `Coop Number Sums – Diagnoseprotokoll\nVersion: ${BUILD}\nUserAgent: ${navigator.userAgent}\nExportiert: ${new Date().toISOString()}\n\n`;
+  const header = `Coop Math Cross – Diagnoseprotokoll\nVersion: ${BUILD}\nUserAgent: ${navigator.userAgent}\nExportiert: ${new Date().toISOString()}\n\n`;
   const text = header + (lines.join('\n') || '(leer)');
-  const filename = `coop-number-sums-diagnose-${Date.now()}.txt`;
+  const filename = `coop-math-cross-diagnose-${Date.now()}.txt`;
   const blob = new Blob([text], { type: 'text/plain' });
   if (navigator.canShare) {
     try {

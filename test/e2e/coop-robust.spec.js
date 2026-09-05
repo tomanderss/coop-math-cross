@@ -61,7 +61,7 @@ test.describe('coop robustness', () => {
       s.coop.role = 'host';
       window.__cns.handleCoopMsg({ type: 'resync', author: 'g1' });
     }, PUZZLE('sehrleicht'));
-    const hasLog = await page.evaluate(() => JSON.parse(localStorage.getItem('cns_debuglog') || '[]').some((e) => String(e.message || '').includes('RESYNC-Anfrage')));
+    const hasLog = await page.evaluate(() => JSON.parse(localStorage.getItem('cmc_debuglog') || '[]').some((e) => String(e.message || '').includes('RESYNC-Anfrage')));
     expect(hasLog).toBe(true);
   });
 
@@ -84,7 +84,7 @@ test.describe('coop robustness', () => {
     expect(await page.evaluate(() => window.__cns.state.status)).toBe('playing');
     expect(await page.evaluate(() => window.__cns.state.markedBy[0][0])).toBe('local');
     // Persistiert im SOLO-Slot (Fortsetzen nach App-Neustart möglich).
-    expect(await page.evaluate(() => { const g = JSON.parse(localStorage.getItem('cns_active_game') || 'null'); return g && g.puzzle ? g.puzzle.rows : null; })).toBe(4);
+    expect(await page.evaluate(() => { const g = JSON.parse(localStorage.getItem('cmc_active_game') || 'null'); return g && g.puzzle ? g.puzzle.rows : null; })).toBe(4);
   });
 
   test('coop offline: leaving to the menu automatically rescues the board as a solo save', async ({ page }) => {
@@ -97,7 +97,7 @@ test.describe('coop robustness', () => {
     await page.waitForSelector('.screen.home');
     // Automatisch als Solo gerettet: Fortsetzen-Knopf da, Coop-Slot leer.
     expect(await page.evaluate(() => !!window.__cns.state.resumeAvailable)).toBe(true);
-    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('cns_active_game_coop') || 'null'))).toBe(null);
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('cmc_active_game_coop') || 'null'))).toBe(null);
   });
 
   test('typing indicator: dots appear on the chat button and as a bubble in the chat', async ({ page }) => {

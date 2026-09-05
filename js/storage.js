@@ -6,35 +6,35 @@ import { log, clearLog } from './debuglog.js';
 import { todayDateStr, sanitizeLastCompleted } from './streak.js';
 
 const KEYS = {
-  SETTINGS: 'cns_settings',
-  ACTIVE_GAME: 'cns_active_game',
-  ACTIVE_GAME_COOP: 'cns_active_game_coop',
-  SAVES: 'cns_saves',  // Bibliothek gespeicherter Partien [{id,kind,ts,...snapshot}] — ein Eintrag JE Partie (gameId),
+  SETTINGS: 'cmc_settings',
+  ACTIVE_GAME: 'cmc_active_game',
+  ACTIVE_GAME_COOP: 'cmc_active_game_coop',
+  SAVES: 'cmc_saves',  // Bibliothek gespeicherter Partien [{id,kind,ts,...snapshot}] — ein Eintrag JE Partie (gameId),
                        // damit ein neues Spiel nie einen alten Stand ueberschreibt. SYNCT (Union-Merge nach id).
-  ACTIVE_GAME_ENDLESS: 'cns_active_game_endless',  // fortsetzbarer Solo-Endlos-Lauf (SYNCT als Teil des Snapshots, Merge via pickEndlessSlot)
-  COOP_SESSION: 'cns_coop_session',
-  STATS: 'cns_stats',
-  SEEN_VERSION: 'cns_seen_version',
-  DAILY: 'cns_daily',
-  HISTORY: 'cns_history',
-  ACHIEVEMENTS: 'cns_achievements',
-  MISSIONS: 'cns_missions', // { weekKey, progress:{id:n}, claimed:{id:true} } — Wochen-Missionen (js/missions.js)
-  RACE: 'cns_race',
+  ACTIVE_GAME_ENDLESS: 'cmc_active_game_endless',  // fortsetzbarer Solo-Endlos-Lauf (SYNCT als Teil des Snapshots, Merge via pickEndlessSlot)
+  COOP_SESSION: 'cmc_coop_session',
+  STATS: 'cmc_stats',
+  SEEN_VERSION: 'cmc_seen_version',
+  DAILY: 'cmc_daily',
+  HISTORY: 'cmc_history',
+  ACHIEVEMENTS: 'cmc_achievements',
+  MISSIONS: 'cmc_missions', // { weekKey, progress:{id:n}, claimed:{id:true} } — Wochen-Missionen (js/missions.js)
+  RACE: 'cmc_race',
   // ── Account-/Ökonomie-Fundament (vorwärtskompatibel) ──
   // Lokal-zuerst: für anonyme Nutzer ist localStorage die Quelle der Wahrheit;
   // bei Login werden diese Strukturen 1:1 nach /users/{uid} gespiegelt (siehe
   // js/account.js). Bewusst dieselbe Form wie der spätere RTDB-Knoten.
-  INVENTORY: 'cns_inventory',   // { itemId: { acquiredAt, source } } — Besitz von Cosmetics (z.B. Skin 'dynamicColor')
-  WALLET: 'cns_wallet',         // { balance, updatedAt } — In-Game-Währung (nicht auszahlbar)
-  WALLET_LOG: 'cns_wallet_log', // [{ id, ts, amount(±), reason, meta }] — Geldverlauf (FIFO, SYNCT als Teil des Snapshots, Union-Merge nach id)
-  PROFILE: 'cns_profile',       // { displayName, username, role, accountId, createdAt } — lokales Profil (role für Admin)
-  DATA_REV: 'cns_data_rev',     // Zeitstempel der letzten lokalen Nutzdaten-Änderung (für Cloud-Konfliktcheck)
-  SYNCED_REV: 'cns_synced_rev', // DATA_REV beim letzten erfolgreichen Sync (Basislinie für decideSync)
-  LAST_SYNC: 'cns_last_sync',   // Zeitpunkt der letzten erfolgreichen Cloud-Sicherung (nur UI; NICHT nutzdaten-getrackt)
-  DEVICE_ID: 'cns_device_id',   // stabile Geräte-Kennung (Multi-Device-Handoff); PER GERÄT, wird NIE synct/als Nutzdaten gezählt
-  COMPLETED_GAMES: 'cns_completed_games', // [gameId,…] bereits abgerechnete Partien (Belohnungs-Idempotenz über Geräte), FIFO
-  ACTIVE_GAME_BACKUP: 'cns_active_game_backup', // letzter durch Divergenz verdrängter Solo-Stand (nie still gelöscht)
-  PLAY_SAMPLES: 'cns_play_samples', // [{ts,difficulty,think,burstMs,mistakes,…}] — Spielstil-Stichproben je Partie (js/playstyle.js), FIFO, SYNCT
+  INVENTORY: 'cmc_inventory',   // { itemId: { acquiredAt, source } } — Besitz von Cosmetics (z.B. Skin 'dynamicColor')
+  WALLET: 'cmc_wallet',         // { balance, updatedAt } — In-Game-Währung (nicht auszahlbar)
+  WALLET_LOG: 'cmc_wallet_log', // [{ id, ts, amount(±), reason, meta }] — Geldverlauf (FIFO, SYNCT als Teil des Snapshots, Union-Merge nach id)
+  PROFILE: 'cmc_profile',       // { displayName, username, role, accountId, createdAt } — lokales Profil (role für Admin)
+  DATA_REV: 'cmc_data_rev',     // Zeitstempel der letzten lokalen Nutzdaten-Änderung (für Cloud-Konfliktcheck)
+  SYNCED_REV: 'cmc_synced_rev', // DATA_REV beim letzten erfolgreichen Sync (Basislinie für decideSync)
+  LAST_SYNC: 'cmc_last_sync',   // Zeitpunkt der letzten erfolgreichen Cloud-Sicherung (nur UI; NICHT nutzdaten-getrackt)
+  DEVICE_ID: 'cmc_device_id',   // stabile Geräte-Kennung (Multi-Device-Handoff); PER GERÄT, wird NIE synct/als Nutzdaten gezählt
+  COMPLETED_GAMES: 'cmc_completed_games', // [gameId,…] bereits abgerechnete Partien (Belohnungs-Idempotenz über Geräte), FIFO
+  ACTIVE_GAME_BACKUP: 'cmc_active_game_backup', // letzter durch Divergenz verdrängter Solo-Stand (nie still gelöscht)
+  PLAY_SAMPLES: 'cmc_play_samples', // [{ts,difficulty,think,burstMs,mistakes,…}] — Spielstil-Stichproben je Partie (js/playstyle.js), FIFO, SYNCT
 };
 // Schlüssel, deren Änderung als „Nutzdaten geändert" zählt (⇒ DATA_REV hochzählen).
 // Bewusst OHNE COOP_SESSION (kurzlebiges Reconnect-Token)/Backups (gerätelokale
@@ -48,10 +48,10 @@ const KEYS = {
 // erneut aus. ALLES andere, was der Nutzer ändern kann, gehört hier hinein UND in
 // collectExportData — sonst bleibt es gerätelokal (Symptom: „Theme nicht übernommen").
 const USER_DATA_KEYS = new Set([
-  'cns_settings', 'cns_active_game', 'cns_active_game_coop', 'cns_active_game_endless',
-  'cns_stats', 'cns_daily',
-  'cns_history', 'cns_achievements', 'cns_missions', 'cns_race', 'cns_inventory', 'cns_wallet', 'cns_profile',
-  'cns_completed_games', 'cns_wallet_log', 'cns_play_samples', 'cns_saves',
+  'cmc_settings', 'cmc_active_game', 'cmc_active_game_coop', 'cmc_active_game_endless',
+  'cmc_stats', 'cmc_daily',
+  'cmc_history', 'cmc_achievements', 'cmc_missions', 'cmc_race', 'cmc_inventory', 'cmc_wallet', 'cmc_profile',
+  'cmc_completed_games', 'cmc_wallet_log', 'cmc_play_samples', 'cmc_saves',
 ]);
 // Wie lange „Coop fortsetzen" nach der letzten Sicherung angeboten wird. Der
 // Raum lebt in der RTDB weiter, solange ihn niemand aktiv verlässt (Präsenz-
@@ -127,8 +127,8 @@ export function loadActiveGameBackup() { return load(KEYS.ACTIVE_GAME_BACKUP, nu
 export function saveActiveGameBackup(g) { if (g) localStorage.setItem(KEYS.ACTIVE_GAME_BACKUP, JSON.stringify(g)); else remove(KEYS.ACTIVE_GAME_BACKUP); }
 // Backup der beim Versions-Mismatch UNTERLEGENEN Seite (lokal ODER Cloud) — nie
 // still gelöscht. Rein lokal, NICHT synct (kein Nutzdaten-Key).
-export function saveConflictBackup(data) { try { localStorage.setItem('cns_conflict_backup', JSON.stringify({ ts: Date.now(), data })); } catch (_) {} }
-export function loadConflictBackup() { return load('cns_conflict_backup', null); }
+export function saveConflictBackup(data) { try { localStorage.setItem('cmc_conflict_backup', JSON.stringify({ ts: Date.now(), data })); } catch (_) {} }
+export function loadConflictBackup() { return load('cmc_conflict_backup', null); }
 
 // ─── Multi-Device: stabile Geräte-Kennung + Belohnungs-Idempotenz ─────────────
 // Stabile, zufällige Geräte-ID (einmal erzeugt, dann persistent). PER GERÄT —
@@ -699,7 +699,7 @@ export function collectExportData(type = 'manual') {
   };
 }
 export async function exportToFile(type = 'manual') {
-  const filename = `${type}-coop-number-sums-${buildTimestamp()}.json`;
+  const filename = `${type}-coop-math-cross-${buildTimestamp()}.json`;
   const payload = JSON.stringify(collectExportData(type), null, 2);
   const blob = new Blob([payload], { type: 'application/json' });
   if (navigator.canShare) {

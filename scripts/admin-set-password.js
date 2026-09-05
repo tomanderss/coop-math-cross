@@ -26,7 +26,7 @@ const fs = require('fs');
 
 const DEFAULT_PASSWORD = '123456';
 const KEY_FILE = path.join(__dirname, '..', 'serviceAccountKey.json');
-const DB_URL = 'https://coop-number-sums-default-rtdb.europe-west1.firebasedatabase.app';
+const DB_URL = 'https://coop-math-cross-default-rtdb.europe-west1.firebasedatabase.app';
 
 function fail(msg) { console.error('✗ ' + msg); process.exit(1); }
 

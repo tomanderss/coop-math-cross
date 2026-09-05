@@ -8,7 +8,7 @@
 // Abzeichen (Achievement, in app.js).
 //
 // Hier NUR reine, DOM-/zustandsfreie Logik (unit-getestet). Persistenz in
-// storage.js (cns_missions), Wiring/Screen in app.js.
+// storage.js (cmc_missions), Wiring/Screen in app.js.
 
 // Eine Woche = 7 Tage. weekKey = fortlaufender Wochenindex (Montag-verankert:
 // 1970-01-01 war ein Donnerstag → +4 Tage verschiebt den Wochenstart auf Montag).

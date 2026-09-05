@@ -107,7 +107,7 @@ export default {
     msgMore: 'Bu kodu paylaş, böylece devam eden oyununuza daha fazla oyuncu katılabilir.',
     hint: 'Arkadaşın Co-op ▸ Katıl bölümüne girip bu kodu yazar.',
     share: 'Kodu paylaş',
-    shareText: 'Benimle Number Sums oyna! Devam eden oyunuma katıl – oda kodu: {code}',
+    shareText: 'Benimle Math Cross oyna! Devam eden oyunuma katıl – oda kodu: {code}',
     copied: 'Kod kopyalandı',
     cancel: 'Daveti geri çek',
     joined: '{name} katıldı – artık birlikte oynuyorsunuz!',
@@ -577,7 +577,7 @@ export default {
     master: {
       title: 'Grandmaster',
       tag: 'Coronation',
-      desc: 'The ultimate badge — unlocked when ALL 12 badges reach Legendary. Proof that you have mastered Number Sums.',
+      desc: 'The ultimate badge — unlocked when ALL 12 badges reach Legendary. Proof that you have mastered Math Cross.',
       progress: '{n} / {total} categories at Legendary',
       equip: 'Equip',
       equipWear: 'Wear with pride',
@@ -733,7 +733,7 @@ export default {
   },
   share: {
     button: 'Paylaş',
-    coopInvite: "Coop Number Sums'ı benimle coop modunda oyna! Kod: {code} — {url}",
+    coopInvite: "Coop Math Cross'ı benimle coop modunda oyna! Kod: {code} — {url}",
   },
   howto: {
     title: 'Nasıl oynanır',

@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  LIVES, HINTS, MAX_VAL, DIFFICULTIES, DIFF_BY_ID,
+  LIVES, HINTS, DIFFICULTIES, DIFF_BY_ID, genOptionsFor, bigNumbersAllowed,
   REGION_COLORS, COOP_COLORS, DEFAULT_SETTINGS, DEFAULT_GAME_OPTIONS,
   regionColorDist, regionChipInk, coinReward, coinMultiplier, coinBaseForIndex, COIN_BASE,
   coinStreakBonus, COIN_STREAK_STEP,
@@ -11,7 +11,6 @@ describe('config constants', () => {
   test('basic invariants', () => {
     assert.equal(LIVES, 3);
     assert.equal(HINTS, Infinity);
-    assert.equal(MAX_VAL, 9);
   });
 });
 
@@ -30,10 +29,41 @@ describe('config.DIFFICULTIES', () => {
     }
   });
 
-  test('keepRatio is a valid fraction', () => {
+  test('blankRatio is a valid fraction', () => {
     for (const d of DIFFICULTIES) {
-      assert.ok(d.keepRatio > 0 && d.keepRatio < 1);
+      assert.ok(d.blankRatio > 0 && d.blankRatio < 1);
     }
+  });
+
+  test('operator sets only grow with difficulty', () => {
+    for (let i = 1; i < DIFFICULTIES.length; i++) {
+      for (const op of DIFFICULTIES[i - 1].ops) {
+        assert.ok(DIFFICULTIES[i].ops.includes(op), `${DIFFICULTIES[i].id} verliert ${op}`);
+      }
+    }
+  });
+
+  test('equation count and number range grow with difficulty', () => {
+    for (let i = 1; i < DIFFICULTIES.length; i++) {
+      const prev = DIFFICULTIES[i - 1], cur = DIFFICULTIES[i];
+      assert.ok(cur.eqTarget > prev.eqTarget, `${cur.id}: eqTarget wächst nicht`);
+      assert.ok(cur.maxResult >= prev.maxResult);
+      assert.ok(cur.ternaryChance >= prev.ternaryChance);
+    }
+  });
+
+  test('genOptionsFor maps a difficulty onto generator options', () => {
+    const d = DIFFICULTIES[3];
+    const o = genOptionsFor(d.id);
+    assert.equal(o.rows, d.dim.r);
+    assert.equal(o.cols, d.dim.c);
+    assert.deepEqual(o.ops, d.ops);
+    assert.equal(o.maxTier, d.maxTier);
+    assert.equal(o.bigNumbers, false);
+    const big = genOptionsFor(d.id, { bigNumbers: true });
+    assert.ok(big.maxOperand > o.maxOperand && big.maxResult > o.maxResult);
+    assert.equal(big.bigNumbers, true);
+    assert.ok(bigNumbersAllowed(d.id));
   });
 
   test('DIFF_BY_ID indexes every difficulty by its id', () => {

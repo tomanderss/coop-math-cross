@@ -107,7 +107,7 @@ export default {
     msgMore: 'このコードを共有すると、進行中のゲームにさらにプレイヤーが参加できます。',
     hint: '友だちは「協力 ▸ 参加」でこのコードを入力します。',
     share: 'コードを共有',
-    shareText: '一緒にNumber Sumsで遊ぼう！進行中のゲームに参加してね – ルームコード: {code}',
+    shareText: '一緒にMath Crossで遊ぼう！進行中のゲームに参加してね – ルームコード: {code}',
     copied: 'コードをコピーしました',
     cancel: '招待を取り消す',
     joined: '{name} が参加しました – ここからは一緒にプレイ！',
@@ -577,7 +577,7 @@ export default {
     master: {
       title: 'Grandmaster',
       tag: 'Coronation',
-      desc: 'The ultimate badge — unlocked when ALL 12 badges reach Legendary. Proof that you have mastered Number Sums.',
+      desc: 'The ultimate badge — unlocked when ALL 12 badges reach Legendary. Proof that you have mastered Math Cross.',
       progress: '{n} / {total} categories at Legendary',
       equip: 'Equip',
       equipWear: 'Wear with pride',
@@ -733,7 +733,7 @@ export default {
   },
   share: {
     button: '共有',
-    coopInvite: 'Coop Number Sumsを一緒にCoopモードで遊ぼう！コード: {code} — {url}',
+    coopInvite: 'Coop Math Crossを一緒にCoopモードで遊ぼう！コード: {code} — {url}',
   },
   howto: {
     title: '遊び方',

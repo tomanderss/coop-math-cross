@@ -5,6 +5,17 @@
 // die RTDB-Security-Rules + Anonymous Auth, nicht über Geheimhaltung des Configs.
 import { log } from './debuglog.js';
 
+// Coop Math Cross teilt sich das Firebase-Projekt mit der Schwester-App: die
+// ANMELDUNG (E-Mail/Passwort, uid) ist dieselbe, die DATEN sind es nicht. Alle
+// Lese-/Schreibzugriffe laufen deshalb unter diesem Wurzelknoten — die beiden
+// Apps sehen einander nie. Ausgenommen sind nur die `.info/*`-Metaknoten von
+// Firebase selbst (Verbindungsstatus/Serverzeit), die es nur an der Wurzel gibt.
+export const DB_ROOT = 'mc';
+export function scopedPath(path) {
+  const p = String(path || '');
+  return p.startsWith('.info') ? p : `${DB_ROOT}/${p}`;
+}
+
 const firebaseConfig = {
   apiKey: 'AIzaSyAVpCzaRbJu6C1nSNRQCjD3MLwf5wijPbY',
   authDomain: 'coop-number-sums.firebaseapp.com',
@@ -29,6 +40,9 @@ export function ensureFirebase() {
         const app = initializeApp(firebaseConfig);
         const auth = authMod.getAuth(app);
         const db = dbModule.getDatabase(app);
+        // `ref` wird gekapselt, damit KEIN Aufrufer den Präfix vergessen kann.
+        const rawRef = dbModule.ref;
+        const ref = (database, path) => (path === undefined ? rawRef(database) : rawRef(database, scopedPath(path)));
         // Beim Start IMMER eine Session sicherstellen: ist bereits ein (echter)
         // Account eingeloggt — Auth-Token wird vom SDK in IndexedDB/localStorage
         // gehalten —, übernimmt dessen uid; sonst anonym anmelden. So nutzen coop.js
@@ -50,7 +64,7 @@ export function ensureFirebase() {
         log('firebase', auth.currentUser && !auth.currentUser.isAnonymous ? 'Account-Session aktiv' : 'Anonyme Anmeldung erfolgreich', { uid });
         // auth + authMod zusätzlich exportieren (für account.js); dbModule-Spread
         // bleibt unverändert, damit coop.js { db, uid, ...dbModule } weiter passt.
-        return { db, uid, auth, authMod, ...dbModule };
+        return { db, uid, auth, authMod, ...dbModule, ref };
       } catch (e) {
         // Bei einem Fehlschlag (SDK-Laden oder Anmeldung) den Cache verwerfen,
         // damit ein erneuter Versuch (z.B. nächster Host/Join-Klick) nicht für

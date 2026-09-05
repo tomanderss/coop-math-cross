@@ -1,4 +1,4 @@
-const CACHE = 'coop-number-sums-v1.212';
+const CACHE = 'coop-math-cross-v1.0';
 const ASSETS = [
   './index.html',
   './privacy.html',
@@ -6,9 +6,8 @@ const ASSETS = [
   './css/styles.css',
   './js/vue.esm-browser.prod.js',
   './js/config.js',
+  './js/model.js',
   './js/solver.js',
-  './js/duelbot.js',
-  './js/playstyle.js',
   './js/generator.js',
   './js/genworker.js',
   './js/storage.js',
@@ -23,8 +22,8 @@ const ASSETS = [
   './js/missions.js',
   './js/prestige.js',
   './js/skins.js',
-  './js/training.js',
   './js/hinttutor.js',
+  './js/training.js',
   './js/shopitems.js',
   './js/wineffects.js',
   './js/winshapes.js',

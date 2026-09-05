@@ -58,11 +58,11 @@ test.describe('board render isolation', () => {
   test('debounced settings persist still lands in localStorage', async ({ page }) => {
     await gotoApp(page);
     await startNewGame(page);
-    const before = await page.evaluate(() => JSON.parse(localStorage.getItem('cns_settings') || '{}').confirmTool || 'pen');
+    const before = await page.evaluate(() => JSON.parse(localStorage.getItem('cmc_settings') || '{}').confirmTool || 'pen');
     await page.evaluate(() => window.__cns.toggleTool());
     // Entprellt (250 ms) — nach kurzer Wartezeit MUSS der Wert persistiert sein.
     await page.waitForTimeout(600);
-    const after = await page.evaluate(() => JSON.parse(localStorage.getItem('cns_settings') || '{}').confirmTool);
+    const after = await page.evaluate(() => JSON.parse(localStorage.getItem('cmc_settings') || '{}').confirmTool);
     expect(after).not.toBe(before);
   });
 });

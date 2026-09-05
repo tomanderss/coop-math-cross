@@ -1,4 +1,4 @@
-# Coop Number Sums
+# Coop Math Cross
 
 Ein Number-Sums-Logikrätsel als Progressive Web App (PWA) — offline spielbar, mit
 Dunkelmodus, mehreren Feldgrößen und Schwierigkeitsgraden. Aufgebaut wie die
@@ -19,16 +19,16 @@ im iPhone-Safari öffnen → *Teilen → Zum Home-Bildschirm*.
 
 ## Deployment via GitHub Pages
 Einmalige Einrichtung:
-1. Auf GitHub ein neues, leeres Repo `coop-number-sums` anlegen.
+1. Auf GitHub ein neues, leeres Repo `coop-math-cross` anlegen.
 2. Im Projektordner:
    ```
-   git remote add origin https://github.com/<dein-user>/coop-number-sums.git
+   git remote add origin https://github.com/<dein-user>/coop-math-cross.git
    git add -A
    git commit -m "Initial"
    git push -u origin master
    ```
 3. Auf GitHub: **Settings → Pages → Source: `master` / `(root)`** → Speichern.
-   Die App liegt danach unter `https://<dein-user>.github.io/coop-number-sums/`.
+   Die App liegt danach unter `https://<dein-user>.github.io/coop-math-cross/`.
 
 Jeder weitere Release: Doppelklick auf **`build.bat`** — generiert Version &
 Changelog, bumpt den Service-Worker-Cache, committet und pusht. GitHub Pages

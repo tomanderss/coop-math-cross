@@ -1,7 +1,7 @@
 @echo off
 echo.
 echo  ===================================================
-echo   Coop Number Sums - Build ^& Deploy (GitHub Pages)
+echo   Coop Math Cross - Build ^& Deploy (GitHub Pages)
 echo  ===================================================
 echo.
 

@@ -121,9 +121,9 @@ test.describe('home screen', () => {
     // rejoin token with room code/role) -- without it the button used to point
     // at nothing, so refreshResume() now hides it; fake the session too.
     await page.evaluate(() => {
-      const solo = JSON.parse(localStorage.getItem('cns_active_game'));
-      localStorage.setItem('cns_active_game_coop', JSON.stringify({ ...solo, ts: Date.now() }));
-      localStorage.setItem('cns_coop_session', JSON.stringify({ code: '123456', role: 'host', name: 'Tester', color: '#5b8cff', hostId: 'u1', lastEventKey: '-Otest', ts: Date.now() }));
+      const solo = JSON.parse(localStorage.getItem('cmc_active_game'));
+      localStorage.setItem('cmc_active_game_coop', JSON.stringify({ ...solo, ts: Date.now() }));
+      localStorage.setItem('cmc_coop_session', JSON.stringify({ code: '123456', role: 'host', name: 'Tester', color: '#5b8cff', hostId: 'u1', lastEventKey: '-Otest', ts: Date.now() }));
     });
     await page.reload();
     await page.waitForSelector('.screen.home');

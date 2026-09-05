@@ -86,7 +86,7 @@ test.describe('coop endless climb', () => {
     await gotoApp(page);
     // Einen eigenen Solo-Endlos-Stand hinterlegen (wie nach „Endlos fortsetzen").
     await page.evaluate(() => {
-      localStorage.setItem('cns_active_game_endless', JSON.stringify({
+      localStorage.setItem('cmc_active_game_endless', JSON.stringify({
         ts: Date.now(), pending: true,
         endless: { level: 5, lives: 2, hints: 3, score: 4, bigNumbers: false, accumMs: 123456, coins: 400 },
       }));
@@ -102,7 +102,7 @@ test.describe('coop endless climb', () => {
     await page.locator('.pause-overlay').getByText('Zum Menü').click();
     await expect(page.locator('.screen.home')).toBeVisible();
 
-    const slot = await page.evaluate(() => JSON.parse(localStorage.getItem('cns_active_game_endless') || 'null'));
+    const slot = await page.evaluate(() => JSON.parse(localStorage.getItem('cmc_active_game_endless') || 'null'));
     expect(slot, 'der eigene Solo-Endlos-Stand muss den Coop-Abbruch überleben').not.toBeNull();
     expect(slot.endless.level).toBe(5);
   });

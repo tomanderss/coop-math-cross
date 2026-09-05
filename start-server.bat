@@ -1,7 +1,7 @@
 @echo off
 echo.
 echo  ===================================================
-echo   Coop Number Sums - Lokaler Server
+echo   Coop Math Cross - Lokaler Server
 echo  ===================================================
 echo.
 

@@ -6,15 +6,15 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Coop Number Sums" />
+  <meta name="apple-mobile-web-app-title" content="Coop Math Cross" />
   <meta name="theme-color" content="#0b1020" />
-  <meta name="description" content="Coop Number Sums — Logikrätsel solo oder im Coop-Modus" />
+  <meta name="description" content="Coop Math Cross — Logikrätsel solo oder im Coop-Modus" />
 
   <link rel="manifest" href="./manifest.json" />
   <link rel="apple-touch-icon" href="./icons/icon-192.png" />
   <link rel="stylesheet" href="./css/styles.css" />
 
-  <title>Coop Number Sums</title>
+  <title>Coop Math Cross</title>
   <style>
     #splash {
       position: fixed; inset: 0; background: #0b1020;
@@ -37,7 +37,7 @@
     <div id="splash">
       <div id="splash-inner">
         <img id="splash-logo" src="./icons/icon-192.png" alt="" />
-        <div id="splash-title">Coop Number Sums</div>
+        <div id="splash-title">Coop Math Cross</div>
         <div id="splash-version"></div>
       </div>
     </div>
@@ -51,7 +51,7 @@
     // enthält.
     function cnsLogWindowError(message, extra) {
       try {
-        var key = 'cns_debuglog';
+        var key = 'cmc_debuglog';
         var entries = JSON.parse(localStorage.getItem(key)) || [];
         entries.push({ ts: Date.now(), category: 'window', message: message, extra: extra });
         while (entries.length > 400) entries.shift();

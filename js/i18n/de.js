@@ -107,7 +107,7 @@ export default {
     msgMore: 'Teile diesen Code, damit weitere Mitspieler eurer laufenden Partie beitreten.',
     hint: 'Dein Mitspieler tippt auf Coop ▸ Beitreten und gibt diesen Code ein.',
     share: 'Code teilen',
-    shareText: 'Spiel mit mir Number Sums! Tritt meinem laufenden Spiel bei – Raumcode: {code}',
+    shareText: 'Spiel mit mir Math Cross! Tritt meinem laufenden Spiel bei – Raumcode: {code}',
     copied: 'Code kopiert',
     cancel: 'Einladung zurückziehen',
     joined: '{name} ist beigetreten – ihr spielt jetzt zusammen!',
@@ -686,7 +686,7 @@ export default {
     master: {
       title: 'Großmeister',
       tag: 'Krönung',
-      desc: 'Das ultimative Abzeichen — freigeschaltet, wenn ALLE 12 Abzeichen auf Legendär stehen. Der Beweis, dass du Number Sums gemeistert hast.',
+      desc: 'Das ultimative Abzeichen — freigeschaltet, wenn ALLE 12 Abzeichen auf Legendär stehen. Der Beweis, dass du Math Cross gemeistert hast.',
       progress: '{n} / {total} Kategorien auf Legendär',
       equip: 'Ausrüsten',
       equipWear: 'Mit Stolz tragen',
@@ -842,7 +842,7 @@ export default {
   },
   share: {
     button: 'Teilen',
-    coopInvite: 'Spiel mit mir Coop Number Sums im Coop-Modus! Code: {code} — {url}',
+    coopInvite: 'Spiel mit mir Coop Math Cross im Coop-Modus! Code: {code} — {url}',
   },
   howto: {
     title: 'So wird gespielt',

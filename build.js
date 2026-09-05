@@ -61,7 +61,7 @@ writeFileSync(changesFile, '', 'utf8');
 // ── Service-Worker-Cache aktualisieren ───────────────────────────────────────
 const swPath = join(__dir, 'sw.js');
 if (existsSync(swPath)) {
-  const sw = readFileSync(swPath, 'utf8').replace(/coop-number-sums-v[\d.]+/, `coop-number-sums-v${VERSION}`);
+  const sw = readFileSync(swPath, 'utf8').replace(/coop-math-cross-v[\d.]+/, `coop-math-cross-v${VERSION}`);
   writeFileSync(swPath, sw, 'utf8');
 }
 

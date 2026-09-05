@@ -122,18 +122,18 @@ describe('storage.coopSession', () => {
 
   test('a session older than the 12-hour TTL expires and is removed on read', () => {
     saveCoopSession({ code: '123456', role: 'host' });
-    const raw = JSON.parse(globalThis.localStorage.getItem('cns_coop_session'));
+    const raw = JSON.parse(globalThis.localStorage.getItem('cmc_coop_session'));
     raw.ts = Date.now() - 13 * 60 * 60 * 1000; // 13 hours ago, past the 12-hour TTL
-    globalThis.localStorage.setItem('cns_coop_session', JSON.stringify(raw));
+    globalThis.localStorage.setItem('cmc_coop_session', JSON.stringify(raw));
     assert.equal(loadCoopSession(), null);
-    assert.equal(globalThis.localStorage.getItem('cns_coop_session'), null); // self-cleaned up
+    assert.equal(globalThis.localStorage.getItem('cmc_coop_session'), null); // self-cleaned up
   });
 
   test('a session just inside the 12-hour TTL is still valid (e.g. hours after backgrounding)', () => {
     saveCoopSession({ code: '123456', role: 'host' });
-    const raw = JSON.parse(globalThis.localStorage.getItem('cns_coop_session'));
+    const raw = JSON.parse(globalThis.localStorage.getItem('cmc_coop_session'));
     raw.ts = Date.now() - 11 * 60 * 60 * 1000; // 11 hours ago, still inside the TTL
-    globalThis.localStorage.setItem('cns_coop_session', JSON.stringify(raw));
+    globalThis.localStorage.setItem('cmc_coop_session', JSON.stringify(raw));
     assert.ok(loadCoopSession());
   });
 
@@ -327,7 +327,7 @@ describe('storage.recordStreakResult', () => {
   // starten — die Serie „verlängerte sich nie mehr". Jetzt heilt loadRawStreak
   // das Datum auf GESTERN: die Serie überlebt und das heutige Spiel zählt +1.
   test('a poisoned German-format date does NOT break the streak; today continues +1', () => {
-    globalThis.localStorage.setItem('cns_daily', JSON.stringify({
+    globalThis.localStorage.setItem('cmc_daily', JSON.stringify({
       lastCompletedDate: '24.07.2026', currentStreak: 30, bestStreak: 30, totalCompleted: 30, lossNoticeShown: false,
     }));
     const s = loadStreak();
@@ -341,7 +341,7 @@ describe('storage.recordStreakResult', () => {
   });
 
   test('a future lastCompletedDate heals the same way (streak survives, today counts)', () => {
-    globalThis.localStorage.setItem('cns_daily', JSON.stringify({
+    globalThis.localStorage.setItem('cmc_daily', JSON.stringify({
       lastCompletedDate: '2999-01-01', currentStreak: 27, bestStreak: 27, totalCompleted: 27, lossNoticeShown: false,
     }));
     const s = loadStreak();
@@ -448,7 +448,7 @@ describe('storage.race', () => {
   });
 
   test('Alt-Staende ohne ai-Kategorie werden migriert', () => {
-    globalThis.localStorage.setItem('cns_race', JSON.stringify({ '1v1': { racesPlayed: 5, racesWon: 3, racesLost: 2, fastestWinMs: 9000 } }));
+    globalThis.localStorage.setItem('cmc_race', JSON.stringify({ '1v1': { racesPlayed: 5, racesWon: 3, racesLost: 2, fastestWinMs: 9000 } }));
     const r = loadRace();
     assert.equal(r['1v1'].racesWon, 3);
     assert.deepEqual(r['ai'], EMPTY_MODE);
