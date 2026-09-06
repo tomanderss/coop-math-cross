@@ -1,2 +1,0 @@
-Neues App-Icon jetzt auch als Symbol der installierten App auf iOS und Android
-Home-Bildschirm-Icon auf iOS zeigt keine schwarzen Ecken mehr
