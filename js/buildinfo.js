@@ -1,8 +1,15 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.5';
-export const BUILD_HASH = 'e0fc039';
+export const BUILD      = '1.6';
+export const BUILD_HASH = 'f05231a';
 
 export const CHANGELOG = [
+  {
+    "version": "1.6",
+    "date": "06.09.2026",
+    "changes": [
+      "Neues App-Icon"
+    ]
+  },
   {
     "version": "1.5",
     "date": "05.09.2026",
