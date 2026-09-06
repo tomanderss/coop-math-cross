@@ -1,8 +1,16 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.6';
-export const BUILD_HASH = 'f05231a';
+export const BUILD      = '1.7';
+export const BUILD_HASH = '7c9b35e';
 
 export const CHANGELOG = [
+  {
+    "version": "1.7",
+    "date": "06.09.2026",
+    "changes": [
+      "Neues App-Icon jetzt auch als Symbol der installierten App auf iOS und Android",
+      "Home-Bildschirm-Icon auf iOS zeigt keine schwarzen Ecken mehr"
+    ]
+  },
   {
     "version": "1.6",
     "date": "06.09.2026",
