@@ -50,6 +50,11 @@ const ASSETS = [
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-1024.png',
+  './icons/icon-192-maskable.png',
+  './icons/icon-512-maskable.png',
+  './icons/favicon-16.png',
+  './icons/favicon-32.png',
+  './icons/favicon-48.png',
 ];
 // Der App-Shell-Einstieg. JEDE Navigations-Anfrage (Home-Icon-Start, Reload,
 // start_url) wird offline aus diesem Cache-Eintrag bedient — unabhängig davon,
