@@ -1,1 +1,2 @@
 Auch das Logo im Hauptmenü zeigt jetzt das neue Icon
+Ein schnelles Wegziehen einer Zahl startet den Zug wieder zuverlässig

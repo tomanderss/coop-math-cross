@@ -2326,6 +2326,12 @@ function onDragStart(e, v, from, tileId) {
   dragMoved = false;
   dragArmed = true;
   state.drag = { v, from: dragSrc.from };
+  // Zeiger SOFORT einfangen, nicht erst beim Armieren: sonst gehen die
+  // Bewegungen an das Element unter dem Zeiger, und wer den Stein mit einer
+  // schnellen Bewegung wegzieht, verlaesst den Stein schon mit dem ERSTEN
+  // Ereignis — der Zug begann dann nie. (Der Vorrat scrollt nicht mehr, ein
+  // frueher Fang nimmt dem Browser also auch keine Geste weg.)
+  try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
 }
 function onDragMove(e) {
   if (!dragSrc) return;
@@ -2335,9 +2341,6 @@ function onDragMove(e) {
     dragArmed = false;
     dragMoved = true;
     ensureGhost(dragSrc.v);
-    // Ab hier gehoert der Zeiger uns — sonst verliert das Element die
-    // Bewegungen, sobald der Finger den Stein verlaesst.
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
   }
   moveGhost(e);
   highlightUnder(e);

@@ -153,45 +153,76 @@ test.describe('Tipp-Tutor', () => {
 // ist — genau das prüft der Test: eine um den Faktor GETEILTE Zeigerbewegung
 // muss dieselbe Zelle treffen wie die volle Bewegung ohne Verstärkung.
 test.describe('Reichweite beim Ziehen', () => {
-  test('bei Faktor 3 legt ein Drittel der Bewegung den Stein aufs Ziel', async ({ page }) => {
+  test('bei Faktor 3 folgt der Stein der Bewegung dreifach', async ({ page }) => {
     await gotoApp(page);
     await startNewGame(page, 'mittel');
-    await page.evaluate(() => window.__cns.setSetting('dragScale', 3));
     const lift = await page.evaluate(() => window.__cns.dragLift);
-    // BEWUSST die vom Vorrat am weitesten entfernte Lücke: darum geht es hier —
-    // das andere Ende des Bretts mit einer kurzen Bewegung erreichen. Eine nahe
-    // Lücke bräuchte bei Faktor 3 einen Zeigerweg unter der Zug-Schwelle, der
-    // Zug würde also gar nicht erst beginnen.
-    const target = await page.evaluate(() => {
-      const s = window.__cns.state, p = s.puzzle;
-      const tray = document.querySelector('.tray').getBoundingClientRect();
-      let best = null;
-      for (let r = 0; r < p.rows; r++) for (let c = 0; c < p.cols; c++) {
-        const sl = p.slots[r][c];
-        if (!sl || sl.given || s.placed[r][c] != null) continue;
-        const el = document.querySelector(`.board .cell[data-r="${r}"][data-c="${c}"]`);
-        if (!el) continue;
-        const b = el.getBoundingClientRect();
-        const d = Math.hypot(b.x - tray.x, b.y - tray.y);
-        if (!best || d > best.d) best = { r, c, v: sl.v, d };
-      }
-      return best;
-    });
-    const tileIndex = await page.evaluate((v) => window.__cns.state.tray.findIndex((t) => !t.used && t.v === v), target.v);
-    const tile = page.locator('.tray .tile').nth(tileIndex);
-    const cell = page.locator(`.board .cell[data-r="${target.r}"][data-c="${target.c}"]`);
+    const tile = page.locator('.tray .tile').first();
+
+    // Die eigentliche Zusage ist eine Rechnung, kein Pixel-Treffer: der Stein
+    // steht bei Faktor f auf Startpunkt + f × Fingerweg (abzüglich Lift). Genau
+    // das wird hier gemessen — an der TATSÄCHLICHEN Position des Ziehschattens.
+    // (Ein Test, der stattdessen auf eine Zelle zielt, hängt an der Brett-
+    // geometrie: misst der ResizeObserver das Brett unter Last erst nach dem
+    // Auslesen der Koordinaten neu, verschiebt sich das Ziel und der Test fällt
+    // ohne echten Fehler um — genau so flackerte er in der CI.)
+    // Der Startpunkt wird IMMER unmittelbar vor der Geste frisch gemessen: misst
+    // der ResizeObserver das Brett unter Last nach, wandert auch der Vorrat, und
+    // ein vorher gelesener Kasten zeigt ins Leere — der Zug beginnt dann gar
+    // nicht (genau das ließ den Test in der CI umfallen).
+    const ghostAfterMove = async (f, dx, dy) => {
+      await page.evaluate((v) => window.__cns.setSetting('dragScale', v), f);
+      await tile.scrollIntoViewIfNeeded();
+      const a = await tile.boundingBox();
+      const sx = a.x + a.width / 2, sy = a.y + a.height / 2;
+      await page.mouse.move(sx, sy);
+      await page.mouse.down();
+      await page.mouse.move(sx + dx, sy + dy, { steps: 6 });
+      const pos = await page.evaluate(() => {
+        const g = document.querySelector('.drag-ghost');
+        if (!g || g.style.display === 'none') return null;
+        const m = g.style.transform.match(/translate3d\((-?[\d.]+)px,\s*(-?[\d.]+)px/);
+        return { x: +m[1], y: +m[2] };
+      });
+      await page.mouse.up();
+      expect(pos, 'der Ziehschatten muss sichtbar sein').not.toBeNull();
+      return { ...pos, sx, sy };
+    };
+
+    // Delta bewusst nach RECHTS oben: der erste Stein liegt links, dreifach nach
+    // links liefe der Stein aus dem Fenster und würde geklemmt (dropPoint hält
+    // ihn im sichtbaren Bereich) — dann misst der Test die Klemme, nicht die
+    // Verstärkung.
+    const dx = 40, dy = -120;
+    const p3 = await ghostAfterMove(3, dx, dy);
+    expect(Math.abs(p3.x - (p3.sx + dx * 3))).toBeLessThanOrEqual(1);
+    expect(Math.abs(p3.y - (p3.sy + dy * 3 - lift))).toBeLessThanOrEqual(1);
+
+    // Zum Vergleich: bei 1 klebt der Stein (bis auf den Lift) am Finger.
+    const p1 = await ghostAfterMove(1, dx, dy);
+    expect(Math.abs(p1.x - (p1.sx + dx))).toBeLessThanOrEqual(1);
+    expect(Math.abs(p1.y - (p1.sy + dy - lift))).toBeLessThanOrEqual(1);
+  });
+
+  test('auch eine schnelle Bewegung startet den Zug', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page, 'mittel');
+    const tile = page.locator('.tray .tile').first();
     await tile.scrollIntoViewIfNeeded();
     const a = await tile.boundingBox();
-    const b = await cell.boundingBox();
     const sx = a.x + a.width / 2, sy = a.y + a.height / 2;
-    // Zielpunkt des STEINS (inkl. Lift) …
-    const gx = b.x + b.width / 2, gy = b.y + b.height / 2 + lift;
-    // … und der Zeigerweg dorthin ist bei Faktor 3 nur ein Drittel so lang.
     await page.mouse.move(sx, sy);
     await page.mouse.down();
-    await page.mouse.move(sx + (gx - sx) / 3, sy + (gy - sy) / 3, { steps: 8 });
+    // EIN Sprung, weit über den Stein hinaus — so wischt man wirklich. Ohne den
+    // sofortigen Zeiger-Fang in onDragStart gingen die Bewegungen an das Element
+    // UNTER dem Zeiger, der Stein sah sie nie und der Zug begann gar nicht.
+    await page.mouse.move(sx, sy - 200);
+    const sichtbar = await page.evaluate(() => {
+      const g = document.querySelector('.drag-ghost');
+      return !!g && g.style.display === 'block';
+    });
     await page.mouse.up();
-    expect(await page.evaluate(({ r, c }) => window.__cns.state.placed[r][c], target)).toBe(target.v);
+    expect(sichtbar).toBe(true);
   });
 
   test('Standard ist 1 — die Bewegung wird nicht verstärkt', async ({ page }) => {
