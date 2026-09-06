@@ -1,8 +1,16 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.7';
-export const BUILD_HASH = '7c9b35e';
+export const BUILD      = '1.8';
+export const BUILD_HASH = 'c1bc117';
 
 export const CHANGELOG = [
+  {
+    "version": "1.8",
+    "date": "06.09.2026",
+    "changes": [
+      "Auch das Logo im Hauptmenü zeigt jetzt das neue Icon",
+      "Ein schnelles Wegziehen einer Zahl startet den Zug wieder zuverlässig"
+    ]
+  },
   {
     "version": "1.7",
     "date": "06.09.2026",
