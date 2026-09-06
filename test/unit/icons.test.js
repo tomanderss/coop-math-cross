@@ -45,3 +45,21 @@ describe('icons', () => {
     }
   });
 });
+
+// ── Nur EINE Quelle fürs Markenbild ──────────────────────────────────────────
+// Das Logo auf dem Home-Screen lag lange als fest einkodiertes Base64-Bild in
+// app.js. Beim Icon-Wechsel blieb dort das ALTE Motiv stehen, während überall
+// sonst schon das neue lag (gemeldet). Es muss deshalb auf die Icon-DATEI
+// zeigen — und die muss es geben.
+test('das Home-Logo verweist auf die Icon-Datei statt auf ein eingebettetes Bild', async () => {
+  const { readFileSync, existsSync } = await import('node:fs');
+  const src = readFileSync(new URL('../../js/app.js', import.meta.url), 'utf8');
+  const m = src.match(/const BRAND_LOGO = '([^']+)';/);
+  assert.ok(m, 'BRAND_LOGO muss in app.js definiert sein');
+  assert.ok(!m[1].startsWith('data:'), 'BRAND_LOGO darf kein eingebettetes Bild sein');
+  const file = new URL('../../' + m[1].replace(/^\.\//, ''), import.meta.url);
+  assert.ok(existsSync(file), `Datei aus BRAND_LOGO fehlt: ${m[1]}`);
+  // …und sie muss im Service-Worker vorgecacht sein, sonst fehlt sie offline.
+  const sw = readFileSync(new URL('../../sw.js', import.meta.url), 'utf8');
+  assert.ok(sw.includes(m[1]), `${m[1]} fehlt in der ASSETS-Liste von sw.js`);
+});
