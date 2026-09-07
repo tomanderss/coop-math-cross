@@ -1,8 +1,17 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.8';
-export const BUILD_HASH = 'c1bc117';
+export const BUILD      = '1.9';
+export const BUILD_HASH = '0884d23';
 
 export const CHANGELOG = [
+  {
+    "version": "1.9",
+    "date": "07.09.2026",
+    "changes": [
+      "Hinweis-Funktion entfernt — die Knopfleiste unter dem Vorrat fällt damit ganz weg",
+      "Sortier-Knopf entfernt: der Vorrat ist jetzt immer aufsteigend sortiert und rückt von selbst auf",
+      "Der frei gewordene Platz gehört dem Spielfeld"
+    ]
+  },
   {
     "version": "1.8",
     "date": "06.09.2026",
