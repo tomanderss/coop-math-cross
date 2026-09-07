@@ -123,30 +123,6 @@ test.describe('Rechenkreuz: Steine legen', () => {
   });
 });
 
-// Tipp-Tutor: erklärt Schritt für Schritt mit den KONKRETEN Zahlen des Bretts,
-// warum der nächste Zug zwingend ist; der letzte Schritt führt ihn aus.
-test.describe('Tipp-Tutor', () => {
-  test('erklärt den nächsten Zug in Schritten und legt am Ende den Stein', async ({ page }) => {
-    await gotoApp(page);
-    await startNewGame(page, 'mittel');
-    await page.locator('.toolbar .round-btn').last().click();
-    // Einmalige Bestzeit-Warnung bestätigen.
-    await page.locator('.modal .btn-danger').click();
-    await expect(page.locator('.tutor-card')).toBeVisible();
-    const steps = await page.evaluate(() => window.__cns.state.hintTutor.steps.length);
-    expect(steps).toBeGreaterThan(1);
-    // Jeder Schritt zeigt echten Text und hebt Felder hervor.
-    await expect(page.locator('.tutor-card .hint-text > span')).not.toBeEmpty();
-    expect(await page.locator('.board .cell.hint-group').count()).toBeGreaterThan(0);
-    const target = await page.evaluate(() => window.__cns.state.hintTutor.target);
-    // Jeder Klick bestätigt einen Schritt; der letzte führt den Zug aus.
-    for (let i = 0; i < steps; i++) await page.locator('.tutor-card .btn-primary').click();
-    await expect(page.locator('.tutor-card')).toHaveCount(0);
-    expect(await page.evaluate(({ r, c }) => window.__cns.state.placed[r][c], target)).not.toBeNull();
-    expect(await page.evaluate(() => window.__cns.state.hintsUsed)).toBe(1);
-  });
-});
-
 // Reichweite beim Ziehen (settings.dragScale): der Stein folgt der Bewegung
 // verstärkt, damit man den oberen Brettrand erreicht, ohne den Finger über den
 // ganzen Bildschirm zu ziehen. Abgelegt wird IMMER dort, wo der Stein zu sehen

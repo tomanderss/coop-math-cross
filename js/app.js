@@ -5,7 +5,7 @@ import { DIFFICULTIES, DIFF_BY_ID, REGION_COLORS, COOP_COLORS, COOP_COLORS_CB, D
 import { generatePuzzle } from './generator.js';
 import { validPuzzleShape as puzzleShapeOk } from './model.js';
 import {
-  buildDisplay, buildTray, sortTray as sortTrayList, takeFromTray, returnToTray, trayLeft,
+  buildDisplay, buildTray, takeFromTray, returnToTray, trayLeft,
   emptyPlaced, currentValues, equationsAt, placementBreaksEquation, solvedEquationSet,
   isBoardSolved, progressOf, solutionAt, normalizePuzzle, reconcileTray, OP_SYMBOL,
 } from './board.js';
@@ -14,7 +14,6 @@ import * as Coop from './coop.js';
 import { log, exportLogToFile } from './debuglog.js';
 import { ACHIEVEMENTS, evaluate as evaluateAchievements } from './achievements.js';
 import { nextTrainingStep } from './training.js';
-import { buildHintTutorial } from './hinttutor.js';
 import * as Music from './music.js';
 import {
   loadSettings, saveSettings, loadActiveGame, saveActiveGame, loadActiveGameCoop, saveActiveGameCoop, loadActiveGameEndless, saveActiveGameEndless, snapshotSolved,
@@ -98,7 +97,6 @@ const state = reactive({
   display: null,             // Anzeige-Raster (2*rows-1 × 2*cols-1) aus board.buildDisplay
   drag: null,                // laufendes Ziehen { v, from:{r,c}|null, tileId, x, y } oder null
   pick: null,                // per Antippen gewählter Stein { v, from:{r,c}|null, tileId } oder null
-  hintCells: {},             // "r*1000+c" -> true: kurzer Leucht-Puls für per Hinweis gelegte Felder
   lives: 0, maxLives: 0,
   hintsLeft: 0,
   hintsUsed: 0,
@@ -115,13 +113,10 @@ const state = reactive({
   versionMismatch: null,     // { local:{coins,wins,ts}, cloud:{coins,wins,ts}, busy } — offener Versions-Mismatch-Dialog (offline vs. Cloud), sonst null.
   newHighscore: false,        // true, wenn beim letzten Sieg eine neue Bestzeit erzielt wurde
   wouldHaveBeenBest: false,   // true, wenn die Zeit ohne Fehler/Hinweise eine neue Bestzeit gewesen wäre
-  hintWarnShown: false,       // true, sobald die einmalige Hinweis-Warnung dieser Partie bestätigt wurde
-  hintTutor: null,            // aktiver Tipp-Tutor { steps:[…], i, target:{r,c,want} } — s. js/hinttutor.js
                               // — highlightet die Gruppe + zeigt eine Leitfrage, OHNE die Zelle/Aktion zu verraten;
                               // erst ein zweiter Tipp auf den Hinweis-Knopf löst die Zelle wirklich auf.
   bestTimeNotice: null,       // Text der kurzen Top-Banner-Meldung "Bestzeit nicht mehr möglich"
   tool: 'pen',               // pen | eraser
-  desktopKeyCapture: false,  // Einstellungen ▸ Desktop: wartet gerade auf einen Tastendruck zum Belegen?
   startTime: 0,
   elapsed: 0,
   history: [],               // Undo-Stack
@@ -1221,6 +1216,7 @@ function buildBoardState(puzzle, saved) {
   const fixed = reconcileTray(tray, placedValues, puzzle.tray);
   if (fixed.length !== tray.length) log('game', 'Vorrat mit dem Brett abgeglichen', { vorher: tray.length, nachher: fixed.length });
   state.tray = fixed;
+  sortTrayAsc();
   state.drag = null;
   state.pick = null;
 }
@@ -1877,7 +1873,6 @@ function loadPuzzleIntoState(puzzle, saved) {
   state.sessionReadonly = false;
   state.puzzle = puzzle;
   buildBoardState(puzzle, saved);
-  state.hintCells = {};
   // Raster IMMER dicht normalisieren (nie roh uebernehmen): ein per Coop-INIT
   // empfangenes markedBy kommt aus Firebase RTDB und ist dort loechrig, weil RTDB
   // null-Werte nicht speichert — leere Zeilen fehlen ganz, Luecken machen aus dem
@@ -1913,8 +1908,6 @@ function loadPuzzleIntoState(puzzle, saved) {
   state.newHighscore = false;
   state.wouldHaveBeenBest = false;
   state.perfectWin = false;
-  state.hintWarnShown = false;
-  state.hintTutor = null;
   state.elapsed = saved?.elapsed ?? 0;
   // Bei Coop-INIT übernimmt der Gast den exakten Host-Startzeitpunkt, damit beide
   // Seiten dieselbe Zeit anzeigen (sonst Drift durch Verbindungsaufbau-Latenz).
@@ -2123,7 +2116,6 @@ function cancelPick() { state.pick = null; }
 function applyChanges(changes, { user = true, fromId = null, hint = false } = {}) {
   const p = state.puzzle;
   if (!p) return false;
-  if (user) state.hintTutor = null; // eigene Aktion verwirft den offenen Tipp-Tutor
 
   // 1. Probelage bauen und prüfen, ob dadurch eine VOLLE Rechnung falsch wird.
   const trial = state.placed.map(row => row.slice());
@@ -2169,6 +2161,7 @@ function applyChanges(changes, { user = true, fromId = null, hint = false } = {}
   }
   for (const v of freed) returnToTray(state.tray, v);
   for (const v of taken) takeFromTray(state.tray, v);
+  sortTrayAsc();
   if (!undoSteps.length) return true;
   state.history = [undoSteps];    // nur der letzte Zug ist rückgängig machbar
 
@@ -2187,6 +2180,16 @@ function applyChanges(changes, { user = true, fromId = null, hint = false } = {}
 
   afterMove();
   return true;
+}
+
+// Der Vorrat ist IMMER aufsteigend sortiert und rückt von selbst auf: gelegte
+// Steine werden gar nicht mehr gerendert (s. TrayBar), und diese Sortierung
+// hält die verbleibenden in Reihenfolge. Der frühere Sortier-Knopf ist damit
+// überflüssig und entfernt. Sortiert wird das ARRAY (die Stein-Objekte bleiben
+// dieselben), damit ein aufgenommener Stein seine id — und damit die Auswahl —
+// behält.
+function sortTrayAsc() {
+  state.tray.sort((a, b) => a.v - b.v || a.id - b.id);
 }
 
 /** Legt einen Stein auf ein Feld (öffentlicher Einstieg, auch für Tests). */
@@ -2229,11 +2232,6 @@ function dropOnTray(src = state.pick) {
   const ok = clearAt(src.from.r, src.from.c);
   state.pick = null;
   return ok;
-}
-/** Sortier-Knopf: aufsteigend sortieren und aufrücken. */
-function sortTray() {
-  state.tray = sortTrayList(state.tray);
-  log('game', 'Vorrat sortiert', { left: trayRemaining() });
 }
 
 // ── Drag & Drop (Zeiger) ─────────────────────────────────────────────────────
@@ -2379,18 +2377,12 @@ function onCellTap(r, c) {
 }
 
 function afterMove() {
-  clearStaleTutor();
   persistGame();
   if (state.team.active) pushTeamProgress();
   if (state.race.active) pushRaceProgress();
   if (isSolved()) win();
 }
 // Verwirft den aktiven Tipp-Tutor, sobald seine Zielzelle gelöst ist — egal
-// wodurch (Auflösen, Coop-Partner-Zug): die Erklärung wäre dann veraltet.
-function clearStaleTutor() {
-  const tt = state.hintTutor;
-  if (tt && state.placed[tt.target.r][tt.target.c] != null) state.hintTutor = null;
-}
 
 let lastErrorSfx = 0;
 function flashError(r, c) {
@@ -2535,89 +2527,6 @@ function onRaceProgressUpdate(progressByUid) {
   }
   const opp = progressByUid[state.race.opponentId];
   if (opp) { state.race.opponentPct = opp.pct || 0; state.race.opponentMistakes = opp.mistakes || 0; }
-}
-
-// Wendet einen Hinweis auf eine Zelle an (lokal ausgelöst oder vom Coop-Partner empfangen).
-// user kennzeichnet, wer den Hinweis ausgelöst hat (für die Coop-Farbmarkierung).
-function applyHintEffect(cells, user = true, fromId) {
-  // Ein Hinweis darf nie als Fehler zählen (hint:true) — er legt die Zahl, die
-  // der Solver zwingend ableitet. Liegt dort schon ein falscher Stein, geht er
-  // vorher zurück in den Vorrat.
-  const changes = [];
-  for (const a of cells) {
-    if (state.placed[a.r][a.c] != null && state.placed[a.r][a.c] !== a.v) changes.push({ r: a.r, c: a.c, v: null });
-    changes.push({ r: a.r, c: a.c, v: a.v });
-    state.hintCells[a.r * 1000 + a.c] = true;
-  }
-  applyChanges(changes, { user, fromId, hint: true });
-  setTimeout(() => { for (const a of cells) delete state.hintCells[a.r * 1000 + a.c]; }, 1400);
-}
-
-// ── Tipp-Tutor (keine Stufen mehr) ───────────────────────────────────────────
-// Ein Tipp startet den Tutor (js/hinttutor.js): eine Kette kleiner Schritte,
-// die mit den KONKRETEN Zahlen des Bretts erklärt, warum der nächste Zug
-// zwingend ist — erst Bereich highlighten, dann Zwischenstand, dann die
-// eigentliche Logik (z.B. echte Kombinations-Aufzählung), zuletzt die
-// Folgerung. JEDER Schritt wird per „Weiter" bestätigt (auch der Tipp-Knopf
-// selbst schaltet weiter); der letzte Schritt führt den Zug aus. Die Strafe
-// (Bestzeit futsch) fällt einmal beim Start an, wie bisher.
-function useHint() {
-  if (state.status !== 'playing' || state.hintsLeft <= 0 || state.isRaceGame || state.team.active) return;
-  if (state.hintTutor) { tutorNext(); return; } // Tipp-Knopf = „Weiter"
-  confirmThenStartHint();
-}
-// Einmalige Bestzeit-Warnung je Partie, dann den Tutor starten — bei Abbruch
-// bleibt hintWarnShown false, sodass die Warnung erneut käme.
-function confirmThenStartHint() {
-  if (!state.hintWarnShown) {
-    ask(t('game.hintConfirmTitle'), t('game.hintConfirmMsg'), () => { state.hintWarnShown = true; startHint(); });
-    return;
-  }
-  startHint();
-}
-function startHint() {
-  const t0 = Date.now();
-  const tut = buildHintTutorial(state.puzzle, state.placed, trayValues.value);
-  if (!tut) { showToast(t('game.noHint'), 'info'); return; }
-  registerHintPenalty();
-  if (state.settings.sfxHint) Music.sfxHint();
-  state.hintTutor = { steps: tut.steps, i: 0, target: tut.target };
-  log('game', 'Tipp-Tutor gestartet', { tier: tut.tier, steps: tut.steps.length, tookMs: Date.now() - t0 });
-}
-// „Weiter"-Knopf: nächster Schritt; auf dem LETZTEN Schritt wird der erklärte
-// Zug ausgeführt (inkl. Coop-Sync via doRevealCell).
-function tutorNext() {
-  const tt = state.hintTutor;
-  if (!tt) return;
-  if (tt.i < tt.steps.length - 1) { tt.i++; return; }
-  const cells = tt.steps[tt.steps.length - 1].action || [];
-  state.hintTutor = null;
-  log('game', 'Tipp-Tutor abgeschlossen', { cells: cells.length });
-  doRevealCells(cells);
-}
-function dismissTutor() { state.hintTutor = null; }
-// Text des aktuellen Tutor-Schritts: i18n-Key + konkrete Zahlen; {unit}/{unit2}
-// werden hier zu menschenlesbaren Bereichs-Labels („Zeile 3", „Käfig") aufgelöst.
-function tutorStepText() {
-  const tt = state.hintTutor;
-  if (!tt) return '';
-  const st = tt.steps[tt.i];
-  return t(st.key, st.params);
-}
-// Strafe für die Hinweis-Nutzung: zählt den Hinweis (entwertet die Bestzeit) und
-// meldet das einmal sichtbar. Läuft genau einmal je Hinweis-Sequenz (in Stufe 1).
-function registerHintPenalty() {
-  state.hintsLeft--; state.hintsUsed++;
-  showBestTimeNotice(t('game.hintUsedNotice'));
-}
-// Auflöse-Kern: deckt Zelle (r,c) mit der korrekten Markierung auf und synct sie
-// im Coop. Zählt NICHT erneut — die Strafe lief bereits in Stufe 1.
-function doRevealCells(cells) {
-  if (!cells.length) return;
-  log('game', 'Hinweis aufgelöst', { n: cells.length });
-  if (state.settings.sfxHint) Music.sfxHint();
-  applyHintEffect(cells);
-  if (state.coop.active) coopSend({ type: Coop.MSG.HINT, cells, from: state.coop.myId });
 }
 
 function undo(broadcast = true) {
@@ -2770,12 +2679,12 @@ function resetChat() { unbindChatViewport(); stopChatTyping(); state.chat.messag
 // Nachrichten, die einen LAUFENDEN Spielzustand voraussetzen — ohne geladenes
 // Brett (z.B. direkt nach dem Beitritt, bevor das INIT eintrifft) würden sie
 // ins Leere greifen bzw. Reste eines früheren Spiels manipulieren.
-const COOP_GAME_MSGS = new Set([Coop.MSG.MOVE, Coop.MSG.UNDO, Coop.MSG.CHECK, Coop.MSG.MISTAKE, Coop.MSG.PAUSE, Coop.MSG.HINT, Coop.MSG.STATUS]);
+const COOP_GAME_MSGS = new Set([Coop.MSG.MOVE, Coop.MSG.UNDO, Coop.MSG.CHECK, Coop.MSG.MISTAKE, Coop.MSG.PAUSE, Coop.MSG.STATUS]);
 // Echte Spiel-Aktionen eines Mitspielers (kein STATUS/PAUSE): treffen sie ein,
 // LÄUFT die Runde beim Absender bereits — ein Gast, der noch in der Bereit-Lobby
 // steht, muss dann sofort einsteigen (Sicherheitsnetz gegen jeden Lobby-Hänger,
 // unabhängig von running-Flag/START/Timing).
-const COOP_LIVE_ACTIVITY = new Set([Coop.MSG.MOVE, Coop.MSG.UNDO, Coop.MSG.CHECK, Coop.MSG.MISTAKE, Coop.MSG.HINT]);
+const COOP_LIVE_ACTIVITY = new Set([Coop.MSG.MOVE, Coop.MSG.UNDO, Coop.MSG.CHECK, Coop.MSG.MISTAKE]);
 // Minimale Struktur-Prüfung eines per INIT empfangenen Puzzles: alles, was das
 // Brett-Template/loadPuzzleIntoState zwingend braucht. Verhindert, dass ein
 // kaputtes INIT die App halb lädt (Spiel-Screen ohne Brett = Blackscreen).
@@ -2838,8 +2747,6 @@ function handleCoopMsg(msg) {
     // Ein Mitspieler hat „Fortsetzen" gedrückt → denselben Countdown-Balken
     // zeigen (das eigentliche RESUME kommt am Balken-Ende vom Drücker).
     if (state.paused && state.screen === 'game') startResumeCountdown(true);
-  } else if (msg.type === Coop.MSG.HINT) {
-    applyHintEffect(msg.cells || [], false, msg.from);
   } else if (msg.type === Coop.MSG.INIT) {
     // Ein ERNEUT gesendetes INIT (der Host holt einen mitten in der Runde
     // Beigetretenen zuverlässig ab, s. broadcastRunningInit) darf eine bereits
@@ -4441,18 +4348,11 @@ function cancelSoloInvite() {
   log('coop', 'Solo-Einladung zurückgezogen/abgeräumt');
 }
 
-// ─── PERSISTENZ DES LAUFENDEN SPIELS ──────────────────────────────────────────
-function collectHintMarks() {
-  const out = [];
-  for (const key of Object.keys(state.hintCells)) out.push([Math.floor(key / 1000), key % 1000]);
-  return out;
-}
 function activeSnapshot() {
   return {
     puzzle: state.puzzle, placed: wirePlaced(), tray: state.tray.map(t => ({ v: t.v, used: t.used ? 1 : 0 })), markedBy: wireMarkedBy(), lives: state.lives, maxLives: state.maxLives,
     hintsLeft: state.hintsLeft, hintsUsed: state.hintsUsed, mistakes: state.mistakes,
     elapsed: state.elapsed, difficulty: state.puzzle.difficulty,
-    hintMarks: collectHintMarks(),
     gameId: state.gameId,   // Partie-Identität mitsichern (Multi-Device-Session/Fortsetzen)
     ts: Date.now(),
   };
@@ -7186,7 +7086,6 @@ function init() {
   window.addEventListener('keydown', unlockAudio);
   // Desktop-Werkzeugtaste (z.B. Tab) — capture:true, damit wir Tab abfangen,
   // BEVOR der Browser den Fokus verschiebt.
-  window.addEventListener('keydown', onDesktopKeydown, true);
   window.addEventListener('touchstart', unlockAudio, { passive: true });
   // App im Hintergrund: AudioContext KOMPLETT schließen (suspendForBackground),
   // damit das OS nichts mehr glitchen kann. Zurück im Vordergrund sofort wieder
@@ -7347,7 +7246,7 @@ const BoardGrid = {
     };
   },
   template: `
-          <div class="board" :class="[skinBoardClasses, boardFontClass(), boardFrameClass(), { 'skin-freeze': state.paused || state.joinFreeze, 'mp-colors': state.coop.active || state.team.active, 'big-num': state.puzzle.bigNumbers, 'tutor-dim': !!state.hintTutor }]" :style="[gridStyle, skinVars]" :data-rc="countRender()">
+          <div class="board" :class="[skinBoardClasses, boardFontClass(), boardFrameClass(), { 'skin-freeze': state.paused || state.joinFreeze, 'mp-colors': state.coop.active || state.team.active, 'big-num': state.puzzle.bigNumbers }]" :style="[gridStyle, skinVars]" :data-rc="countRender()">
             <template v-for="(row, dr) in state.display.cells" :key="'dr'+dr">
               <template v-for="(cell, dc) in row" :key="dr+'-'+dc">
                 <div v-if="!cell" class="gapcell"></div>
@@ -7600,8 +7499,8 @@ const App = {
       state, BUILD, CHANGELOG, DIFFICULTIES, DIFF_BY_ID, ACHIEVEMENTS, achievementsUnlockedCount,
       livesArr, lifeLossColor, opponentLivesArr, opponentTeamLivesArr, coopPerformance, mvpId, opponentTeamPerformance, progress, myProgressPct, gridStyle, coopAvailable,
       navigate, navTo, goBack, newGame, setupStart, goNextPuzzle, startEndless, endlessAgain, endlessContinue, endlessTotalMs, closeEndlessSummary, resumeGame, resumeCoopGame, resumeEndlessGame, onCellTap,
-      openMissions, claimMissionReward, missionsClaimable, missionProgressVal, missionDone, missionClaimedUI, missionClaimableUI, onDragStart, onDragMove, onDragEnd, onDragCancel, undo, useHint, tutorNext, dismissTutor, tutorStepText,
-      eqSolvedR, cellValue, sortTray, pickTile, dropOn, dropOnTray, trayRemaining,
+      openMissions, claimMissionReward, missionsClaimable, missionProgressVal, missionDone, missionClaimedUI, missionClaimableUI, onDragStart, onDragMove, onDragEnd, onDragCancel, undo,
+      eqSolvedR, cellValue, pickTile, dropOn, dropOnTray, trayRemaining,
       fmtTime, toggleSetting, setSetting, doExport, doExportLog, doImport,
       resetStats, doDeleteAllData, ask, confirmYes, confirmNo, dismissWhatsNew, dismissStreakLostNotice, dismissStreakExtended,
       checkForUpdate, restartForUpdate, dismissUpdateDialog, safetyBackups, restoreSafetyBackup,
@@ -7618,7 +7517,6 @@ const App = {
       WIN_EFFECTS, effectPrice, ownsWinFx, winFxActive, activeWinFxId, ownedWinFx, buyWinFx, activateWinFx, previewWinFx, winFxStyle, winShape, winShapeDefs,
       SETTINGS_SECTIONS, selectSettingsSection, toggleSettingsCard,
       cellClasses, cellStyle, cellAriaLabel,
-      desktopKeyLabel, startDesktopKeyCapture, cancelDesktopKeyCapture, clearDesktopToolKey,
       isMultiplayer, sendChat, openChat, closeChat, toggleChat, toggleMuteAll, onChatTyping, typingPlayers,
       reclaimSession, dismissDeviceNotice,
       resolveVersionMismatch, fmtMismatchTime, mismatchSubText, dragScaleLabel,
@@ -7942,21 +7840,6 @@ const App = {
              ein HUD-/Sekunden-Render die Steine nicht mit neu rendert. -->
         <tray-bar v-if="!state.paused && !state.coop.awaitingStart"></tray-bar>
 
-        <div class="game-sidebar-bottom">
-        <!-- Kein Undo-Knopf mehr (Nutzerwunsch) — Fehlzüge werden ohnehin sofort
-             aufgedeckt und nie gesetzt; undo() bleibt nur für Coop-UNDO-Events
-             älterer Clients erhalten. -->
-        <div v-if="!state.isTrainingGame || state.trainingDone" class="toolbar">
-          <!-- Links: Vorrat aufsteigend sortieren + aufrücken. Rechts: Tipp. -->
-          <button class="round-btn" @click="sortTray" :title="t('game.sortTitle')" :aria-label="t('game.sortTitle')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h11"/><path d="M4 12h8"/><path d="M4 18h5"/><path d="M18 4v16"/><path d="m15 17 3 3 3-3"/></svg>
-          </button>
-          <span class="toolbar-spacer" aria-hidden="true"></span>
-          <button v-if="!state.isRaceGame && !state.team.active" class="round-btn" :disabled="state.hintsLeft<=0" @click="useHint" :title="t('game.hintTitle')" :aria-label="t('game.hintTitle')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 18h5"/><path d="M10 21.5h4"/><path d="M12 2.5a6.5 6.5 0 0 0-4 11.6c.8.7 1.2 1.3 1.3 2.4h5.4c.1-1.1.5-1.7 1.3-2.4A6.5 6.5 0 0 0 12 2.5z"/></svg>
-          </button>
-        </div>
-        </div>
       </template>
 
       <!-- Trainingsmodus: Erklär-Banner für den nächsten erzwungenen Schritt.
@@ -7975,19 +7858,6 @@ const App = {
         <template v-else-if="state.trainingDone">
           <div class="training-text">{{ t('training.doneMsg') }}</div>
         </template>
-      </div>
-
-      <!-- Tipp-Tutor: erklärt Schritt für Schritt mit den KONKRETEN Zahlen,
-           warum der nächste Zug zwingend ist. Jeder Schritt highlightet seine
-           Zellen (hint-group, Rest des Bretts gedimmt) und wird per „Weiter"
-           bestätigt; der letzte Schritt führt den Zug aus. X bricht ab. -->
-      <div v-if="state.hintTutor && !state.isTrainingGame && state.status==='playing' && !state.paused" class="hint-banner tutor-card">
-        <div class="hint-text">
-          <b><span class="ei" v-html="ic('bulb')"></span> {{ t('tutor.title') }} <span class="tutor-progress">{{ state.hintTutor.i + 1 }}/{{ state.hintTutor.steps.length }}</span></b>
-          <span>{{ tutorStepText() }}</span>
-        </div>
-        <button class="btn btn-primary btn-sm" @click="tutorNext">{{ state.hintTutor.i < state.hintTutor.steps.length - 1 ? t('tutor.next') : t('tutor.apply') }}</button>
-        <button class="hint-dismiss" @click="dismissTutor" :aria-label="t('hint.dismiss')" :title="t('hint.dismiss')"><span class="ico-wrap" v-html="ic('close')"></span></button>
       </div>
 
       <!-- Coop-Lobby: Rätsel ist da, Zeit läuft erst nach "Starten" -->
@@ -8084,10 +7954,7 @@ const App = {
             <div v-if="state.perfectWin" class="perfect-badge">{{ t('win.perfectBadge') }}</div>
             <div v-if="state.newHighscore" class="highscore-badge">{{ t('win.newHighscore') }}</div>
             <div v-else-if="state.wouldHaveBeenBest" class="highscore-badge missed">
-              {{ t('win.missedPrefix') }}
-              <template v-if="state.mistakes>0 && state.hintsUsed>0"> {{ t('win.missedBoth') }}</template>
-              <template v-else-if="state.mistakes>0"> {{ t('win.missedMistakes') }}</template>
-              <template v-else> {{ t('win.missedHints') }}</template>.
+              {{ t('win.missedPrefix') }} {{ t('win.missedMistakes') }}.
             </div>
           </div>
           <div v-if="duelBars.length" class="duel-graph">
@@ -8104,7 +7971,6 @@ const App = {
           <div class="result-stats">
             <div><b>{{ fmtTime(state.elapsed) }}</b><small>{{ t('win.timeLabel') }}</small></div>
             <div><b>{{ state.mistakes }}</b><small>{{ t('win.mistakesLabel') }}</small></div>
-            <div><b>{{ state.hintsUsed }}</b><small>{{ t('win.hintsLabel') }}</small></div>
           </div>
           <!-- Endlos: verbleibende/verlorene Leben (Coop mit farbigem Strich = wer). -->
           <div v-if="state.endless.active" class="endless-lives-row">
@@ -8177,7 +8043,6 @@ const App = {
           <div class="result-stats">
             <div><b>{{ fmtTime(state.elapsed) }}</b><small>{{ t('win.timeLabel') }}</small></div>
             <div><b>{{ state.mistakes }}</b><small>{{ t('win.mistakesLabel') }}</small></div>
-            <div><b>{{ state.hintsUsed }}</b><small>{{ t('win.hintsLabel') }}</small></div>
           </div>
           <div v-if="coopPerformance.length" class="coop-performance">
             <div class="perf-title">{{ t('win.teamPerformance') }}</div>
@@ -8689,27 +8554,6 @@ const App = {
           </button>
           <div v-if="state.settingsTab==='spiel'" class="admin-acc-body">
           <button class="btn btn-ghost set-howto-btn" @click="state.modal='howto'"><span class="btn-ic"><span class="ei" v-html="ic('book')"></span></span> {{ t('home.howto') }}</button>
-          </div>
-        </div>
-
-        <!-- 🖥️ Desktop (Tastatur-Kürzel) -->
-        <div class="admin-acc">
-          <button class="admin-acc-head" @click="toggleSettingsCard('desktop')">
-            <span><span class="ico-lead" v-html="ic('keyboard')"></span>{{ t('settings.secDesktop') }}</span>
-            <span class="admin-acc-chev" :class="{ open: state.settingsTab==='desktop' }">▾</span>
-          </button>
-          <div v-if="state.settingsTab==='desktop'" class="admin-acc-body">
-            <div class="set-row col">
-              <span class="set-row-label">{{ t('settings.desktop.toolKey') }}</span>
-              <div class="desktop-key-row">
-                <button class="btn btn-ghost btn-sm desktop-key-cap" :class="{ capturing: state.desktopKeyCapture }" @click="startDesktopKeyCapture">
-                  {{ state.desktopKeyCapture ? t('settings.desktop.press') : desktopKeyLabel(state.settings.desktopToolKey) }}
-                </button>
-                <button v-if="state.desktopKeyCapture" class="btn-link" @click="cancelDesktopKeyCapture">{{ t('common.cancel') }}</button>
-                <button v-else-if="state.settings.desktopToolKey" class="btn-link" @click="clearDesktopToolKey">{{ t('settings.desktop.off') }}</button>
-              </div>
-              <small class="set-hint">{{ t('settings.desktop.hint') }}</small>
-            </div>
           </div>
         </div>
 
@@ -9870,41 +9714,6 @@ const App = {
 // Eine frei belegbare Taste (Standard „Tab") sortiert WÄHREND einer Partie den
 // Vorrat — praktisch am Desktop, ohne die Maus zum Knopf zu bewegen. WICHTIG:
 // keydown wird preventDefault()et, damit z.B. Tab nicht den Browser-Fokus
-// verschiebt, sondern im Spiel greift.
-function normKey(k) { return typeof k === 'string' && k.length === 1 ? k.toLowerCase() : k; }
-// Menschenlesbares Label einer Taste (für die Anzeige in den Einstellungen).
-function desktopKeyLabel(k) {
-  if (!k) return t('settings.desktop.off');
-  if (k === ' ' || k === 'Spacebar') return t('settings.desktop.keySpace');
-  if (k.length === 1) return k.toUpperCase();
-  return k; // Tab, Enter, ArrowLeft, …
-}
-function startDesktopKeyCapture() { state.desktopKeyCapture = true; }
-function cancelDesktopKeyCapture() { state.desktopKeyCapture = false; }
-function clearDesktopToolKey() { setSetting('desktopToolKey', ''); state.desktopKeyCapture = false; }
-// Ist gerade eine „echte" laufende Partie (nicht Pause/Ende/Lobby)?
-function inActiveRound() {
-  return state.screen === 'game' && state.status === 'playing' && !state.paused && !state.coop.awaitingStart;
-}
-// Globaler keydown: erst Belegungs-Modus, sonst Werkzeug-Umschalt-Taste.
-function onDesktopKeydown(e) {
-  // Belegen: nächster Tastendruck wird die neue Taste (Escape bricht ab).
-  if (state.desktopKeyCapture) {
-    e.preventDefault();
-    if (e.key !== 'Escape') { setSetting('desktopToolKey', normKey(e.key)); log('app', 'Desktop-Werkzeugtaste belegt', { key: e.key }); }
-    state.desktopKeyCapture = false;
-    return;
-  }
-  const bind = state.settings.desktopToolKey;
-  if (!bind || !inActiveRound()) return;
-  // Nicht in Textfeldern (Chat/Username/Code) kapern.
-  const el = e.target;
-  const tag = (el && el.tagName) || '';
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || (el && el.isContentEditable)) return;
-  if (normKey(e.key) !== bind) return;
-  e.preventDefault();
-  sortTray();
-}
 
 
 // Aria-Labels je Zelle EINMAL pro Zug/Sprachwechsel berechnen statt ×169 bei
@@ -9942,28 +9751,14 @@ function cellClasses(cell) {
     d4: digits >= 4,
     done: cellInSolvedEq(r, c),
     flash: !!state.flash[`${r}-${c}`],
-    hinted: !!state.hintCells[r * 1000 + c],
     picked: !!picked,
     droppable: !cell.given && !!state.drag,
     'coop-mark': !cell.given && !!who,
     // EIGENE Steine behalten im Mehrspieler-Modus den eigenen Skin — nur die der
     // MITSPIELER fallen auf deren Farbe zurück (s. .mp-colors in styles.css).
     mine: !!who && who === (state.coop.myId || LOCAL_PLAYER_ID),
-    'hint-group': inHintGroup(r, c),
     'training-highlight': state.isTrainingGame && state.trainingStep && state.trainingStep.r === r && state.trainingStep.c === c,
   };
-}
-// Fokus-Zellen des aktuellen Tutor-Schritts als Set (r*1000+c) — cached
-// computed, damit inHintGroup pro Zelle O(1) bleibt (Brett-Render-Kernregel).
-const tutorFocusSet = computed(() => {
-  const tt = state.hintTutor;
-  if (!tt) return null;
-  const st = tt.steps[tt.i];
-  return new Set(st.cells.map(([r, c]) => r * 1000 + c));
-});
-function inHintGroup(r, c) {
-  const set = tutorFocusSet.value;
-  return !!set && set.has(r * 1000 + c);
 }
 // Wert, der in einem Zahl-Feld steht (Vorgabe oder gelegter Stein).
 function cellValue(cell) {
@@ -9999,8 +9794,8 @@ app.mount('#app');
 // nachweisen können, ohne einen echten Firebase-Schreibzugriff zu brauchen
 // (Coop.setTeamProgress/setRaceProgress sind selbst nicht spionierbar, da
 // `import * as Coop` ein eingefrorenes Modul-Namespace-Objekt liefert).
-if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') window.__cns = { state, isSolved, handleCoopMsg, handleCoopConnection, coopSend, upsertPlayer, removePlayer, onSoloInviteRoomOpen, onSoloInviteJoin, cellStyle, cellClasses, Music, launchWinFx, useHint,
-  placeAt, clearAt, sortTray, pickTile, dropOn, setSetting, dragLift: DRAG_LIFT,
+if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') window.__cns = { state, isSolved, handleCoopMsg, handleCoopConnection, coopSend, upsertPlayer, removePlayer, onSoloInviteRoomOpen, onSoloInviteJoin, cellStyle, cellClasses, Music, launchWinFx,
+  placeAt, clearAt, pickTile, dropOn, setSetting, dragLift: DRAG_LIFT,
   // Test-Helfer: erstes offenes Feld (mit seinem richtigen Wert) bzw. genau
   // einen korrekten Stein legen — spart jedem E2E-Test dieselbe Suchschleife.
   firstBlank: () => {

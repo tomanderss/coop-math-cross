@@ -1279,18 +1279,8 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   /* Werkzeugleiste ist für die volle Bildschirmbreite im Hochformat
      ausgelegt (drei weit auseinandergezogene Gruppen) -- in der schmaleren
      240px-Seitenspalte verkleinert/umbrochen, sonst würde sie überlaufen. */
-  .game-sidebar-bottom .toolbar {
-    flex-wrap: wrap; justify-content: center; gap: 8px; margin-bottom: 12px;
-  }
   /* In der schmalen Seitenspalte gilt das zentrierte Wrap-Layout — der
      Ausgleichs-Spacer/die auto-Margins des Hochformats stören hier nur. */
-  .game-sidebar-bottom .toolbar .toolbar-spacer { display: none; }
-  .game-sidebar-bottom .toolbar .tool-toggle { margin-inline: 0; }
-  .game-sidebar-bottom .round-btn,
-  .game-sidebar-bottom .tool-ic,
-  .game-sidebar-bottom .tool-pill { width: 46px; height: 46px; }
-  .game-sidebar-bottom .round-btn svg, .game-sidebar-bottom .tool-ic svg { width: 20px; height: 20px; }
-  .game-sidebar-bottom .tool-pill.pen { transform: translateX(50px); }
 
   /* Trainingsmodus-Erklärbanner ist ein direktes Geschwister-Element von
      board-wrap/sidebar innerhalb von .screen.game -- ohne explizite
@@ -1304,80 +1294,12 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   .screen.game.training-mode .training-banner { grid-area: trainbanner; }
 }
 
-/* iPad im Querformat (Touch-Gerät mit genug Höhe): Die Werkzeugleiste sitzt hier
-   in der schmalen 240px-Seitenspalte. Im horizontalen Umbruch standen Zurück,
-   Werkzeug-Wechsel (Einkreisen/Löschen) und Hinweis nur ~8px auseinander — auf
-   einem Touch-Display drückt man da leicht den falschen Knopf. Da die Spalte viel
-   Höhe hat, werden die Knöpfe stattdessen UNTEREINANDER mit klarem Abstand
-   gestapelt. Der Werkzeug-Wechsel (häufigste Aktion) rutscht per order ganz nach
-   UNTEN — dort am nächsten zum Daumen (Seitenspalte ist rechts, unten verankert).
-   Auf min-height:700px begrenzt, damit das Handy-Querformat (niedrige Höhe) sein
-   kompaktes horizontales Layout behält und nicht überläuft. */
-@media screen and (orientation: landscape) and (pointer: coarse) and (min-height: 700px) {
-  .game-sidebar-bottom .toolbar {
-    flex-direction: column; flex-wrap: nowrap; align-items: center; gap: 22px;
-    margin-bottom: 16px;
-  }
-  .game-sidebar-bottom .toolbar .toolbar-spacer { display: none; }
-  .game-sidebar-bottom .toolbar .tool-toggle { order: 1; margin-inline: 0; }
-  .game-sidebar-bottom .round-btn,
-  .game-sidebar-bottom .tool-ic,
-  .game-sidebar-bottom .tool-pill { width: 54px; height: 54px; }
-  .game-sidebar-bottom .round-btn svg, .game-sidebar-bottom .tool-ic svg { width: 24px; height: 24px; }
-  .game-sidebar-bottom .tool-pill.pen { transform: translateX(58px); }
-}
-
-/* ─── Toolbar (Stift/Radierer) ─── */
-/* Der Werkzeug-Umschalter sitzt EXAKT mittig: links gleicht .toolbar-spacer
-   (Hinweis-Knopf-Breite, unsichtbar) den Hinweis-Knopf rechts aus; die
-   auto-Margins zentrieren den Umschalter auch, wenn der Hinweis-Knopf fehlt
-   (Race/Team blenden Spacer UND Hinweis gemeinsam aus). */
-.toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 8px 0; margin-bottom: 26px; flex: 0 0 auto; }
-/* Im Spiel klebte unter der Werkzeugleiste ein toter Streifen von ~38 px
-   (26 px Abstand + der untere App-Innenabstand) — gemeldet als „verdammt fetter
-   Platz". Der Platz gehört dem Brett: Werkzeugleiste enger anlegen und den
-   unteren App-Rand auf das Nötige (Safe-Area + 4 px) kürzen. */
-.screen.game .toolbar { padding: 4px 4px 0; margin-bottom: 0; }
 /* Seitenrand im Spiel knapper: jeder Pixel Breite geht direkt in die Zellgröße,
    weil breite Bretter IMMER an der Breite hängen (die Höhe hat meist Luft). */
 .app.app-game { padding-left: calc(env(safe-area-inset-left) + 8px); padding-right: calc(env(safe-area-inset-right) + 8px); }
-/* Auch die Knöpfe selbst: 60px sind im Menü richtig, im Spiel fressen sie eine
-   Brettzeile. 46px bleiben bequem treffbar und geben ~30px zurück. */
-.screen.game .toolbar .round-btn { width: 46px; height: 46px; }
-.screen.game .toolbar .round-btn svg { width: 21px; height: 21px; }
 .app.app-game { padding-bottom: env(safe-area-inset-bottom); }
-.toolbar-spacer { width: 60px; flex: 0 0 auto; }
-.toolbar .tool-toggle { margin-inline: auto; }
-.round-btn {
-  position: relative; width: 60px; height: 60px; border-radius: 50%; background: var(--bg2);
-  box-shadow: 0 3px 12px var(--shadow); display: flex; align-items: center; justify-content: center; color: var(--text2);
-}
-.round-btn svg { width: 26px; height: 26px; }
-.tool-ic svg { width: 26px; height: 26px; }
 .icon-btn svg { display: block; }
 .top-actions { display: flex; align-items: center; gap: 6px; }
-.round-btn:active { transform: scale(.9); }
-.round-btn:disabled { opacity: .4; }
-.round-badge {
-  position: absolute; top: -2px; right: -2px; background: var(--accent); color: #fff;
-  font-size: .66rem; font-weight: 800; min-width: 18px; height: 18px; border-radius: 999px;
-  display: flex; align-items: center; justify-content: center; padding: 0 4px;
-}
-.tool-toggle {
-  position: relative; display: inline-flex; align-items: center; gap: 4px;
-  background: var(--bg3); border-radius: 999px; padding: 5px;
-  box-shadow: inset 0 2px 6px var(--shadow);
-}
-.tool-pill {
-  position: absolute; top: 5px; left: 5px; width: 60px; height: 60px; border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent), var(--accent2));
-  box-shadow: 0 3px 12px var(--accent-soft), 0 2px 8px var(--shadow);
-  transition: transform .26s cubic-bezier(.3,1.2,.5,1);
-}
-.tool-pill.pen { transform: translateX(64px); }
-.tool-ic { position: relative; z-index: 1; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; color: var(--text3); transition: color .2s, opacity .2s; opacity: .65; }
-.tool-ic.active { color: #fff; opacity: 1; }
-.tool-ic.pen { font-weight: 800; }
 
 .check-row { padding: 10px 0 4px; flex: 0 0 auto; }
 .btn-check { width: 100%; }
@@ -1586,37 +1508,6 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
    verschiebt noch in Quer-/Hochformat vom overflow:hidden abgeschnitten wird.
    Hat einen eigenen "Auflösen"-Knopf, sodass die Werkzeugleiste darunter nicht
    erreichbar sein muss. */
-.hint-banner {
-  position: fixed; bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); left: 50%; transform: translateX(-50%);
-  width: calc(100% - 28px); max-width: 440px; z-index: 70;
-  background: var(--bg2); border: 1px solid var(--accent-soft);
-  display: flex; align-items: center; gap: 12px; padding: 13px 16px;
-  border-radius: 16px; box-shadow: 0 10px 30px var(--shadow);
-}
-.hint-text { display: flex; flex-direction: column; gap: 3px; text-align: left; flex: 1; min-width: 0; }
-.hint-text b { font-size: .9rem; }
-.hint-text span { color: var(--text2); font-size: .85rem; line-height: 1.35; }
-.hint-banner .btn { flex: 0 0 auto; }
-.hint-dismiss {
-  flex: 0 0 auto; width: 28px; height: 28px; border-radius: 50%;
-  background: var(--bg3); color: var(--text2); font-size: .72rem; line-height: 1;
-  display: flex; align-items: center; justify-content: center;
-}
-/* Gruppen-Highlight: jede Zelle der betroffenen Zeile/Spalte/des Käfigs bekommt
-   einen dezent pulsierenden Akzentring — sanfter als .training-highlight, da
-   hier die GANZE Gruppe (viele Zellen) markiert wird und nicht die Lösung. */
-.cell.hint-group { --ring: inset 0 0 0 2px var(--accent); animation: hintGroupPulse 1.6s ease infinite; z-index: 1; }
-@keyframes hintGroupPulse {
-  0%,100% { box-shadow: 0 0 0 1px var(--grid), inset 0 0 0 2px var(--accent); }
-  50% { box-shadow: 0 0 0 1px var(--grid), inset 0 0 0 4px var(--accent); }
-}
-/* ── Tipp-Tutor: Fokus-Zellen leuchten (hint-group), der Rest dimmt ──
-   Nur opacity (kein filter — iOS-Compositor-Regel); Schrittwechsel sind selten,
-   der Übergang darf also sanft sein. */
-.board.tutor-dim .cell { transition: opacity .25s; }
-.board.tutor-dim .cell:not(.hint-group) { opacity: .35; }
-.tutor-card .btn { white-space: nowrap; }
-.tutor-progress { color: var(--text3); font-weight: 700; font-size: .74rem; margin-left: 4px; font-variant-numeric: tabular-nums; }
 
 /* ─── Confetti ─── */
 /* ─── Sieganimationen (.winfx, Katalog in js/wineffects.js) ───────────────────

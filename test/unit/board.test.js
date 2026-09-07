@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as B from '../../js/board.js';
 import { generatePuzzle } from '../../js/generator.js';
 import { genOptionsFor } from '../../js/config.js';
-import { buildHintTutorial } from '../../js/hinttutor.js';
+import { nextForcedStep } from '../../js/hinttutor.js';
 import { nextTrainingStep } from '../../js/training.js';
 
 // 8 - □ = 5 (waagerecht) kreuzt □ + 2 = 5 (senkrecht) im Ergebnisfeld.
@@ -87,21 +87,28 @@ test('solvedEquationSet erkennt fertige Rechnungen', () => {
   assert.deepEqual([...B.solvedEquationSet(p, placed)].sort(), [0, 1]);
 });
 
-test('Tipp-Tutor führt jedes Rätsel bis zum Ende', () => {
+// Die Tipp-Funktion im Spiel ist entfallen, die dahinterliegende Deduktion aber
+// nicht: der Trainingsmodus lebt davon. Der Härtetest bleibt deshalb — jedes
+// Rätsel muss sich ALLEIN aus erzwungenen Schritten lösen lassen, sonst wäre es
+// nicht ratefrei.
+test('erzwungene Schritte lösen jedes Rätsel bis zum Ende', () => {
   for (const id of ['sehrleicht', 'mittel', 'extrem']) {
     const p = generatePuzzle({ ...genOptionsFor(id), seed: 31 });
     const placed = B.emptyPlaced(p);
     const tray = p.tray.slice();
     let guard = 0;
     while (guard++ < 300) {
-      const tut = buildHintTutorial(p, placed, tray);
-      if (!tut) break;
-      const last = tut.steps[tut.steps.length - 1];
-      assert.ok(last.final && last.action.length, 'letzter Schritt führt den Zug aus');
-      assert.ok(tut.steps.every(s => s.key && s.cells.length), 'jeder Schritt hat Text + Fokus');
-      for (const a of last.action) { placed[a.r][a.c] = a.v; tray.splice(tray.indexOf(a.v), 1); }
+      const found = nextForcedStep(p, placed, tray);
+      if (!found) break;
+      const { step } = found;
+      assert.ok(step.cells.length && step.cells.length === step.values.length, 'Schritt legt konkrete Felder fest');
+      step.cells.forEach(([r, c], i) => {
+        assert.equal(p.slots[r][c].v, step.values[i], 'erzwungener Schritt trifft die Lösung');
+        placed[r][c] = step.values[i];
+        tray.splice(tray.indexOf(step.values[i]), 1);
+      });
     }
-    assert.equal(B.isBoardSolved(p, placed), true, `${id}: Tutor bleibt stecken`);
+    assert.equal(B.isBoardSolved(p, placed), true, `${id}: bleibt stecken`);
   }
 });
 

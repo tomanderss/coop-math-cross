@@ -277,7 +277,6 @@ export const DEFAULT_SETTINGS = {
   // 'dark'/'light' = manuelle Wahl. Alte gespeicherte darkMode-Booleans migriert
   // storage.loadSettings() auf die entsprechende explizite Wahl.
   themeMode: 'auto',
-  desktopToolKey: 'Tab',     // Desktop-Taste zum Sortieren des Vorrats im Spiel
                              // (frei belegbar; '' = aus). keydown wird preventDefault()et,
                              // damit z.B. Tab NICHT den Browser-Fokus verschiebt.
   coopName: '',              // eigener Anzeigename im Coop-Modus
