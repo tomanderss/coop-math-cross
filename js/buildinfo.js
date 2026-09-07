@@ -1,8 +1,15 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.9';
-export const BUILD_HASH = '0884d23';
+export const BUILD      = '1.10';
+export const BUILD_HASH = '899c1e5';
 
 export const CHANGELOG = [
+  {
+    "version": "1.10",
+    "date": "07.09.2026",
+    "changes": [
+      "Ausgewählter Stein: alle freien Felder bleiben hervorgehoben, bis er abgelegt ist"
+    ]
+  },
   {
     "version": "1.9",
     "date": "07.09.2026",
