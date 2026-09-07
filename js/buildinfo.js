@@ -1,8 +1,15 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.13';
-export const BUILD_HASH = 'd906ef5';
+export const BUILD      = '1.14';
+export const BUILD_HASH = '62f4ff3';
 
 export const CHANGELOG = [
+  {
+    "version": "1.14",
+    "date": "07.09.2026",
+    "changes": [
+      "Coop: legen beide gleichzeitig in dasselbe Feld, sehen jetzt beide dasselbe Ergebnis — die Bretter laufen nicht mehr auseinander"
+    ]
+  },
   {
     "version": "1.13",
     "date": "07.09.2026",
