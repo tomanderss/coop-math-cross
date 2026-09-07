@@ -1,3 +1,0 @@
-Hinweis-Funktion entfernt — die Knopfleiste unter dem Vorrat fällt damit ganz weg
-Sortier-Knopf entfernt: der Vorrat ist jetzt immer aufsteigend sortiert und rückt von selbst auf
-Der frei gewordene Platz gehört dem Spielfeld
