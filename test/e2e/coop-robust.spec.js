@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { gotoApp, makePuzzle } from './helpers.js';
+import { gotoApp, makePuzzle, startNewGame } from './helpers.js';
 
 // Coop-Robustheit: (1) kein Blackscreen mehr, wenn der Spiel-Screen ohne Brett
 // erreicht wird / ein kaputtes INIT eintrifft, (2) Coop-Offline-Rettung: das
@@ -234,5 +234,83 @@ test.describe('coop robustness', () => {
     await page.waitForFunction(() => !window.__cns.state.paused);
     await expect(page.locator('.pause-overlay')).toHaveCount(0);
     expect(await page.evaluate(() => window.__cns.state.resumeCountdown)).toBe(null);
+  });
+});
+
+// ── Gemeldet: „im Coop tauschen die Zahlen nicht richtig und dann verdoppelt
+// sich eine". Ursache: zwischen dem AUFNEHMEN eines Steins und dem ABLEGEN
+// kann ein Partner-Zug denselben Stein wegnehmen oder das Herkunftsfeld
+// überschreiben. Der aufgenommene Stein war dann veraltet — abgelegt schrieb er
+// einen Wert aufs Brett, der dort nicht mehr herkam, takeFromTray fand nichts,
+// und das spätere returnToTray legte einen NEUEN Stein an.
+test.describe('Coop: Vorrat und Brett laufen nicht auseinander', () => {
+  async function asGuest(page) {
+    await page.evaluate(() => {
+      const s = window.__cns.state;
+      s.coop.active = true; s.coop.role = 'guest'; s.coop.myId = 'me';
+      s.coop.players = [{ id: 'host', name: 'H', color: '#e5679a' }, { id: 'me', name: 'Ich', color: '#67a3e5' }];
+    });
+  }
+
+  test('ein veralteter Stein wird nicht abgelegt und klont sich nicht', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page, 'mittel');
+    await asGuest(page);
+
+    const res = await page.evaluate(() => {
+      const { state, placeAt, dropOn } = window.__cns;
+      const p = state.puzzle;
+      // Zwei offene Felder mit ihren richtigen Werten suchen.
+      const open = [];
+      for (let r = 0; r < p.rows && open.length < 2; r++)
+        for (let c = 0; c < p.cols && open.length < 2; c++) {
+          const sl = p.slots[r][c];
+          if (sl && !sl.given && state.placed[r][c] == null) open.push({ r, c, v: sl.v });
+        }
+      const [a, b] = open;
+      placeAt(a.r, a.c, a.v);
+      const vorrat = state.tray.length;
+
+      // Stein auf Feld a aufnehmen …
+      const src = { v: a.v, from: { r: a.r, c: a.c }, tileId: null };
+      // … und BEVOR er landet, räumt der Partner genau dieses Feld.
+      window.__cns.handleCoopMsg({ type: 'move', from: 'host', cells: [{ r: a.r, c: a.c, v: '' }] });
+      const abgelegt = dropOn(b.r, b.c, src);
+
+      return {
+        abgelegt,
+        vorrat, jetzt: state.tray.length,
+        zielLeer: state.placed[b.r][b.c] === null,
+        quelleLeer: state.placed[a.r][a.c] === null,
+      };
+    });
+    expect(res.abgelegt, 'der veraltete Zug wird abgelehnt').toBe(false);
+    expect(res.zielLeer, 'nichts wird ins Ziel geschrieben').toBe(true);
+    expect(res.quelleLeer, 'das Herkunftsfeld bleibt so, wie der Partner es hinterließ').toBe(true);
+    expect(res.jetzt, 'der Vorrat behält genau seine Steine').toBe(res.vorrat);
+  });
+
+  test('ein auseinandergelaufener Vorrat heilt beim nächsten Zug', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page, 'mittel');
+    await asGuest(page);
+
+    const res = await page.evaluate(() => {
+      const { state, placeAt } = window.__cns;
+      const t = state.tray.find(x => !x.used);
+      // Schaden von außen: ein doppelter Stein im Vorrat (so sah der Fehler aus).
+      state.tray.push({ id: 9999, v: t.v, used: false });
+      const kaputt = state.tray.length;
+      const b = window.__cns.firstBlank();
+      placeAt(b.r, b.c, b.v);
+      const offen = state.tray.filter(x => !x.used).map(x => x.v).sort((a, c) => a - c);
+      const gelegt = [];
+      for (const row of state.placed) for (const v of row) if (v != null) gelegt.push(v);
+      const soll = state.puzzle.tray.slice().sort((a, c) => a - c);
+      const ist = offen.concat(gelegt).sort((a, c) => a - c);
+      return { kaputt, jetzt: state.tray.length, soll, ist };
+    });
+    expect(res.jetzt, 'der überzählige Stein ist weg').toBe(res.kaputt - 1);
+    expect(res.ist, 'offene Steine + Brett ergeben wieder exakt den Rätsel-Vorrat').toEqual(res.soll);
   });
 });

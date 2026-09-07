@@ -97,6 +97,30 @@ export function returnToTray(tray, v) {
  * Reihenfolge und ids bestehender Steine bleiben erhalten, es wird nur
  * Überzähliges entfernt und Fehlendes ergänzt.
  */
+/**
+ * Prüft in O(n), ob Vorrat und Brett zusammenpassen: die OFFENEN Steine müssen
+ * exakt die noch fehlenden Zahlen sein. Rein — die billige Wache vor dem
+ * teureren `reconcileTray` (das alle ids neu vergibt und deshalb nur laufen
+ * darf, wenn wirklich etwas auseinandergelaufen ist).
+ */
+export function trayMatchesBoard(tray, placedValues, puzzleTray) {
+  const need = new Map();                       // Wert -> wie viele noch OFFEN sein müssen
+  for (const v of puzzleTray || []) need.set(v, (need.get(v) || 0) + 1);
+  for (const v of placedValues || []) {
+    const n = need.get(v) || 0;
+    if (n <= 0) return false;                   // liegt auf dem Brett, gehört aber nicht dazu
+    need.set(v, n - 1);
+  }
+  for (const t of (Array.isArray(tray) ? tray : [])) {
+    if (!t || t.used) continue;
+    const n = need.get(t.v) || 0;
+    if (n <= 0) return false;                   // ein Stein zu viel im Vorrat
+    need.set(t.v, n - 1);
+  }
+  for (const n of need.values()) if (n > 0) return false;   // ein Stein fehlt im Vorrat
+  return true;
+}
+
 export function reconcileTray(tray, placedValues, puzzleTray) {
   const open = new Map();          // Wert -> wie viele Steine OFFEN sein müssen
   for (const v of puzzleTray || []) open.set(v, (open.get(v) || 0) + 1);

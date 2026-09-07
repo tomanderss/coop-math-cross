@@ -7,7 +7,7 @@ import { validPuzzleShape as puzzleShapeOk } from './model.js';
 import {
   buildDisplay, buildTray, takeFromTray, returnToTray, trayLeft,
   emptyPlaced, currentValues, equationsAt, placementBreaksEquation, solvedEquationSet,
-  isBoardSolved, progressOf, solutionAt, normalizePuzzle, reconcileTray, OP_SYMBOL,
+  isBoardSolved, progressOf, solutionAt, normalizePuzzle, reconcileTray, trayMatchesBoard, OP_SYMBOL,
 } from './board.js';
 import { todayDateStr } from './streak.js';
 import * as Coop from './coop.js';
@@ -2156,6 +2156,11 @@ function applyChanges(changes, { user = true, fromId = null, hint = false } = {}
   }
   for (const v of freed) returnToTray(state.tray, v);
   for (const v of taken) takeFromTray(state.tray, v);
+  healTrayIfDrifted();
+  // Eine FREMDE Änderung kann die eigene Auswahl entwerten (der Partner hat den
+  // Stein genommen oder das Herkunftsfeld überschrieben). Dann sichtbar fallen
+  // lassen, statt sie beim nächsten Tipp stumm verpuffen zu lassen.
+  if (!user && state.pick && srcIsStale(state.pick)) state.pick = null;
   sortTrayAsc();
   if (!undoSteps.length) return true;
   state.history = [undoSteps];    // nur der letzte Zug ist rückgängig machbar
@@ -2198,6 +2203,49 @@ function clearAt(r, c, opts = {}) {
   return applyChanges([{ r, c, v: null }], opts);
 }
 
+// Zwischen dem AUFNEHMEN eines Steins und dem ABLEGEN vergeht Zeit — im
+// Mehrspieler-Modus genug, dass ein Partner denselben Stein wegnimmt oder das
+// Herkunftsfeld überschreibt. Der aufgenommene Stein ist dann VERALTET: legte
+// man ihn trotzdem ab, schrieb er einen Wert aufs Brett, der dort gar nicht
+// mehr herkam (`takeFromTray` fand nichts, `returnToTray` legte später einen
+// NEUEN Stein an) — genau das gemeldete „die Zahl verdoppelt sich", und der
+// Tausch zweier gesetzter Steine ging dabei sichtbar daneben. Deshalb VOR jedem
+// Ablegen gegen den aktuellen Stand prüfen.
+function srcIsStale(src) {
+  if (!src) return true;
+  if (src.from) {
+    const row = state.placed[src.from.r];
+    return !row || row[src.from.c] !== src.v;      // Feld hat sich unter uns geändert
+  }
+  return !state.tray.some(t => !t.used && t.v === src.v);   // Stein ist nicht mehr offen
+}
+// Alle Werte, die AKTUELL auf dem Brett liegen (Vorgaben stecken im Rätsel, nicht
+// in state.placed).
+function placedValuesFlat() {
+  const out = [];
+  for (const row of state.placed) for (const v of row) if (v != null) out.push(v);
+  return out;
+}
+// Letzte Instanz nach JEDEM Zug: laufen Brett und Vorrat auseinander, wird der
+// Vorrat aus dem Brett neu abgeleitet. Die billige Prüfung (trayMatchesBoard)
+// läuft immer, das teure reconcileTray nur im Schadensfall — es vergibt alle ids
+// neu und würde sonst bei jedem Zug die Auswahl und das ganze Vorrats-Rendering
+// zurücksetzen. Damit kann sich eine Abweichung nie mehr aufsummieren, egal aus
+// welcher Richtung sie kommt (gleichzeitige Züge zweier Spieler, verlorene oder
+// doppelte Ereignisse).
+function healTrayIfDrifted() {
+  const p = state.puzzle;
+  if (!p) return;
+  const placedValues = placedValuesFlat();
+  if (trayMatchesBoard(state.tray, placedValues, p.tray)) return;
+  const before = state.tray.length;
+  state.tray = reconcileTray(state.tray, placedValues, p.tray);
+  state.pick = null;                      // die ids sind neu — die Auswahl zeigt ins Leere
+  log('game', 'Vorrat nachgezogen (Brett und Vorrat waren auseinandergelaufen)', {
+    vorher: before, nachher: state.tray.length, coop: !!(state.coop.active || state.team.active),
+  });
+}
+
 /**
  * Ablegen des aufgenommenen Steins auf Feld (r,c).
  * Belegtes Ziel → die beiden Steine TAUSCHEN (vom Brett) bzw. der alte geht
@@ -2206,6 +2254,7 @@ function clearAt(r, c, opts = {}) {
 function dropOn(r, c, src = state.pick) {
   if (boardLocked() || !src) return false;
   if (!isBlankCell(r, c)) { state.pick = null; return false; }
+  if (srcIsStale(src)) { state.pick = null; return false; }
   const target = state.placed[r][c];
   const from = src.from;
   if (from && from.r === r && from.c === c) { state.pick = null; return false; }
@@ -2224,6 +2273,7 @@ function dropOn(r, c, src = state.pick) {
 /** Ablegen im Vorrat: das Herkunftsfeld wird frei. */
 function dropOnTray(src = state.pick) {
   if (boardLocked() || !src || !src.from) { state.pick = null; return false; }
+  if (srcIsStale(src)) { state.pick = null; return false; }
   const ok = clearAt(src.from.r, src.from.c);
   state.pick = null;
   return ok;
