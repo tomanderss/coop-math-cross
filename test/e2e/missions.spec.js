@@ -49,7 +49,7 @@ test.describe('weekly missions', () => {
       s.missions.progress = {};
     });
     await startNewGame(page, 'sehrleicht');
-    await solveActivePuzzle(page); // makelloser Sieg (0 Fehler/Hinweise)
+    await solveActivePuzzle(page); // makelloser Sieg (0 Fehler)
     await dismissStreakModal(page);
     await expect(page.locator('.result-card.win')).toBeVisible();
     const p = await page.evaluate(() => ({ ...window.__cns.state.missions.progress }));

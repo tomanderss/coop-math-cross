@@ -1,7 +1,7 @@
 // app.js — Coop Math Cross (Vue 3, esm-browser). Solo-Spiel; Coop folgt später.
 import { createApp, reactive, computed, watch, nextTick, onMounted, markRaw, ref } from './vue.esm-browser.prod.js';
 import { BUILD, CHANGELOG } from './buildinfo.js';
-import { DIFFICULTIES, DIFF_BY_ID, REGION_COLORS, COOP_COLORS, COOP_COLORS_CB, DEFAULT_GAME_OPTIONS, bigNumbersAllowed, genOptionsFor, LIVES, HINTS, COOP_MAX_PLAYERS, DONATE_URL, coinReward, coinMultiplier, coinBaseForIndex, coinStreakBonus, COIN_STREAK_STEP, hexToRgb } from './config.js';
+import { DIFFICULTIES, DIFF_BY_ID, REGION_COLORS, COOP_COLORS, COOP_COLORS_CB, DEFAULT_GAME_OPTIONS, bigNumbersAllowed, genOptionsFor, LIVES, COOP_MAX_PLAYERS, DONATE_URL, coinReward, coinMultiplier, coinBaseForIndex, coinStreakBonus, COIN_STREAK_STEP, hexToRgb } from './config.js';
 import { generatePuzzle } from './generator.js';
 import { validPuzzleShape as puzzleShapeOk } from './model.js';
 import {
@@ -98,8 +98,6 @@ const state = reactive({
   drag: null,                // laufendes Ziehen { v, from:{r,c}|null, tileId, x, y } oder null
   pick: null,                // per Antippen gewählter Stein { v, from:{r,c}|null, tileId } oder null
   lives: 0, maxLives: 0,
-  hintsLeft: 0,
-  hintsUsed: 0,
   mistakes: 0,
   status: 'idle',            // idle | playing | won | lost
   saveSlot: 'solo',          // STABILE Speicher-Slot-Kennung ('solo'|'coop'|'race'), beim Laden gesetzt.
@@ -279,7 +277,7 @@ const state = reactive({
   // Level auf gemeinsamem Leben-/Hinweis-Pool. active=true markiert die laufende
   // Partie als Endlos (analog isTrainingGame/isRaceGame). endlessSummary hält den
   // Ergebnis-Screen nach Laufende.
-  endless: { active: false, coop: false, advancing: false, level: 0, lives: 0, hints: 0, score: 0, coins: 0, best: 0, lifeLossBy: [], accumMs: 0 },
+  endless: { active: false, coop: false, advancing: false, level: 0, lives: 0, score: 0, coins: 0, best: 0, lifeLossBy: [], accumMs: 0 },
   // Wochen-Missionen (js/missions.js): aktive Missionen der Woche + Fortschritt +
   // Eingelöst-Status. weekKey rotiert wöchentlich (initMissions setzt beim Start/
   // Wochenwechsel neu). claimNotice = kurzer Feier-Toast beim Einlösen.
@@ -1367,7 +1365,7 @@ function startEndless() {
     // sich mit Zwischenmarkern desselben Laufs, von denen jeder einzeln
     // fortsetzbar aussah. Ein Lauf ist EIN Eintrag.
     runId: generateId(),
-    lives: ENDLESS_CFG.startLives, hints: ENDLESS_CFG.startHints,
+    lives: ENDLESS_CFG.startLives,
     score: 0, coins: 0, best: state.stats.endlessBest || 0,
     bigNumbers: !!state.sel.bigNumbers,   // „Große Zahlen" gilt für den ganzen Lauf (je Level, wo erlaubt)
     accumMs: 0,                            // aufsummierte Zeit aller geschafften Level (Gesamt-Timer)
@@ -1401,7 +1399,7 @@ function finishEndlessLevel(puzzle) {
   // Rundenstand mit dem GETEILTEN Pool laden (Leben/Hinweise wandern von Level zu
   // Level mit). saveSlot='endless' (loadPuzzleIntoState) → nie im Solo-Slot persistiert.
   loadPuzzleIntoState(puzzle, {
-    lives: state.endless.lives, maxLives: ENDLESS_CFG.maxLives, hintsLeft: state.endless.hints,
+    lives: state.endless.lives, maxLives: ENDLESS_CFG.maxLives,
   });
   state.generating = false;
   startTimer();
@@ -1419,7 +1417,7 @@ function endlessLevelSolved(remote) {
   if (state.status === 'won') return;   // Level-Screen zeigt bereits (idempotent)
   const e = state.endless;
   if (!remote && !state.paused && state.startTime) state.elapsed = Math.max(0, gameNow() - state.startTime);
-  if (remote) { state.elapsed = remote.timeMs ?? state.elapsed; state.mistakes = remote.mistakes ?? state.mistakes; state.hintsUsed = remote.hintsUsed ?? state.hintsUsed; }
+  if (remote) { state.elapsed = remote.timeMs ?? state.elapsed; state.mistakes = remote.mistakes ?? state.mistakes; }
   state.status = 'won';
   stopTimer();
   // Zeit dieses geschafften Levels in den Gesamt-Timer des Laufs übernehmen (genau
@@ -1427,10 +1425,9 @@ function endlessLevelSolved(remote) {
   // Timer (status!=='playing') accumMs allein — kein Doppelzählen des Level-Timers.
   e.accumMs = (e.accumMs || 0) + Math.max(0, state.elapsed || 0);
   e.score = e.level;                                    // dieses Level ist geschafft
-  e.hints = Math.max(0, state.hintsLeft || 0);          // Rest-Hinweise mitnehmen
   e.lives = Math.max(0, state.lives);                   // Rest-Leben übertragen (kein Refill)
   if (e.coop) e.lifeLossBy = (state.coop.lifeLossBy || []).slice();  // wer welche Leben verbraucht hat — bewahren
-  state.perfectWin = (state.mistakes || 0) === 0 && (state.hintsUsed || 0) === 0;
+  state.perfectWin = (state.mistakes || 0) === 0;
   state.newHighscore = false; state.wouldHaveBeenBest = false; state.lastCoinReward = 0; state.lastStreakUsed = 0;
   launchWinFx(state.perfectWin);
   updateMusic();
@@ -1440,7 +1437,7 @@ function endlessLevelSolved(remote) {
   // Schwierigkeit: Sieg-Zähler (global + je Schwierigkeit), Zeit-Summen, Bestzeit
   // + Bestenliste, VOLLE Münzbelohnung mit allen Multiplikatoren (perfekt ×2,
   // Bestzeit ×2, Coop ×2, Streak-Bonus), Tages-Streak, Verlauf, Missionen,
-  // Achievements/Prestige. „Perfekt" gilt pro Level (mistakes/hintsUsed je Level
+  // Achievements/Prestige. „Perfekt" gilt pro Level (mistakes je Level
   // frisch), NICHT nach in früheren Leveln verlorenen Leben. Der Lauf selbst wird
   // am Ende NUR noch als Lauf gewertet (endlessBest/Runs) — die Münzen sind dann
   // schon je Level geflossen (keine Doppel-Vergütung). Wie in win() läuft die
@@ -1457,17 +1454,17 @@ function endlessLevelSolved(remote) {
     applyStreakAfterGame();
     // Bestzeit-Vergleich VOR recordResult einfangen (der Aufruf überschreibt sie).
     const prevBest = isCoop ? state.stats.byDifficulty[diff]?.coopBestTimeMs : state.stats.byDifficulty[diff]?.bestTimeMs;
-    const disqualified = (state.mistakes || 0) > 0 || (state.hintsUsed || 0) > 0;
+    const disqualified = (state.mistakes || 0) > 0;
     state.wouldHaveBeenBest = disqualified && (prevBest == null || state.elapsed < prevBest);
     const { stats, newHighscore } = recordResult({
       difficulty: diff, outcome: 'won',
-      timeMs: state.elapsed, hintsUsed: state.hintsUsed, mistakes: state.mistakes,
+      timeMs: state.elapsed, mistakes: state.mistakes,
       coop: isCoop,
     });
     state.stats = stats;
     state.newHighscore = newHighscore;
     const dIdx = DIFFICULTIES.findIndex(d => d.id === diff);
-    const perfect = (state.mistakes || 0) === 0 && (state.hintsUsed || 0) === 0;
+    const perfect = (state.mistakes || 0) === 0;
     const streakDays = state.streak.currentStreak || 0;
     const bonus = { coop: isCoop, perfect, bestTime: newHighscore, streak: streakDays };
     // Belohnungs-Idempotenz je Level (jedes Level hat seine eigene gameId) — wie
@@ -1510,7 +1507,7 @@ function endlessLevelSolved(remote) {
     // Münzsumme) den Zwischen-Level-Marker sichern — das gelöste Brett selbst
     // taugt nicht zum Fortsetzen, das Fortsetzen startet frisch bei score+1.
     if (!isCoop) {
-      const marker = { pending: true, ts: Date.now(), gameId: state.gameId, endless: { runId: e.runId || null, level: e.score + 1, lives: e.lives, hints: e.hints, score: e.score, bigNumbers: !!e.bigNumbers, accumMs: e.accumMs || 0, coins: e.coins || 0 } };
+      const marker = { pending: true, ts: Date.now(), gameId: state.gameId, endless: { runId: e.runId || null, level: e.score + 1, lives: e.lives, score: e.score, bigNumbers: !!e.bigNumbers, accumMs: e.accumMs || 0, coins: e.coins || 0 } };
       saveActiveGameEndless(marker);
       rememberSave(marker, 'endless', endlessSaveId());   // auch der Zwischenstand gehoert in die Bibliothek
     }
@@ -1557,7 +1554,7 @@ function endlessGameOver() {
   if (state.puzzle && !state.isTrainingGame) {
     const { stats } = recordResult({
       difficulty: state.puzzle.difficulty, outcome: 'lost',
-      timeMs: state.elapsed, hintsUsed: state.hintsUsed, mistakes: state.mistakes,
+      timeMs: state.elapsed, mistakes: state.mistakes,
       coop: false,
     });
     state.stats = stats;
@@ -1671,7 +1668,7 @@ function startCoopEndless() {
   state.coop.active = true;
   state.coop.waitingForGuest = false;
   state.coop.awaitingStart = false;   // kein Bereit-Lobby-Umweg im Endlos
-  state.endless = { active: true, coop: true, advancing: false, level: 1, lives: LIVES, hints: HINTS, score: 0, coins: 0, best: state.stats.endlessCoopBest || 0, bigNumbers: !!state.coop.lobbyBigNumbers, accumMs: 0 };
+  state.endless = { active: true, coop: true, advancing: false, level: 1, lives: LIVES, score: 0, coins: 0, best: state.stats.endlessCoopBest || 0, bigNumbers: !!state.coop.lobbyBigNumbers, accumMs: 0 };
   navigate('game');
   log('coop', 'Coop-Endlos gestartet', { players: state.coop.players.length, bigNumbers: state.endless.bigNumbers });
   loadCoopEndlessLevel();
@@ -1724,7 +1721,7 @@ function endlessCoopGameOver() {
   if (state.puzzle && !state.isTrainingGame) {
     const { stats } = recordResult({
       difficulty: state.puzzle.difficulty, outcome: 'lost',
-      timeMs: state.elapsed, hintsUsed: state.hintsUsed, mistakes: state.mistakes,
+      timeMs: state.elapsed, mistakes: state.mistakes,
       coop: true,
     });
     state.stats = stats;
@@ -1896,8 +1893,6 @@ function loadPuzzleIntoState(puzzle, saved) {
   state.lives = saved?.lives ?? LIVES;
   // Hinweise sind in ALLEN Modi unbegrenzt (Nutzerwunsch) — auch ein alter
   // Spielstand/Endlos-Lauf mit endlichem Rest-Pool wird auf ∞ angehoben.
-  state.hintsLeft = HINTS;
-  state.hintsUsed = saved?.hintsUsed ?? 0;
   state.mistakes = saved?.mistakes ?? 0;
   state.coop.lifeLossBy = [];
   state.coop.mistakesByPlayer = {};
@@ -2603,7 +2598,7 @@ function receiveChat(msg) {
   const text = String(msg.text || '').slice(0, CHAT_TEXT_MAX);
   if (!text) return;
   pushChatMessage({ uid: msg.author || null, name: String(msg.name || t('chat.anon')).slice(0, 40), color: msg.color || null, badge: msg.badge || null, text, self: false, ts: Date.now() });
-  if (state.settings.sfxHint) Music.sfxChat();  // EIGENER Chat-Ton (nicht der Hinweis-Ton)
+  if (state.settings.sfxChat) Music.sfxChat();
   log('coop', 'Chat empfangen', { len: text.length });
 }
 function sendChat() {
@@ -2789,20 +2784,20 @@ function handleCoopMsg(msg) {
       // Level-INITs hinweg BEWAHREN — der Gast hat beides beim Lösen des gerade
       // beendeten Levels in endlessLevelSolved summiert; ein frischer INIT darf
       // sie nicht zurücksetzen.
-      state.endless = { active: true, coop: true, advancing: false, level: msg.endlessLevel || 1, lives: msg.lives ?? LIVES, hints: HINTS, score: (msg.endlessLevel || 1) - 1, coins: state.endless.coins || 0, best: state.stats.endlessCoopBest || 0, bigNumbers: !!(msg.puzzle && msg.puzzle.bigNumbers), accumMs: state.endless.accumMs || 0 };
+      state.endless = { active: true, coop: true, advancing: false, level: msg.endlessLevel || 1, lives: msg.lives ?? LIVES, score: (msg.endlessLevel || 1) - 1, coins: state.endless.coins || 0, best: state.stats.endlessCoopBest || 0, bigNumbers: !!(msg.puzzle && msg.puzzle.bigNumbers), accumMs: state.endless.accumMs || 0 };
     } else if (state.endless.active) {
       state.endless.active = false;
     }
     // Gäste generieren nichts selbst -- sie bekommen das fertige Rätsel des Hosts
     // und sind damit sofort "fertig" (kein Ladebalken in der Lobby nötig).
-    // lives/maxLives/hintsLeft/hintsUsed/mistakes sind optional (rückwärts-
+    // lives/maxLives/mistakes sind optional (rückwärts-
     // kompatibel): eine live zu Coop umgewandelte Solo-Partie (s. Solo → Coop)
     // schickt ihren Zwischenstand mit, damit Beitretende nicht mit vollen
     // Leben/Hinweisen in eine halb gespielte Runde einsteigen. gameId übernehmen,
     // damit ein späteres Wiederhol-INIT (s.o.) als Duplikat erkannt wird.
     loadPuzzleIntoState(msg.puzzle, {
       placed: msg.placed, tray: msg.tray, markedBy: msg.markedBy, startTime: msg.startTime, gameId: msg.gameId,
-      lives: msg.lives, maxLives: msg.maxLives, hintsLeft: msg.hintsLeft, hintsUsed: msg.hintsUsed, mistakes: msg.mistakes,
+      lives: msg.lives, maxLives: msg.maxLives, mistakes: msg.mistakes,
     });
     // Coop-Endlos: kumulierte Herz-Verluste (wer welches Leben verbrauchte) vom
     // Host übernehmen — loadPuzzleIntoState hat lifeLossBy geleert, daher DANACH.
@@ -2841,7 +2836,7 @@ function handleCoopMsg(msg) {
     // verirrtes/verspätetes Event einer früheren Runde. Ignorieren, sonst
     // beendet es die noch gar nicht gestartete Runde sofort.
     if (state.coop.awaitingStart) return;
-    const remote = { timeMs: msg.timeMs, mistakes: msg.mistakes, hintsUsed: msg.hintsUsed };
+    const remote = { timeMs: msg.timeMs, mistakes: msg.mistakes };
     if (msg.status === 'won') win(remote);
     else if (msg.status === 'lost') lose(remote);
   } else if (msg.type === Coop.MSG.IDENTITY) {
@@ -2907,7 +2902,7 @@ function handleCoopMsg(msg) {
     // falschen eigenen Prozentwert an.
     state.team.myPct = progressPct();
     if (state.status === 'playing') {
-      const remote = { timeMs: state.elapsed, mistakes: state.mistakes, hintsUsed: state.hintsUsed };
+      const remote = { timeMs: state.elapsed, mistakes: state.mistakes };
       if (state.team.winningTeam === state.team.myTeam) win(remote);
       else lose(remote);
     }
@@ -2935,7 +2930,7 @@ function handleCoopMsg(msg) {
         state.race.endReason = 'won';
         state.race.winnerName = (fin && fin.name) || t('common.defaultPlayerName');
         state.race.myPct = progressPct();
-        if (state.status === 'playing') lose({ timeMs: state.elapsed, mistakes: state.mistakes, hintsUsed: state.hintsUsed });
+        if (state.status === 'playing') lose({ timeMs: state.elapsed, mistakes: state.mistakes });
         return;
       }
       if (fin) fin.out = true;
@@ -2946,7 +2941,7 @@ function handleCoopMsg(msg) {
         state.race.endReason = 'lost';
         state.race.winnerName = myUsername() || t('common.you');
         state.race.myPct = progressPct();
-        win({ timeMs: state.elapsed, mistakes: state.mistakes, hintsUsed: state.hintsUsed });
+        win({ timeMs: state.elapsed, mistakes: state.mistakes });
       }
       return;
     }
@@ -2958,7 +2953,7 @@ function handleCoopMsg(msg) {
     state.race.endReason = msg.outcome;
     state.race.myPct = progressPct();
     if (state.status === 'playing') {
-      const remote = { timeMs: state.elapsed, mistakes: state.mistakes, hintsUsed: state.hintsUsed };
+      const remote = { timeMs: state.elapsed, mistakes: state.mistakes };
       if (state.race.winner === 'me') win(remote);
       else lose(remote);
     }
@@ -3234,7 +3229,7 @@ function broadcastRunningInit() {
   Coop.send({
     type: Coop.MSG.INIT, gameId: state.gameId, running: true,
     puzzle: state.puzzle, placed: wirePlaced(), tray: state.tray.map(t => ({ v: t.v, used: t.used ? 1 : 0 })), markedBy: wireMarkedBy(), startTime: state.startTime,
-    lives: state.lives, maxLives: state.maxLives, hintsLeft: state.hintsLeft, hintsUsed: state.hintsUsed, mistakes: state.mistakes,
+    lives: state.lives, maxLives: state.maxLives, mistakes: state.mistakes,
     ...endlessExtra,
   });
   Coop.send({ type: Coop.MSG.START, startTime: state.startTime });
@@ -3758,9 +3753,8 @@ function startJoining() {
 function checkAchievements() {
   const ctx = {
     outcome: state.status,
-    perfect: (state.mistakes || 0) === 0 && (state.hintsUsed || 0) === 0,
+    perfect: (state.mistakes || 0) === 0,
     mistakes: state.mistakes || 0,
-    hintsUsedGame: state.hintsUsed || 0,
     difficulty: state.puzzle?.difficulty,
     bigNumbers: !!state.puzzle?.bigNumbers,
     coop: state.coop.active,
@@ -3876,12 +3870,11 @@ function win(remote) {
   if (remote) {
     state.elapsed = remote.timeMs;
     state.mistakes = remote.mistakes;
-    state.hintsUsed = remote.hintsUsed;
   }
   // Sieganimation + Sieg-Sound SOFORT starten (Sound läuft in launchWinFx, an die
   // Animation/Stufe gekoppelt). Der Ergebnis-Dialog erscheint ebenfalls sofort —
   // KEIN Vorlauf mehr; die Animation liegt per z-index ohnehin ÜBER dem Dialog.
-  launchWinFx((state.mistakes || 0) === 0 && (state.hintsUsed || 0) === 0);
+  launchWinFx((state.mistakes || 0) === 0);
   // Anzeige-Werte auf sichere Defaults, damit der sofort sichtbare Dialog keine
   // Werte des Vorspiels zeigt — die echten folgen unten (Münzen zählen von 0 hoch).
   state.lastCoinReward = 0;
@@ -3911,11 +3904,11 @@ function win(remote) {
       const prevBest = state.coop.active
         ? state.stats.byDifficulty[state.puzzle.difficulty]?.coopBestTimeMs
         : state.stats.byDifficulty[state.puzzle.difficulty]?.bestTimeMs;
-      const disqualified = state.mistakes > 0 || state.hintsUsed > 0;
+      const disqualified = state.mistakes > 0;
       state.wouldHaveBeenBest = disqualified && (prevBest == null || state.elapsed < prevBest);
       const { stats, newHighscore } = recordResult({
         difficulty: state.puzzle.difficulty, outcome: 'won',
-        timeMs: state.elapsed, hintsUsed: state.hintsUsed, mistakes: state.mistakes,
+        timeMs: state.elapsed, mistakes: state.mistakes,
         coop: state.coop.active,
       });
       state.stats = stats;
@@ -3925,7 +3918,7 @@ function win(remote) {
       // Boni stapeln multiplikativ (kein Cap): Coop/Wettkampf ×2, makelloser Sieg
       // ×2, neue Bestzeit ×2 → bis ×8.
       const dIdx = DIFFICULTIES.findIndex(d => d.id === state.puzzle.difficulty);
-      const perfect = state.mistakes === 0 && state.hintsUsed === 0;
+      const perfect = state.mistakes === 0;
       const isCoopish = state.coop.active || state.isRaceGame || state.team.active;
       // Streak-Bonus (+10% je Streak-Tag, additiv) fließt in den Gesamt-Multiplikator
       // ein — applyStreakAfterGame() lief oben bereits, state.streak ist aktuell.
@@ -3976,7 +3969,7 @@ function win(remote) {
       });
       recordMissionEvent({
         won: true, played: true,
-        perfect: (state.mistakes || 0) === 0 && (state.hintsUsed || 0) === 0,
+        perfect: (state.mistakes || 0) === 0,
         coop: state.coop.active, race: state.isRaceGame || state.team.active,
         bigNumbers: !!state.puzzle?.bigNumbers, difficulty: state.puzzle?.difficulty,
         diffIndex: DIFFICULTIES.findIndex(d => d.id === state.puzzle?.difficulty),
@@ -3992,7 +3985,7 @@ function win(remote) {
     // die App direkt danach geschlossen wird.
     syncCloudNow('win');
     if (state.coop.active && !remote) {
-      coopSend({ type: Coop.MSG.STATUS, status: 'won', timeMs: state.elapsed, mistakes: state.mistakes, hintsUsed: state.hintsUsed });
+      coopSend({ type: Coop.MSG.STATUS, status: 'won', timeMs: state.elapsed, mistakes: state.mistakes });
     }
     if (state.team.active && !remote) broadcastTeamDone('won');
     if (state.race.active && !remote) broadcastRaceDone('won');
@@ -4018,12 +4011,11 @@ function lose(remote) {
   if (remote) {
     state.elapsed = remote.timeMs;
     state.mistakes = remote.mistakes;
-    state.hintsUsed = remote.hintsUsed;
   }
   if (!state.isTrainingGame && !state.isRaceGame) {
     const { stats } = recordResult({
       difficulty: state.puzzle.difficulty, outcome: 'lost',
-      timeMs: state.elapsed, hintsUsed: state.hintsUsed, mistakes: state.mistakes,
+      timeMs: state.elapsed, mistakes: state.mistakes,
       coop: state.coop.active,
     });
     state.stats = stats;
@@ -4051,7 +4043,7 @@ function lose(remote) {
   persistGame();
   syncCloudNow('lose');  // sofortige Sicherung bei Spielende (auch Niederlage)
   if (state.coop.active && !remote) {
-    coopSend({ type: Coop.MSG.STATUS, status: 'lost', timeMs: state.elapsed, mistakes: state.mistakes, hintsUsed: state.hintsUsed });
+    coopSend({ type: Coop.MSG.STATUS, status: 'lost', timeMs: state.elapsed, mistakes: state.mistakes });
   }
   if (state.team.active && !remote) broadcastTeamDone('lost');
   if (state.race.active && !remote) broadcastRaceDone('lost');
@@ -4079,7 +4071,7 @@ function quitToHome() {
     if (state.endless.coop) { endlessAbort(); }
     else {
       if (state.status === 'playing' && state.puzzle) saveActiveGameEndless(endlessSnapshot());
-      state.endless = { active: false, coop: false, advancing: false, level: 0, lives: 0, hints: 0, score: 0, coins: 0, best: 0, lifeLossBy: [], accumMs: 0 };
+      state.endless = { active: false, coop: false, advancing: false, level: 0, lives: 0, score: 0, coins: 0, best: 0, lifeLossBy: [], accumMs: 0 };
     }
   }
   // Noch unbeantwortete Solo-Einladung? Raum abbauen (nach der Umwandlung ist
@@ -4351,7 +4343,7 @@ function cancelSoloInvite() {
 function activeSnapshot() {
   return {
     puzzle: state.puzzle, placed: wirePlaced(), tray: state.tray.map(t => ({ v: t.v, used: t.used ? 1 : 0 })), markedBy: wireMarkedBy(), lives: state.lives, maxLives: state.maxLives,
-    hintsLeft: state.hintsLeft, hintsUsed: state.hintsUsed, mistakes: state.mistakes,
+    mistakes: state.mistakes,
     elapsed: state.elapsed, difficulty: state.puzzle.difficulty,
     gameId: state.gameId,   // Partie-Identität mitsichern (Multi-Device-Session/Fortsetzen)
     ts: Date.now(),
@@ -4364,7 +4356,7 @@ function endlessSnapshot() {
   const e = state.endless;
   return {
     ...activeSnapshot(),
-    endless: { runId: e.runId || null, level: e.level, lives: state.lives, hints: Math.max(0, state.hintsLeft || 0), score: e.score, bigNumbers: !!e.bigNumbers, accumMs: e.accumMs || 0, coins: e.coins || 0 },
+    endless: { runId: e.runId || null, level: e.level, lives: state.lives, score: e.score, bigNumbers: !!e.bigNumbers, accumMs: e.accumMs || 0, coins: e.coins || 0 },
   };
 }
 function persistGame() {
@@ -4688,7 +4680,7 @@ function resumeEndlessGame() {
     // Alt-Staende (vor der Lauf-Kennung) erben den Bibliotheks-Schluessel, unter
     // dem sie liegen — so bleibt ihr Eintrag beim Weiterspielen derselbe.
     runId: em.runId || g.id || g.gameId || generateId(),
-    lives: em.lives, hints: em.hints, score: em.score,
+    lives: em.lives, score: em.score,
     coins: em.coins || 0,       // bisher im Lauf verdiente Münzen (Summary am Laufende)
     best: state.stats.endlessBest || 0, bigNumbers: !!em.bigNumbers,
     accumMs: em.accumMs || 0,   // Gesamt-Timer nahtlos fortsetzen
@@ -5142,7 +5134,7 @@ function toggleSetting(key) {
     else if (key === 'sfxKeep') Music.sfxKeep();
     else if (key === 'sfxRemove') Music.sfxRemove();
     else if (key === 'sfxError') Music.sfxError();
-    else if (key === 'sfxHint') Music.sfxHint();
+    else if (key === 'sfxChat') Music.sfxChat();
     else if (key === 'sfxToolSwitch') Music.sfxToolSwitch();
     else if (key === 'sfxWin') Music.sfxWin();
     else if (key === 'sfxLose') Music.sfxLose();
@@ -8762,8 +8754,8 @@ const App = {
           <div class="set-row" @click="toggleSetting('sfxError')">
             <span>{{ t('settings.sfxError') }}</span><span class="switch" :class="{on:state.settings.sfxError}"><i></i></span>
           </div>
-          <div class="set-row" @click="toggleSetting('sfxHint')">
-            <span>{{ t('settings.sfxHint') }}</span><span class="switch" :class="{on:state.settings.sfxHint}"><i></i></span>
+          <div class="set-row" @click="toggleSetting('sfxChat')">
+            <span>{{ t('settings.sfxChat') }}</span><span class="switch" :class="{on:state.settings.sfxChat}"><i></i></span>
           </div>
           <div class="set-row" @click="toggleSetting('sfxToolSwitch')">
             <span>{{ t('settings.sfxToolSwitch') }}</span><span class="switch" :class="{on:state.settings.sfxToolSwitch}"><i></i></span>

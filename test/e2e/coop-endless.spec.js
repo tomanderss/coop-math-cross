@@ -78,7 +78,7 @@ test.describe('coop endless climb', () => {
     await page.evaluate(() => {
       localStorage.setItem('cmc_active_game_endless', JSON.stringify({
         ts: Date.now(), pending: true,
-        endless: { level: 5, lives: 2, hints: 3, score: 4, bigNumbers: false, accumMs: 123456, coins: 400 },
+        endless: { level: 5, lives: 2, score: 4, bigNumbers: false, accumMs: 123456, coins: 400 },
       }));
     });
     await asGuest(page);

@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  LIVES, HINTS, DIFFICULTIES, DIFF_BY_ID, genOptionsFor, bigNumbersAllowed,
+  LIVES, DIFFICULTIES, DIFF_BY_ID, genOptionsFor, bigNumbersAllowed,
   REGION_COLORS, COOP_COLORS, DEFAULT_SETTINGS, DEFAULT_GAME_OPTIONS,
   regionColorDist, regionChipInk, coinReward, coinMultiplier, coinBaseForIndex, COIN_BASE,
   coinStreakBonus, COIN_STREAK_STEP,
@@ -10,7 +10,6 @@ import {
 describe('config constants', () => {
   test('basic invariants', () => {
     assert.equal(LIVES, 3);
-    assert.equal(HINTS, Infinity);
   });
 });
 

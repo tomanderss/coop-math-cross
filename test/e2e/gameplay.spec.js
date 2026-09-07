@@ -57,7 +57,7 @@ test.describe('gameplay', () => {
     await expect(page.locator('.diff-row').first().locator('.chip').first()).toContainText('1 / 1');
   });
 
-  // Graded win animation (Punkt 10): ein makelloser Sieg (0 Fehler, 0 Hinweise)
+  // Graded win animation (Punkt 10): ein makelloser Sieg (0 Fehler)
   // bekommt zusätzlich zum normalen Konfetti einen goldenen Schimmer + Badge --
   // ein Sieg MIT Fehler bekommt explizit keines von beidem.
   test('a flawless win shows the perfect-win badge and shine, a win with a mistake does not', async ({ page }) => {
@@ -110,7 +110,7 @@ test.describe('gameplay', () => {
     expect(await page.evaluate(() => window.__cns.state.zoom)).toBe(1);
   });
 
-  // Unter dem Vorrat gibt es KEINE Knopfleiste mehr: der Hinweis ist entfallen
+  // Unter dem Vorrat gibt es KEINE Knopfleiste mehr: die Hinweis-Funktion ist weg
   // und der Vorrat sortiert sich von selbst. Der Platz gehoert dem Brett.
   test('there is no button bar below the tray', async ({ page }) => {
     await gotoApp(page);

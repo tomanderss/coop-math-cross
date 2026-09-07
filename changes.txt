@@ -1,0 +1,4 @@
+Spielanleitung: Sortier-Knopf und Hinweise werden nicht mehr erwähnt — beides gibt es nicht mehr
+Hinweis-Reste restlos entfernt: Statistik-Zähler, Erfolg „Auf eigene Faust", Hinweis-Ton
+Der Sound-Schalter „Hinweis" heißt jetzt „Chat-Nachricht" — er schaltete ohnehin nur den Chat-Ton
+Ein perfektes Spiel hängt jetzt allein an null Fehlern

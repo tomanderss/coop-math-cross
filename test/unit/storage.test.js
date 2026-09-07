@@ -148,7 +148,7 @@ describe('storage.recordResult', () => {
 
   test('a perfect win sets a new highscore', () => {
     const { stats, newHighscore } = recordResult({
-      difficulty: 'mittel', outcome: 'won', timeMs: 5000, hintsUsed: 0, mistakes: 0,
+      difficulty: 'mittel', outcome: 'won', timeMs: 5000, mistakes: 0,
     });
     assert.equal(newHighscore, true);
     assert.equal(stats.won, 1);
@@ -158,36 +158,36 @@ describe('storage.recordResult', () => {
 
   test('a win with mistakes never sets a highscore', () => {
     const { newHighscore, stats } = recordResult({
-      difficulty: 'mittel', outcome: 'won', timeMs: 1000, hintsUsed: 0, mistakes: 1,
+      difficulty: 'mittel', outcome: 'won', timeMs: 1000, mistakes: 1,
     });
     assert.equal(newHighscore, false);
     assert.equal(stats.byDifficulty.mittel.bestTimeMs, null);
   });
 
   test('a faster perfect win overwrites a slower highscore', () => {
-    recordResult({ difficulty: 'mittel', outcome: 'won', timeMs: 9000, hintsUsed: 0, mistakes: 0 });
-    const { newHighscore, stats } = recordResult({ difficulty: 'mittel', outcome: 'won', timeMs: 3000, hintsUsed: 0, mistakes: 0 });
+    recordResult({ difficulty: 'mittel', outcome: 'won', timeMs: 9000, mistakes: 0 });
+    const { newHighscore, stats } = recordResult({ difficulty: 'mittel', outcome: 'won', timeMs: 3000, mistakes: 0 });
     assert.equal(newHighscore, true);
     assert.equal(stats.byDifficulty.mittel.bestTimeMs, 3000);
   });
 
   test('a slower perfect win does not overwrite an existing highscore', () => {
-    recordResult({ difficulty: 'mittel', outcome: 'won', timeMs: 3000, hintsUsed: 0, mistakes: 0 });
-    const { newHighscore, stats } = recordResult({ difficulty: 'mittel', outcome: 'won', timeMs: 9000, hintsUsed: 0, mistakes: 0 });
+    recordResult({ difficulty: 'mittel', outcome: 'won', timeMs: 3000, mistakes: 0 });
+    const { newHighscore, stats } = recordResult({ difficulty: 'mittel', outcome: 'won', timeMs: 9000, mistakes: 0 });
     assert.equal(newHighscore, false);
     assert.equal(stats.byDifficulty.mittel.bestTimeMs, 3000);
   });
 
   test('losing resets the current streak', () => {
-    recordResult({ difficulty: 'mittel', outcome: 'won', timeMs: 1000, hintsUsed: 0, mistakes: 0 });
-    const { stats } = recordResult({ difficulty: 'mittel', outcome: 'lost', timeMs: 1000, hintsUsed: 0, mistakes: 0 });
+    recordResult({ difficulty: 'mittel', outcome: 'won', timeMs: 1000, mistakes: 0 });
+    const { stats } = recordResult({ difficulty: 'mittel', outcome: 'lost', timeMs: 1000, mistakes: 0 });
     assert.equal(stats.currentStreak, 0);
     assert.equal(stats.lost, 1);
     assert.equal(stats.bestStreak, 1); // best streak survives the reset
   });
 
   test('coop results are tallied separately from solo results', () => {
-    recordResult({ difficulty: 'mittel', outcome: 'won', timeMs: 1000, hintsUsed: 0, mistakes: 0, coop: true });
+    recordResult({ difficulty: 'mittel', outcome: 'won', timeMs: 1000, mistakes: 0, coop: true });
     const stats = loadStats();
     assert.equal(stats.coopWon, 1);
     assert.equal(stats.won, 0);
@@ -206,7 +206,7 @@ describe('storage.applyEndlessBackfill', () => {
 
   test('books reconstructed wins/losses into global and per-difficulty counters', () => {
     // Vorbestand: 1 normaler Solo-Sieg (darf nicht überschrieben werden).
-    recordResult({ difficulty: 'mittel', outcome: 'won', timeMs: 5000, hintsUsed: 0, mistakes: 0 });
+    recordResult({ difficulty: 'mittel', outcome: 'won', timeMs: 5000, mistakes: 0 });
     const s = applyEndlessBackfill({
       runCount: 2, wins: 3, coopWins: 2, losses: 1, coopLosses: 1,
       perDiff: {

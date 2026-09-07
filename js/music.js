@@ -341,13 +341,6 @@ export function sfxError() {
   sfxVoice(midi(0), 0.16, 0.3, 0.5, { lp: 1400, attack: 0.01, partial2: 0.1 });
   sfxVoice(midi(-4), 0.32, 1.0, 0.58, { lp: 1300, attack: 0.01, partial2: 0.1 });
 }
-// Hinweis — heller, neugieriger Aufwärts-Schimmer (A4 -> D5 -> E5).
-export function sfxHint() {
-  if (!sfxReady()) return;
-  sfxVoice(midi(9), 0, 0.45, 0.4, { lp: 2400, attack: 0.02, partial2: 0.15 });
-  sfxVoice(midi(14), 0.14, 0.45, 0.4, { lp: 2400, attack: 0.02, partial2: 0.15 });
-  sfxVoice(midi(16), 0.28, 1.0, 0.44, { lp: 2400, attack: 0.02, partial2: 0.15 });
-}
 // Rückgängig (Undo) — kurzer Klick + tiefer, leicht abwärts gleitender Sinus-
 // Thump (G3 -> Eb3). Bewusst dunkel/dezent: signalisiert "zurück" ohne zu nerven.
 export function sfxUndo() {
@@ -355,8 +348,8 @@ export function sfxUndo() {
   sfxNoise(0, 0.012, 0.22, 6500);
   sfxVoice(midi(-5), 0, 0.24, 0.5, { lp: 650, attack: 0.006, glideTo: midi(-9), glideTime: 0.12 });
 }
-// Neue Chat-Nachricht — freundliches „Blubb-Blubb" (D5 -> A5), bewusst ANDERS als
-// der Hinweis-Ton (sfxHint), damit eine eingehende Nachricht klar erkennbar ist.
+// Neue Chat-Nachricht — freundliches „Blubb-Blubb" (D5 -> A5), klar von den
+// Zug-Tönen unterscheidbar.
 export function sfxChat() {
   if (!sfxReady()) return;
   sfxVoice(midi(14), 0, 0.16, 0.34, { lp: 2600, attack: 0.005, partial2: 0.12 });

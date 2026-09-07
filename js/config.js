@@ -3,11 +3,10 @@
 
 // ─── SCHWIERIGKEITEN ──────────────────────────────────────────────────────────
 // Jede Schwierigkeit hat eine FESTE Feldgröße (kein separater Größen-Wähler
-// mehr). Leben, Hinweise und Zahlenbereich sind für alle Schwierigkeiten
+// mehr). Leben und Zahlenbereich sind für alle Schwierigkeiten
 // gleich — nur Dimension, Lösungsdichte (keepRatio) und die garantierte
 // Mindestanzahl einstelliger Summen (für Mensch-Lösbarkeit) unterscheiden sich.
 export const LIVES = 3;
-export const HINTS = Infinity;
 
 // ─── SCHWIERIGKEITEN ──────────────────────────────────────────────────────────
 // Jede Stufe hat ein festes LOGISCHES Raster (Zahl-Felder). Das Anzeige-Raster
@@ -327,12 +326,12 @@ export const DEFAULT_SETTINGS = {
   // UI-Aktions-Sounds (js/music.js sfx*), je Aktion einzeln schaltbar. Default an.
   // sfxComplete = Käfig/Reihe/Spalte fertig (mit Stufung bei mehreren gleichzeitig),
   // sfxKeep = korrektes Einkreisen, sfxRemove = Löschen, sfxError = Fehler,
-  // sfxHint = Hinweis (bei jeder Hinweis-Instanz).
+  // sfxChat = eingehende Chat-Nachricht im Mehrspieler-Modus.
   sfxComplete: true,
   sfxKeep: true,
   sfxRemove: true,
   sfxError: true,
-  sfxHint: true,
+  sfxChat: true,
   sfxToolSwitch: true,
   sfxWin: true,
   sfxLose: true,
