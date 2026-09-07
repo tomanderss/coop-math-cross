@@ -690,7 +690,7 @@ export default {
     title: 'How to play',
     rule1: 'Drag the numbers from the <b>tray</b> below into the empty cells of the grid.',
     rule2: 'Every horizontal and vertical <b>equation</b> has to work out — e.g. <b>7 × 3 = 21</b>.',
-    rule3: 'Only <b>whole, positive numbers</b> — never a decimal, never a negative result.',
+    rule3: 'Only <b>whole numbers</b>, never a decimal, and a <b>result</b> is never negative. <b>Intermediate steps</b> may well be: <b>1 − 4 + 7 = 4</b> is fine.',
     rule4: 'Two tiles <b>swap</b> places when you drop one onto an occupied cell. The <b>sort button</b> puts the tray in ascending order.',
     rule5: 'The tray holds <b>exactly</b> the missing numbers — if tiles are left over, something is in the wrong place.',
     rule6: 'Every puzzle is uniquely solvable <b>without guessing</b>. A <b>mistake</b> is only made when a tile completes an equation that then does not work out — that costs a life.',
