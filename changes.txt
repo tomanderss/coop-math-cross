@@ -1,0 +1,1 @@
+Coop: legen beide gleichzeitig in dasselbe Feld, sehen jetzt beide dasselbe Ergebnis — die Bretter laufen nicht mehr auseinander

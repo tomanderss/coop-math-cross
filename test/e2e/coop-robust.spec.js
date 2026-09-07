@@ -1,6 +1,13 @@
 import { test, expect } from '@playwright/test';
 import { gotoApp, makePuzzle, startNewGame } from './helpers.js';
 
+// Ereignis-Schlüssel für die Konfliktauflösung. Echte Firebase-push-Schlüssel
+// beginnen alle mit '-', dem NIEDRIGSTEN Zeichen des Schlüssel-Alphabets: ein
+// Schlüssel aus lauter 'z' ist damit immer der spätere, einer aus lauter '-'
+// immer der frühere — unabhängig von der Uhr des Testrechners.
+const SPAETER = 'zzzzzzzzzzzzzzzzzzzz';
+const FRUEHER = '--------------------';
+
 // Coop-Robustheit: (1) kein Blackscreen mehr, wenn der Spiel-Screen ohne Brett
 // erreicht wird / ein kaputtes INIT eintrifft, (2) Coop-Offline-Rettung: das
 // Brett wird als eigenständiges Solo-Spiel weitergespielt/gespeichert,
@@ -257,7 +264,7 @@ test.describe('Coop: Vorrat und Brett laufen nicht auseinander', () => {
     await startNewGame(page, 'mittel');
     await asGuest(page);
 
-    const res = await page.evaluate(() => {
+    const res = await page.evaluate((SPAETER) => {
       const { state, placeAt, dropOn } = window.__cns;
       const p = state.puzzle;
       // Zwei offene Felder mit ihren richtigen Werten suchen.
@@ -274,7 +281,8 @@ test.describe('Coop: Vorrat und Brett laufen nicht auseinander', () => {
       // Stein auf Feld a aufnehmen …
       const src = { v: a.v, from: { r: a.r, c: a.c }, tileId: null };
       // … und BEVOR er landet, räumt der Partner genau dieses Feld.
-      window.__cns.handleCoopMsg({ type: 'move', from: 'host', cells: [{ r: a.r, c: a.c, v: '' }] });
+      // Schlüssel weit in der Zukunft: der Partner-Zug ist der spätere und gilt.
+      window.__cns.handleCoopMsg({ type: 'move', from: 'host', cells: [{ r: a.r, c: a.c, v: '' }] }, SPAETER);
       const abgelegt = dropOn(b.r, b.c, src);
 
       return {
@@ -283,7 +291,7 @@ test.describe('Coop: Vorrat und Brett laufen nicht auseinander', () => {
         zielLeer: state.placed[b.r][b.c] === null,
         quelleLeer: state.placed[a.r][a.c] === null,
       };
-    });
+    }, SPAETER);
     expect(res.abgelegt, 'der veraltete Zug wird abgelehnt').toBe(false);
     expect(res.zielLeer, 'nichts wird ins Ziel geschrieben').toBe(true);
     expect(res.quelleLeer, 'das Herkunftsfeld bleibt so, wie der Partner es hinterließ').toBe(true);
@@ -312,5 +320,67 @@ test.describe('Coop: Vorrat und Brett laufen nicht auseinander', () => {
     });
     expect(res.jetzt, 'der überzählige Stein ist weg').toBe(res.kaputt - 1);
     expect(res.ist, 'offene Steine + Brett ergeben wieder exakt den Rätsel-Vorrat').toEqual(res.soll);
+  });
+});
+
+// Gleichzeitige Züge auf DASSELBE Feld: beide Spieler legen los, bevor sie vom
+// anderen wissen. Ohne Regel endet jeder beim Zug des ANDEREN — die Bretter
+// laufen auseinander. Der Ereignis-Schlüssel ordnet die Züge global; pro Feld
+// gewinnt der spätere, und zwar auf beiden Geräten derselbe.
+test.describe('Coop: gleichzeitige Züge auf dasselbe Feld', () => {
+  async function asGuest(page) {
+    await page.evaluate(() => {
+      const s = window.__cns.state;
+      s.coop.active = true; s.coop.role = 'guest'; s.coop.myId = 'me'; s.coop.connected = true;
+      s.coop.players = [{ id: 'host', name: 'H', color: '#e5679a' }, { id: 'me', name: 'Ich', color: '#67a3e5' }];
+    });
+  }
+
+  test('ein ÄLTERER fremder Zug überschreibt das eigene Feld nicht', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page, 'mittel');
+    await asGuest(page);
+
+    const res = await page.evaluate((FRUEHER) => {
+      const { state, placeAt, handleCoopMsg } = window.__cns;
+      const b = window.__cns.firstBlank();
+      // Der eigene Zug wird mit einem SPÄTEN Schlüssel eingeordnet …
+      placeAt(b.r, b.c, b.v);
+      const meins = state.placed[b.r][b.c];
+      // … der Partner hatte dasselbe Feld kurz VORHER beschrieben (früherer Schlüssel).
+      handleCoopMsg({ type: 'move', from: 'host', cells: [{ r: b.r, c: b.c, v: 999 }] }, FRUEHER);
+      return { meins, jetzt: state.placed[b.r][b.c] };
+    }, FRUEHER);
+    expect(res.jetzt, 'der eigene, spätere Zug bleibt stehen').toBe(res.meins);
+  });
+
+  test('ein NEUERER fremder Zug gewinnt und der Vorrat bleibt stimmig', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page, 'mittel');
+    await asGuest(page);
+
+    const res = await page.evaluate((SPAETER) => {
+      const { state, placeAt, handleCoopMsg } = window.__cns;
+      const b = window.__cns.firstBlank();
+      placeAt(b.r, b.c, b.v);
+      const meinWert = b.v;
+      // Ein anderer Stein aus dem Vorrat, den der Partner auf dasselbe Feld legt.
+      const fremd = state.tray.find(t => !t.used && t.v !== meinWert);
+      // Schlüssel weit in der Zukunft -> der fremde Zug ist der spätere.
+      handleCoopMsg({ type: 'move', from: 'host', cells: [{ r: b.r, c: b.c, v: fremd.v }] }, SPAETER);
+
+      const offen = state.tray.filter(t => !t.used).map(t => t.v).sort((a, c) => a - c);
+      const gelegt = [];
+      for (const row of state.placed) for (const v of row) if (v != null) gelegt.push(v);
+      return {
+        jetzt: state.placed[b.r][b.c], fremdWert: fremd.v,
+        meinWertZurueck: offen.includes(meinWert),
+        soll: state.puzzle.tray.slice().sort((a, c) => a - c),
+        ist: offen.concat(gelegt).sort((a, c) => a - c),
+      };
+    }, SPAETER);
+    expect(res.jetzt, 'der spätere fremde Zug setzt sich durch').toBe(res.fremdWert);
+    expect(res.meinWertZurueck, 'der verdrängte eigene Stein liegt wieder im Vorrat').toBe(true);
+    expect(res.ist, 'Vorrat + Brett ergeben weiterhin exakt den Rätsel-Vorrat').toEqual(res.soll);
   });
 });
