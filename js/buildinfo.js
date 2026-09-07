@@ -1,8 +1,16 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.12';
-export const BUILD_HASH = '35b144a';
+export const BUILD      = '1.13';
+export const BUILD_HASH = 'd906ef5';
 
 export const CHANGELOG = [
+  {
+    "version": "1.13",
+    "date": "07.09.2026",
+    "changes": [
+      "Coop: ein Stein, den der Partner in der Zwischenzeit weggenommen hat, wird nicht mehr abgelegt — das Tauschen zweier Zahlen geht damit zuverlässig",
+      "Coop: doppelte Zahlen im Vorrat behoben — Brett und Vorrat gleichen sich nach jedem Zug selbst ab"
+    ]
+  },
   {
     "version": "1.12",
     "date": "07.09.2026",
