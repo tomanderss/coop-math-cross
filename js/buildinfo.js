@@ -1,8 +1,18 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.11';
-export const BUILD_HASH = '2328fb4';
+export const BUILD      = '1.12';
+export const BUILD_HASH = '35b144a';
 
 export const CHANGELOG = [
+  {
+    "version": "1.12",
+    "date": "07.09.2026",
+    "changes": [
+      "Spielanleitung: Sortier-Knopf und Hinweise werden nicht mehr erwähnt — beides gibt es nicht mehr",
+      "Hinweis-Reste restlos entfernt: Statistik-Zähler, Erfolg „Auf eigene Faust\", Hinweis-Ton",
+      "Der Sound-Schalter „Hinweis\" heißt jetzt „Chat-Nachricht\" — er schaltete ohnehin nur den Chat-Ton",
+      "Ein perfektes Spiel hängt jetzt allein an null Fehlern"
+    ]
+  },
   {
     "version": "1.11",
     "date": "07.09.2026",
