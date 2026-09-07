@@ -1,4 +1,4 @@
-const CACHE = 'coop-math-cross-v1.10';
+const CACHE = 'coop-math-cross-v1.11';
 const ASSETS = [
   './index.html',
   './privacy.html',

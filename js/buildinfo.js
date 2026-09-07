@@ -1,8 +1,15 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.10';
-export const BUILD_HASH = '899c1e5';
+export const BUILD      = '1.11';
+export const BUILD_HASH = '2328fb4';
 
 export const CHANGELOG = [
+  {
+    "version": "1.11",
+    "date": "07.09.2026",
+    "changes": [
+      "Spielanleitung: Zwischenschritte dürfen negativ sein (1 − 4 + 7), das Ergebnis nie"
+    ]
+  },
   {
     "version": "1.10",
     "date": "07.09.2026",
