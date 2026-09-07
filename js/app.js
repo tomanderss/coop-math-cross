@@ -1215,6 +1215,7 @@ function buildBoardState(puzzle, saved) {
   if (fixed.length !== tray.length) log('game', 'Vorrat mit dem Brett abgeglichen', { vorher: tray.length, nachher: fixed.length });
   state.tray = fixed;
   sortTrayAsc();
+  resetCellVersions(puzzle.rows, puzzle.cols);
   state.drag = null;
   state.pick = null;
 }
@@ -2108,7 +2109,7 @@ function cancelPick() { state.pick = null; }
 
 // ── Kern: eine Menge von Feld-Änderungen prüfen und übernehmen ───────────────
 // changes = [{ r, c, v }] mit v = Zahl oder null (Feld räumen).
-function applyChanges(changes, { user = true, fromId = null, hint = false } = {}) {
+function applyChanges(changes, { user = true, fromId = null, hint = false, eventKey = null } = {}) {
   const p = state.puzzle;
   if (!p) return false;
 
@@ -2166,7 +2167,10 @@ function applyChanges(changes, { user = true, fromId = null, hint = false } = {}
   state.history = [undoSteps];    // nur der letzte Zug ist rückgängig machbar
 
   if (user && (state.coop.active || state.team.active)) {
-    coopSend({ type: Coop.MSG.MOVE, cells: changes.map(ch => ({ r: ch.r, c: ch.c, v: ch.v == null ? '' : ch.v })), from: state.coop.myId });
+    const key = coopSend({ type: Coop.MSG.MOVE, cells: changes.map(ch => ({ r: ch.r, c: ch.c, v: ch.v == null ? '' : ch.v })), from: state.coop.myId });
+    stampCellVersions(undoSteps, key);
+  } else if (!user) {
+    stampCellVersions(undoSteps, eventKey);
   }
 
   // 3. Klang + Puls für jede Rechnung, die dieser Zug fertig gemacht hat.
@@ -2201,6 +2205,21 @@ function placeAt(r, c, v, opts = {}) {
 function clearAt(r, c, opts = {}) {
   if (!isBlankCell(r, c) || state.placed[r][c] == null) return false;
   return applyChanges([{ r, c, v: null }], opts);
+}
+
+// ── Konfliktauflösung auf dem geteilten Brett ────────────────────────────────
+// Wer welches Feld ZULETZT beschrieben hat, als Ereignis-Schlüssel (coop.js
+// `send` liefert ihn synchron, eingehende Ereignisse bringen ihren eigenen mit).
+// Bewusst NICHT im reaktiven state: das Raster wird nie gerendert, es entscheidet
+// nur, ob ein eingehender Zug ein Feld überschreiben darf.
+let cellVersion = null;
+function resetCellVersions(rows, cols) {
+  cellVersion = Array.from({ length: rows }, () => new Array(cols).fill(''));
+}
+function cellVersionAt(r, c) { return (cellVersion && cellVersion[r] && cellVersion[r][c]) || ''; }
+function stampCellVersions(changes, key) {
+  if (!key || !cellVersion) return;
+  for (const ch of changes) if (cellVersion[ch.r]) cellVersion[ch.r][ch.c] = key;
 }
 
 // Zwischen dem AUFNEHMEN eines Steins und dem ABLEGEN vergeht Zeit — im
@@ -2608,23 +2627,36 @@ const CODE_RE = /^\d{6}$/;
 // Eigene Socket-Ausfälle puffert das Firebase-SDK ohnehin selbst.
 let coopOutbox = [];
 const COOP_OUTBOX_MAX = 300;
+// Liefert den EREIGNIS-SCHLÜSSEL des gesendeten Zugs zurück (null, wenn nicht
+// gesendet wurde) — er ordnet den Zug global ein, siehe stampCellVersions.
+// Ein GEPUFFERTER Zug bekommt hier bewusst keinen Schlüssel: er geht erst beim
+// Flush raus und wird dann auch erst dort eingeordnet.
 function coopSend(msg) {
-  if (!state.coop.active) return;
+  if (!state.coop.active) return null;
+  // Der Schlüssel wird VORAB reserviert, nicht erst beim Schreiben: der Zug
+  // bekommt seinen Platz in der globalen Reihenfolge damit im Moment des
+  // Ausführens. Ein GEPUFFERTER Zug behält diesen Platz, auch wenn er erst nach
+  // der Roster-Heilung rausgeht — sonst überholte er beim Flush fremde Züge, die
+  // in der Zwischenzeit wirklich später kamen.
+  const key = Coop.nextEventKey();
   if (!state.coop.connected) {
-    coopOutbox.push(msg);
+    coopOutbox.push({ msg, key });
     if (coopOutbox.length > COOP_OUTBOX_MAX) coopOutbox.shift();
-    return;
+    return key;
   }
-  if (state.team.active) Coop.sendTeamEvent(state.team.myTeam, msg);
-  else Coop.send(msg);
+  // Der RESERVIERTE Schlüssel gilt, auch wenn das Schreiben scheitert: er ist die
+  // Stelle dieses Zuges in der Reihenfolge, nicht die Quittung des Servers.
+  if (state.team.active) Coop.sendTeamEvent(state.team.myTeam, msg, key);
+  else Coop.send(msg, key);
+  return key;
 }
 function flushCoopOutbox() {
   if (!coopOutbox.length) return;
   const pending = coopOutbox; coopOutbox = [];
   log('coop', `Sende ${pending.length} gepufferte Züge nach Roster-Heilung nach`);
-  for (const m of pending) {
-    if (state.team.active) Coop.sendTeamEvent(state.team.myTeam, m);
-    else Coop.send(m);
+  for (const { msg, key } of pending) {
+    if (state.team.active) Coop.sendTeamEvent(state.team.myTeam, msg, key);
+    else Coop.send(msg, key);
   }
 }
 
@@ -2761,7 +2793,7 @@ function startCoopResyncWatchdog() {
 function stopCoopResyncWatchdog() { if (coopResyncTimer) { clearInterval(coopResyncTimer); coopResyncTimer = null; } }
 watch(coopNeedsResync, (stuck) => { if (stuck) startCoopResyncWatchdog(); else stopCoopResyncWatchdog(); });
 
-function handleCoopMsg(msg) {
+function handleCoopMsg(msg, eventKey = null) {
   // Race hält state.coop.active absichtlich false (s. state.race-Kommentar),
   // empfängt aber legitime PAUSE-Events über den Raum → race.active zählt mit.
   if (COOP_GAME_MSGS.has(msg.type) && (!state.puzzle || (!state.coop.active && !state.team.active && !state.race.active))) return;
@@ -2777,9 +2809,19 @@ function handleCoopMsg(msg) {
     // Coop-Endlos: zwischen zwei Leveln (advancing) keine verspäteten Züge des
     // gerade gelösten Bretts mehr anwenden — sie träfen sonst das nächste Level.
     if (state.endless.active && state.endless.coop && state.endless.advancing) return;
-    // Ein Zug kann mehrere Felder betreffen (Tausch, Hinweis mit mehreren Feldern).
-    const cells = (msg.cells || []).map(ch => ({ r: ch.r, c: ch.c, v: ch.v === '' || ch.v == null ? null : ch.v }));
-    if (cells.length) applyChanges(cells, { user: false, fromId: msg.from });
+    // Ein Zug kann mehrere Felder betreffen (Tausch).
+    const all = (msg.cells || []).map(ch => ({ r: ch.r, c: ch.c, v: ch.v === '' || ch.v == null ? null : ch.v }));
+    // Haben beide Spieler GLEICHZEITIG dasselbe Feld beschrieben, entscheidet der
+    // Ereignis-Schlüssel — pro Feld gewinnt der spätere (Coop.winsCell). Beide
+    // Seiten verwerfen damit dieselben Schreibvorgänge und landen auf demselben
+    // Brett; ohne die Regel sah jeder am Ende den Zug des ANDEREN.
+    const cells = all.filter(ch => Coop.winsCell(eventKey, cellVersionAt(ch.r, ch.c)));
+    if (cells.length < all.length) {
+      log('coop', 'Gleichzeitiger Zug auf dasselbe Feld — der spätere gewinnt', {
+        gesamt: all.length, verworfen: all.length - cells.length,
+      });
+    }
+    if (cells.length) applyChanges(cells, { user: false, fromId: msg.from, eventKey });
   } else if (msg.type === Coop.MSG.UNDO) {
     undo(false);
   } else if (msg.type === Coop.MSG.CHECK) {

@@ -10,7 +10,7 @@
 //   altes INIT reaktivierte die Bereit-Lobby.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { computeJoinAnchor, sanitizeForFirebase, safeKey, normalizeGrid } from '../../js/coop.js';
+import { computeJoinAnchor, sanitizeForFirebase, winsCell, safeKey, normalizeGrid } from '../../js/coop.js';
 import { generatePuzzle } from '../../js/generator.js';
 import { genOptionsFor } from '../../js/config.js';
 
@@ -206,4 +206,32 @@ test('ein frisch erzeugtes Raetsel ist ohne Nacharbeit RTDB-tauglich', () => {
   };
   walk(p, '');
   assert.deepEqual(Object.keys(p.tierCounts).sort(), ['t1', 't2', 't25', 't3']);
+});
+
+// Konfliktauflösung für gleichzeitige Züge auf DASSELBE Feld: beide Spieler
+// wenden ihren eigenen Zug sofort an und erfahren erst danach vom fremden. Ohne
+// Regel endet jeder beim Zug des ANDEREN. Der push-Schlüssel ordnet die Züge
+// global; pro Feld gewinnt der spätere. Entscheidend ist, dass BEIDE Seiten aus
+// denselben zwei Schlüsseln dieselbe Entscheidung ableiten.
+test('winsCell: pro Feld gewinnt der spätere Ereignis-Schlüssel', () => {
+  assert.equal(winsCell('-NabcZZ', '-NabcAA'), true, 'späterer Schlüssel überschreibt');
+  assert.equal(winsCell('-NabcAA', '-NabcZZ'), false, 'früherer Schlüssel verliert');
+  assert.equal(winsCell('-NabcAA', ''), true, 'unbeschriebenes Feld nimmt jeden Zug');
+  assert.equal(winsCell('-NabcAA', null), true);
+  assert.equal(winsCell(null, ''), true, 'ohne Schlüssel darf ein unbeschriebenes Feld gefüllt werden');
+  assert.equal(winsCell(null, '-NabcAA'), false, 'ohne Schlüssel nicht gegen einen bekannten Schreiber');
+  assert.equal(winsCell('-NabcAA', '-NabcAA'), false, 'derselbe Schlüssel gewinnt nicht erneut');
+});
+
+test('winsCell ist auf beiden Seiten dieselbe Entscheidung', () => {
+  // A schreibt mit kA, B mit kB — genau EINER der beiden Werte überlebt, und
+  // zwar auf beiden Geräten derselbe.
+  const kA = '-NxxxA0', kB = '-NxxxB0';
+  const aBehaeltSeinen = !winsCell(kB, kA);   // A verwirft B?
+  const bUebernimmtA = winsCell(kA, kB);      // B übernimmt A?
+  assert.equal(aBehaeltSeinen, false);
+  assert.equal(bUebernimmtA, false);
+  // Umgekehrt herum genau spiegelbildlich:
+  assert.equal(winsCell(kB, kA), true);
+  assert.equal(!winsCell(kA, kB), true);
 });
