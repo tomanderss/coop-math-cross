@@ -6,7 +6,8 @@
 //     Gitter). Ein Feld gehört zu höchstens einer waagerechten und einer
 //     senkrechten Gleichung.
 //  2. WERTE: Backtracking über die Gleichungen (Operatoren werden dabei mit
-//     gewählt). Nur ganze, nicht-negative Zahlen — auch in Zwischenschritten.
+//     gewählt). Nur ganze Zahlen; negativ werden darf höchstens ein
+//     ZWISCHENstand einer Kette (1 − 4 + 7), nie das Ergebnis (s. evalExpr).
 //  3. LÜCKEN: Beginnend mit „alles vorgegeben" wird Feld für Feld eine Lücke
 //     versucht; behalten wird sie nur, wenn das Rätsel weiterhin OHNE RATEN
 //     eindeutig lösbar ist (logicalSolve). Der Vorrat besteht damit exakt aus

@@ -690,7 +690,7 @@ export default {
     title: 'Como jogar',
     rule1: 'Arraste os números da <b>reserva</b> abaixo para as casas vazias.',
     rule2: 'Toda <b>conta</b> horizontal e vertical precisa fechar, p. ex. <b>7 × 3 = 21</b>.',
-    rule3: 'Somente <b>números inteiros e positivos</b>: nunca vírgula, nunca resultado negativo.',
+    rule3: 'Somente <b>números inteiros</b>, nunca vírgula, e um <b>resultado</b> nunca é negativo. Os <b>passos intermediários</b> podem ser: <b>1 − 4 + 7 = 4</b> vale.',
     rule4: 'Duas peças <b>trocam</b> de lugar quando você solta uma sobre uma casa ocupada. O <b>botão de ordenar</b> deixa a reserva em ordem crescente.',
     rule5: 'A reserva tem <b>exatamente</b> os números que faltam: se sobrar alguma peça, algo está no lugar errado.',
     rule6: 'Cada desafio tem solução única, <b>sem chute</b>. Só é <b>erro</b> quando uma peça completa uma conta que não fecha — isso custa uma vida.',

@@ -690,7 +690,7 @@ export default {
     title: 'Nasıl oynanır',
     rule1: 'Aşağıdaki <b>stoktan</b> sayıları boş karelere sürükle.',
     rule2: 'Yatay ve dikey <b>her işlem</b> tutmalı, örn. <b>7 × 3 = 21</b>.',
-    rule3: 'Yalnızca <b>tam ve pozitif sayılar</b>: ne virgül ne de eksi sonuç.',
+    rule3: 'Yalnızca <b>tam sayılar</b>, virgül yok ve bir <b>sonuç</b> asla eksi olmaz. <b>Ara adımlar</b> ise olabilir: <b>1 − 4 + 7 = 4</b> geçerlidir.',
     rule4: 'Dolu bir kareye bıraktığında iki taş <b>yer değiştirir</b>. <b>Sıralama düğmesi</b> stoku küçükten büyüğe dizer.',
     rule5: 'Stokta eksik sayılar <b>tam olarak</b> vardır: artan olursa bir şey yanlış yerdedir.',
     rule6: 'Her bulmaca <b>tahmin gerektirmeden</b> tek çözümlüdür. Sadece bir taş bir işlemi tamamlayıp işlem tutmuyorsa <b>hata</b> olur; bu bir can götürür.',

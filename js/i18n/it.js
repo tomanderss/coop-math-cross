@@ -690,7 +690,7 @@ export default {
     title: 'Come si gioca',
     rule1: 'Trascina i numeri dalla <b>riserva</b> in basso nelle caselle vuote.',
     rule2: 'Ogni <b>calcolo</b> orizzontale e verticale deve tornare, p. es. <b>7 × 3 = 21</b>.',
-    rule3: 'Solo <b>numeri interi e positivi</b>: mai virgole, mai un risultato negativo.',
+    rule3: 'Solo <b>numeri interi</b>, mai virgole, e un <b>risultato</b> non è mai negativo. I <b>passaggi intermedi</b> possono esserlo: <b>1 − 4 + 7 = 4</b> va bene.',
     rule4: 'Due tessere si <b>scambiano</b> se ne rilasci una su una casella occupata. Il <b>tasto di ordinamento</b> mette la riserva in ordine crescente.',
     rule5: 'La riserva contiene <b>esattamente</b> i numeri mancanti: se ne avanza qualcuno, qualcosa è fuori posto.',
     rule6: 'Ogni schema ha una soluzione unica, <b>senza tirare a indovinare</b>. C’è <b>errore</b> solo quando una tessera completa un calcolo che non torna: costa una vita.',

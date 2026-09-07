@@ -799,7 +799,7 @@ export default {
     title: 'So wird gespielt',
     rule1: 'Ziehe die Zahlen aus dem <b>Vorrat</b> unten in die leeren Felder des Rechennetzes.',
     rule2: 'Jede waagerechte und senkrechte <b>Rechnung</b> muss aufgehen — z. B. <b>7 × 3 = 21</b>.',
-    rule3: 'Es gibt nur <b>ganze, positive Zahlen</b> — nie ein Komma, nie ein Minus im Ergebnis.',
+    rule3: 'Es gibt nur <b>ganze Zahlen</b> ohne Komma, und ein <b>Ergebnis</b> ist nie negativ. <b>Zwischenschritte</b> dürfen es sehr wohl sein: <b>1 − 4 + 7 = 4</b> geht in Ordnung.',
     rule4: 'Zwei Steine <b>tauschen</b> den Platz, wenn du einen auf einen belegten Platz ziehst. Der <b>Sortier-Knopf</b> ordnet den Vorrat aufsteigend.',
     rule5: 'Der Vorrat enthält <b>exakt</b> die fehlenden Zahlen — bleibt am Ende etwas übrig, liegt etwas falsch.',
     rule6: 'Jedes Rätsel ist <b>ohne Raten</b> eindeutig lösbar. Ein <b>Fehler</b> ist nur, wenn ein Stein eine Rechnung vollständig macht, die dann nicht aufgeht — das kostet ein Leben.',

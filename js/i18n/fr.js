@@ -690,7 +690,7 @@ export default {
     title: 'Comment jouer',
     rule1: 'Fais glisser les nombres de la <b>réserve</b> vers les cases vides.',
     rule2: 'Chaque <b>calcul</b> horizontal et vertical doit être juste, p. ex. <b>7 × 3 = 21</b>.',
-    rule3: 'Uniquement des <b>nombres entiers positifs</b> : jamais de virgule, jamais de résultat négatif.',
+    rule3: 'Uniquement des <b>nombres entiers</b>, jamais de virgule, et un <b>résultat</b> n\'est jamais négatif. Les <b>étapes intermédiaires</b>, elles, peuvent l\'être : <b>1 − 4 + 7 = 4</b> est valable.',
     rule4: 'Deux tuiles <b>échangent</b> leur place si tu en déposes une sur une case occupée. Le <b>bouton de tri</b> range la réserve par ordre croissant.',
     rule5: 'La réserve contient <b>exactement</b> les nombres manquants : s’il en reste, quelque chose est mal placé.',
     rule6: 'Chaque grille a une solution unique, <b>sans deviner</b>. Il n’y a <b>erreur</b> que si une tuile complète un calcul qui ne tombe pas juste — cela coûte une vie.',

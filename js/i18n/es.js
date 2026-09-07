@@ -690,7 +690,7 @@ export default {
     title: 'Cómo jugar',
     rule1: 'Arrastra los números del <b>montón</b> de abajo a las casillas vacías.',
     rule2: 'Cada <b>operación</b> horizontal y vertical debe cuadrar, p. ej. <b>7 × 3 = 21</b>.',
-    rule3: 'Solo <b>números enteros y positivos</b>: nunca decimales, nunca un resultado negativo.',
+    rule3: 'Solo <b>números enteros</b>, nunca decimales, y un <b>resultado</b> nunca es negativo. Los <b>pasos intermedios</b> sí pueden serlo: <b>1 − 4 + 7 = 4</b> es válido.',
     rule4: 'Dos fichas <b>intercambian</b> su lugar si sueltas una sobre una casilla ocupada. El <b>botón de orden</b> ordena el montón de menor a mayor.',
     rule5: 'El montón contiene <b>exactamente</b> los números que faltan: si sobra alguno, algo está mal colocado.',
     rule6: 'Cada rompecabezas tiene una solución única <b>sin adivinar</b>. Solo es un <b>error</b> cuando una ficha completa una operación que no cuadra: eso cuesta una vida.',
