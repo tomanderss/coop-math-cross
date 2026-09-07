@@ -161,6 +161,27 @@ test('geheiltes Rätsel ist wieder darstellbar (das war der Blackscreen)', () =>
 // Es müssen IMMER exakt die Steine im Vorrat liegen, die noch fehlen.
 const multiset = (a) => a.slice().sort((x, y) => x - y).join(',');
 
+// Die billige Wache vor reconcileTray: sie muss JEDE Abweichung sehen, sonst
+// summiert sich der Schaden im Coop auf (doppelte Steine).
+test('trayMatchesBoard erkennt gesunde und kaputte Vorräte', () => {
+  const puzzleTray = [3, 5, 5, 9];
+  // gesund: die 5 liegt auf dem Brett, der Rest ist offen
+  assert.equal(B.trayMatchesBoard(
+    [{ id: 0, v: 3, used: false }, { id: 1, v: 5, used: true }, { id: 2, v: 5, used: false }, { id: 3, v: 9, used: false }],
+    [5], puzzleTray), true);
+  // ein Stein ZU VIEL im Vorrat (der geklonte Fall)
+  assert.equal(B.trayMatchesBoard(
+    [{ id: 0, v: 3, used: false }, { id: 1, v: 5, used: false }, { id: 2, v: 5, used: false }, { id: 3, v: 9, used: false }],
+    [5], puzzleTray), false);
+  // ein Stein FEHLT
+  assert.equal(B.trayMatchesBoard([{ id: 0, v: 3, used: false }], [5], puzzleTray), false);
+  // ein Wert liegt auf dem Brett, der gar nicht zum Rätsel gehört
+  assert.equal(B.trayMatchesBoard([], [7], [7]), true);
+  assert.equal(B.trayMatchesBoard([], [7, 7], [7]), false);
+  // leeres Brett, voller Vorrat
+  assert.equal(B.trayMatchesBoard(puzzleTray.map((v, i) => ({ id: i, v, used: false })), [], puzzleTray), true);
+});
+
 test('reconcileTray entfernt überzählige und ergänzt fehlende Steine', () => {
   // Brett hat die 7 liegen, im Vorrat taucht sie trotzdem noch als offen auf.
   const tray = [{ id: 0, v: 7, used: false }, { id: 1, v: 3, used: false }];
