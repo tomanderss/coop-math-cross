@@ -35,15 +35,14 @@ test('buildDisplay setzt Zahlen auf gerade, Operatoren auf ungerade Felder', () 
   assert.equal(d.cells[1][0], null, 'zwischen zwei Gleichungen bleibt es leer');
 });
 
-test('Vorrat: benutzte Steine hinterlassen eine Lücke, Sortieren rückt auf', () => {
-  let tray = [5, 1, 9, 1].map((v, i) => ({ id: i, v, used: false }));
+test('Vorrat: ein genommener Stein bleibt als benutzter Platz stehen', () => {
+  const tray = [5, 1, 9, 1].map((v, i) => ({ id: i, v, used: false }));
   B.takeFromTray(tray, 9);
   assert.equal(B.trayLeft(tray), 3);
-  assert.equal(tray[2].used, true, 'der Platz bleibt als Lücke stehen');
-  tray = B.sortTray(tray);
-  assert.deepEqual(tray.map(t => t.v), [1, 1, 5]);
+  assert.equal(tray[2].used, true, 'der Platz bleibt stehen (die UI rendert ihn nicht)');
   B.returnToTray(tray, 9);
-  assert.deepEqual(tray.map(t => t.v), [1, 1, 5, 9], 'zurückgelegte Steine kommen hinten dazu');
+  assert.equal(tray[2].used, false, 'derselbe Stein wird wieder frei');
+  assert.equal(tray.length, 4, 'kein zusätzlicher Stein');
 });
 
 test('Fehler nur bei einer VOLLSTÄNDIGEN, falschen Rechnung', () => {

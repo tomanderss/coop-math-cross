@@ -68,14 +68,6 @@ export function buildTray(puzzle) {
   return puzzle.tray.map((v, i) => ({ id: i, v, used: false }));
 }
 
-/**
- * Sortiert den Vorrat aufsteigend und rückt auf: benutzte Steine verschwinden,
- * die übrigen stehen lückenlos in aufsteigender Reihenfolge (Sortier-Knopf).
- */
-export function sortTray(tray) {
-  return tray.filter(t => !t.used).sort((a, b) => a.v - b.v || a.id - b.id).map((t, i) => ({ ...t, id: i }));
-}
-
 /** Nimmt EINEN unbenutzten Stein mit dem Wert v aus dem Vorrat (mutiert). */
 export function takeFromTray(tray, v) {
   const t = tray.find(x => !x.used && x.v === v);
@@ -83,7 +75,7 @@ export function takeFromTray(tray, v) {
   return null;
 }
 
-/** Legt einen Stein mit Wert v zurück. Fehlt sein Platz (nach dem Sortieren), kommt er hinten dazu. */
+/** Legt einen Stein mit Wert v zurück. Fehlt sein Platz, kommt er hinten dazu. */
 export function returnToTray(tray, v) {
   const t = tray.find(x => x.used && x.v === v);
   if (t) { t.used = false; return t; }
@@ -98,8 +90,8 @@ export function returnToTray(tray, v) {
  * schon auf dem Brett liegt). Rein — heilt beim Laden auch alte, verkorkste
  * Spielstände.
  *
- * Nötig, weil der Vorrat sonst auseinanderlaufen kann: `sortTray` wirft benutzte
- * Steine weg, `returnToTray` legt einen fehlenden wieder an, und beim TAUSCH
+ * Nötig, weil der Vorrat sonst auseinanderlaufen kann: `returnToTray` legt einen
+ * fehlenden Stein wieder an, und beim TAUSCH
  * zweier gelegter Steine lief das Auf und Ab so gegeneinander, dass ein Stein
  * doppelt existierte (gemeldet: „manche Level haben zu viele Steine").
  * Reihenfolge und ids bestehender Steine bleiben erhalten, es wird nur

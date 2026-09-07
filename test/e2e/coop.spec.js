@@ -353,7 +353,7 @@ test.describe('coop', () => {
     expect(await page.evaluate(({ r, c }) => window.__cns.state.placed[r][c], wake)).toBe(wake.v); // Zug angewandt
   });
 
-  test('a converted solo game\'s INIT carries the mid-game state (lives/hints/mistakes) to the joiner', async ({ page }) => {
+  test('a converted solo game\'s INIT carries the mid-game state (lives/mistakes) to the joiner', async ({ page }) => {
     await gotoApp(page);
     await page.evaluate(() => {
       const puzzle = window.__testPuzzle;
@@ -361,7 +361,7 @@ test.describe('coop', () => {
       // mit Zwischenstand (halb gespielte Runde) + START mit vergangener Startzeit.
       window.__cns.handleCoopMsg({
         type: 'init', puzzle, placed: null, markedBy: null, startTime: Date.now() - 60000,
-        lives: 1, maxLives: 3, hintsLeft: 0, hintsUsed: 3, mistakes: 2,
+        lives: 1, maxLives: 3, mistakes: 2,
       });
       window.__cns.handleCoopMsg({ type: 'start', startTime: Date.now() - 60000 });
     });
@@ -369,14 +369,10 @@ test.describe('coop', () => {
 
     const s = await page.evaluate(() => ({
       lives: window.__cns.state.lives, maxLives: window.__cns.state.maxLives,
-      hintsLeft: window.__cns.state.hintsLeft, hintsUsed: window.__cns.state.hintsUsed,
       mistakes: window.__cns.state.mistakes, status: window.__cns.state.status,
       awaitingStart: window.__cns.state.coop.awaitingStart,
     }));
-    // hintsLeft aus dem INIT wird bewusst IGNORIERT: Hinweise sind in allen
-    // Modi unbegrenzt — auch ein übermittelter alter Rest-Pool (hier 0) wird
-    // beim Laden auf ∞ angehoben.
-    expect(s).toEqual({ lives: 1, maxLives: 3, hintsLeft: Infinity, hintsUsed: 3, mistakes: 2, status: 'playing', awaitingStart: false });
+    expect(s).toEqual({ lives: 1, maxLives: 3, mistakes: 2, status: 'playing', awaitingStart: false });
     // Zeit läuft ab dem übermittelten Startzeitpunkt weiter (≈ 60s, nicht 0).
     await page.waitForFunction(() => window.__cns.state.elapsed >= 59000);
   });
@@ -517,12 +513,10 @@ test.describe('coop', () => {
       const s = window.__cns.state;
       s.coop.active = true; s.coop.role = 'guest'; s.coop.myId = 'me';
       s.coop.players = [{ id: 'host', name: 'H', color: '#e5679a' }, { id: 'me', name: 'Ich', color: '#67a3e5' }];
-      // hintsLeft fehlt BEWUSST: HINTS ist Infinity und wird vor dem Senden
-      // herausgefiltert, beim Empfaenger kommt der Key gar nicht an.
       window.__cns.handleCoopMsg({
         type: 'init', gameId: 'conv1', running: true,
         puzzle: h.puzzle, placed: h.placed, tray: h.tray, markedBy: h.markedBy,
-        startTime: Date.now() - 5000, lives: 3, maxLives: 3, hintsUsed: 0, mistakes: 0,
+        startTime: Date.now() - 5000, lives: 3, maxLives: 3, mistakes: 0,
       });
     }, host);
 

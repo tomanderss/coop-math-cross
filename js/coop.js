@@ -413,13 +413,13 @@ export async function ensurePresence({ name, color, role }) {
 
 // ─── Nachrichten ────────────────────────────────────────────────────────────
 // Firebase RTDB lehnt Infinity/-Infinity/NaN ab — und verwirft dann den GESAMTEN
-// Schreibvorgang. Ein Solo-Spiel hält hintsLeft = Infinity (unbegrenzte Hinweise,
-// HINTS in config.js); landete das ungefiltert im INIT der Solo→Coop-Umwandlung,
-// wurde das komplette INIT abgelehnt und der Beitretende bekam NIE ein Spielfeld
-// (nur das nachfolgende, Infinity-freie START kam an → „hängt in der Lobby").
-// Deshalb wird JEDER gesendete Payload hier tief bereinigt: nicht-endliche Zahlen
-// werden zu null (RTDB verwirft den Schlüssel; der Empfänger setzt fehlende Felder
-// auf ihre Defaults, z.B. hintsLeft ?? HINTS = Infinity). serverTimestamp-Sentinel
+// Schreibvorgang. Eine einzige nicht-endliche Zahl im INIT der Solo→Coop-
+// Umwandlung ließ das komplette INIT ablehnen und der Beitretende bekam NIE ein
+// Spielfeld (nur das nachfolgende, Infinity-freie START kam an → „hängt in der
+// Lobby"; historisch war das hintsLeft = Infinity aus der inzwischen entfernten
+// Hinweis-Funktion). Deshalb wird JEDER gesendete Payload hier tief bereinigt:
+// nicht-endliche Zahlen werden zu null (RTDB verwirft den Schlüssel; der
+// Empfänger setzt fehlende Felder auf ihre Defaults). serverTimestamp-Sentinel
 // bleibt unberührt, da nur `msg` bereinigt wird.
 export function sanitizeForFirebase(v) {
   if (typeof v === 'number') return Number.isFinite(v) ? v : null;

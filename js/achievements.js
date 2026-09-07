@@ -11,7 +11,6 @@ export const ACHIEVEMENTS = [
   { id: 'perfectWin', icon: 'sparkles', check: (ctx) => ctx.outcome === 'won' && ctx.perfect },
   { id: 'perfectTen', icon: 'gem', check: (ctx) => ctx.outcome === 'won' && ctx.perfectWins >= 10 },
   { id: 'cleanSolve', icon: 'broom', check: (ctx) => ctx.outcome === 'won' && ctx.mistakes === 0 },
-  { id: 'selfMade', icon: 'brain', check: (ctx) => ctx.outcome === 'won' && ctx.hintsUsedGame === 0 },
   { id: 'hardestWin', icon: 'skull', check: (ctx) => ctx.outcome === 'won' && ctx.difficulty === 'mashallah' },
   { id: 'allDifficulties', icon: 'rainbow', check: (ctx) => ctx.outcome === 'won' && ctx.wonAllDifficulties },
   { id: 'speedrun', icon: 'bolt', check: (ctx) => ctx.outcome === 'won' && ctx.timeMs != null && ctx.timeMs < 60000 },

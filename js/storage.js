@@ -106,6 +106,11 @@ export function loadSettings() {
   // beibehalten (wer hell/dunkel gespeichert hatte, behält es) — nur ohne
   // gespeicherte Wahl gilt 'auto' (folgt dem System-Theme).
   if (!stored.themeMode && typeof stored.darkMode === 'boolean') s.themeMode = stored.darkMode ? 'dark' : 'light';
+  // Migration: der Schalter hiess frueher sfxHint, schaltete aber immer nur den
+  // Chat-Ton (die Hinweis-Funktion gibt es nicht mehr). Wer ihn ausgeschaltet
+  // hatte, soll ihn nicht stillschweigend zurueckbekommen.
+  if (typeof stored.sfxChat !== 'boolean' && typeof stored.sfxHint === 'boolean') s.sfxChat = stored.sfxHint;
+  delete s.sfxHint;
   return s;
 }
 // updatedAt stempelt jede echte Einstellungs-Änderung dieses Geräts (nur noch
@@ -205,13 +210,13 @@ export function clearCoopSession() { remove(KEYS.COOP_SESSION); }
 // ─── Statistik ────────────────────────────────────────────────────────────────
 const EMPTY_STATS = {
   played: 0, won: 0, lost: 0, currentStreak: 0, bestStreak: 0,
-  totalTimeMs: 0, hintsUsed: 0,
+  totalTimeMs: 0,
   // Coop-Pendants der obigen Top-Level-Felder — komplett getrennt von den
   // Solo-Feldern gezählt, damit z.B. eine Coop-Serie nie die Solo-Serie
   // verfälscht (und umgekehrt).
   coopPlayed: 0, coopWon: 0, coopLost: 0,
-  coopCurrentStreak: 0, coopBestStreak: 0, coopTotalTimeMs: 0, coopHintsUsed: 0,
-  // Gesamtzähler perfekter Siege (0 Fehler, 0 Hinweise) — getrennt von der
+  coopCurrentStreak: 0, coopBestStreak: 0, coopTotalTimeMs: 0,
+  // Gesamtzähler perfekter Siege (0 Fehler) — getrennt von der
   // Bestzeit-Logik unten, da hier jeder perfekte Sieg zählt, nicht nur der
   // schnellste je Schwierigkeit.
   perfectWins: 0, coopPerfectWins: 0,
@@ -237,14 +242,13 @@ export function loadStats() {
 function saveStats(s) { save(KEYS.STATS, s); }
 
 // outcome: 'won' | 'lost' (alle Leben verloren)
-// Highscore (bestTimeMs je Schwierigkeit) gilt NUR für perfekte Spiele: keine
-// Fehler und keine Hinweise — sonst wäre die Bestzeit nicht vergleichbar.
+// Highscore (bestTimeMs je Schwierigkeit) gilt NUR für fehlerfreie Spiele —
+// sonst wäre die Bestzeit nicht vergleichbar.
 // coop: true, wenn die Partie in einer aktiven Coop-Session gespielt wurde —
 // fließt dann in die coop*-Felder statt die Solo-Felder ein.
-export function recordResult({ difficulty, outcome, timeMs, hintsUsed, mistakes, coop = false }) {
+export function recordResult({ difficulty, outcome, timeMs, mistakes, coop = false }) {
   const s = loadStats();
-  if (coop) { s.coopPlayed++; s.coopHintsUsed += hintsUsed || 0; }
-  else { s.played++; s.hintsUsed += hintsUsed || 0; }
+  if (coop) s.coopPlayed++; else s.played++;
   // Bereits vorhandene Einträge (aus älteren Versionen ohne coop*-Felder) per
   // Merge ergänzen, statt sie zu überschreiben — keine Datenverluste.
   s.byDifficulty[difficulty] = {
@@ -256,7 +260,7 @@ export function recordResult({ difficulty, outcome, timeMs, hintsUsed, mistakes,
   let newHighscore = false;
   if (coop) d.coopPlayed++; else d.played++;
   if (outcome === 'won') {
-    const perfect = (mistakes || 0) === 0 && (hintsUsed || 0) === 0;
+    const perfect = (mistakes || 0) === 0;
     if (coop) {
       s.coopWon++; s.coopCurrentStreak++; s.coopBestStreak = Math.max(s.coopBestStreak, s.coopCurrentStreak);
       s.coopTotalTimeMs += timeMs || 0;

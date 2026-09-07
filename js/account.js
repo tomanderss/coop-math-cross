@@ -273,10 +273,10 @@ export function sortLeaderboard(entries) {
 function currentUser(fb) { return fb.auth && fb.auth.currentUser; }
 function userRef(fb, uid, sub) { return fb.ref(fb.db, `users/${uid}${sub ? '/' + sub : ''}`); }
 // Firebase RTDB lehnt Infinity/-Infinity/NaN ab und verwirft dann den GANZEN
-// Schreibvorgang. Ein Solo-Spielstand hält hintsLeft = Infinity (unbegrenzte
-// Hinweise, HINTS in config.js) — landete das ungefiltert im Session-Payload,
-// schlug JEDES writeSession fehl (Multi-Device-Solo-Session synct nie, Log voll
-// „Infinity in property 'hintsLeft'"). Nicht-endliche Zahlen daher zu null
+// Schreibvorgang. Ein einziges nicht-endliches Feld im Spielstand ließ damit
+// JEDES writeSession scheitern (Multi-Device-Solo-Session synct nie, Log voll
+// „Infinity in property …"; historisch war das hintsLeft = Infinity aus der
+// inzwischen entfernten Hinweis-Funktion). Nicht-endliche Zahlen daher zu null
 // bereinigen (Empfänger setzt fehlende Felder auf ihre Defaults).
 function sanitizeForFirebase(v) {
   if (typeof v === 'number') return Number.isFinite(v) ? v : null;
@@ -949,8 +949,8 @@ export async function syncInventoryFromCloud(uid) {
 // d.h. lokal == Cloud == syncedRev (kein Konflikt beim nächsten Start).
 async function uploadLocal(fb, uid) {
   await mergeCloudInventory(fb, uid);                 // erst fremde/Geschenk-Items aufnehmen …
-  // sanitizeForFirebase ist PFLICHT: die Aktivspiel-Slots tragen hintsLeft:
-  // Infinity — unsaniert lehnte RTDB den GESAMTEN Snapshot-Write ab, sodass
+  // sanitizeForFirebase ist PFLICHT: eine einzige nicht-endliche Zahl in einem
+  // Aktivspiel-Slot ließ RTDB den GESAMTEN Snapshot-Write ablehnen, sodass
   // während einer laufenden Partie NIE ein Upload durchkam (Symptom: kein
   // „Fortsetzen" auf dem Zweitgerät, veraltete Settings trotz Sync).
   const snap = collectExportData('sync');
