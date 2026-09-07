@@ -1,2 +1,0 @@
-Coop: ein Stein, den der Partner in der Zwischenzeit weggenommen hat, wird nicht mehr abgelegt — das Tauschen zweier Zahlen geht damit zuverlässig
-Coop: doppelte Zahlen im Vorrat behoben — Brett und Vorrat gleichen sich nach jedem Zug selbst ab
