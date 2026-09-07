@@ -1,0 +1,1 @@
+Ausgewählter Stein: alle freien Felder bleiben hervorgehoben, bis er abgelegt ist

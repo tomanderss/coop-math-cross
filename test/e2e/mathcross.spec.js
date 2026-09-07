@@ -229,6 +229,20 @@ test.describe('Vorrat', () => {
     expect(await page.evaluate(() => document.querySelectorAll('.drag-ghost[style*="display: block"]').length)).toBe(0);
   });
 
+  // Ein ausgewaehlter Stein haelt die Hervorhebung der freien Felder — genau wie
+  // beim Ziehen. Vorher erlosch sie mit dem Abheben des Fingers, obwohl der Stein
+  // weiterhin in der Hand lag (gemeldet).
+  test('ein angetippter Stein haelt die Feld-Hervorhebung', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page, 'mittel');
+    expect(await page.locator('.cell.droppable').count()).toBe(0);
+    const tile = page.locator('.tray .tile').first();
+    await tile.scrollIntoViewIfNeeded();
+    await tile.click();
+    expect(await page.evaluate(() => !!window.__cns.state.pick)).toBe(true);
+    expect(await page.locator('.cell.droppable').count()).toBeGreaterThan(0);
+  });
+
   test('auch das größte Level zeigt ALLE Steine ohne Scrollen', async ({ page }) => {
     await gotoApp(page);
     await startNewGame(page, 'rip');   // die meisten Steine
