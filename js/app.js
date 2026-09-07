@@ -9752,7 +9752,11 @@ function cellClasses(cell) {
     done: cellInSolvedEq(r, c),
     flash: !!state.flash[`${r}-${c}`],
     picked: !!picked,
-    droppable: !cell.given && !!state.drag,
+    // Beim Ziehen UND beim reinen Antippen eines Steins: solange ein Stein „in der
+    // Hand" liegt, zeigen alle freien Felder ihren Ablege-Ring. Vorher hing das nur
+    // an state.drag — beim Antippen erlosch die Hervorhebung mit dem Abheben des
+    // Fingers, obwohl der Stein weiterhin ausgewählt war (gemeldet).
+    droppable: !cell.given && !!(state.drag || state.pick),
     'coop-mark': !cell.given && !!who,
     // EIGENE Steine behalten im Mehrspieler-Modus den eigenen Skin — nur die der
     // MITSPIELER fallen auf deren Farbe zurück (s. .mp-colors in styles.css).
