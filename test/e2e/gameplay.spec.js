@@ -110,28 +110,32 @@ test.describe('gameplay', () => {
     expect(await page.evaluate(() => window.__cns.state.zoom)).toBe(1);
   });
 
-  // Werkzeugleiste: links „Vorrat sortieren", rechts „Hinweis" — kein Undo,
-  // kein Werkzeug-Umschalter (es gibt nur eine Aktion: Steine legen).
-  test('the toolbar offers sorting and hints', async ({ page }) => {
+  // Unter dem Vorrat gibt es KEINE Knopfleiste mehr: der Hinweis ist entfallen
+  // und der Vorrat sortiert sich von selbst. Der Platz gehoert dem Brett.
+  test('there is no button bar below the tray', async ({ page }) => {
     await gotoApp(page);
     await startNewGame(page, 'sehrleicht');
-    await expect(page.locator('.toolbar .round-btn')).toHaveCount(2);
-    await expect(page.locator('.toolbar .round-btn').first()).toHaveAttribute('title', 'Vorrat sortieren');
-    await expect(page.locator('.toolbar .round-btn').last()).toHaveAttribute('title', 'Hinweis');
-    await expect(page.locator('.toolbar .tool-toggle')).toHaveCount(0);
+    await expect(page.locator('.screen.game .toolbar')).toHaveCount(0);
+    await expect(page.locator('.screen.game .round-btn')).toHaveCount(0);
   });
 
-  // Der Sortier-Knopf sortiert den Vorrat aufsteigend UND rückt auf (benutzte
-  // Steine verschwinden, es bleiben keine Lücken).
-  test('the sort button sorts the tray ascending and closes the gaps', async ({ page }) => {
+  // Der Vorrat ist IMMER aufsteigend sortiert und rueckt von selbst auf —
+  // gelegte Steine verschwinden ohne Luecke, ganz ohne Knopf.
+  test('the tray stays sorted ascending and closes gaps by itself', async ({ page }) => {
     await gotoApp(page);
     await startNewGame(page, 'mittel');
+    const snap = async () => page.evaluate(() => ({
+      open: window.__cns.state.tray.filter((t) => !t.used).map((t) => t.v),
+      kacheln: document.querySelectorAll('.tray .tile').length,
+    }));
+    const s1 = await snap();
+    expect(s1.open).toEqual([...s1.open].sort((a, b) => a - b));
+    expect(s1.kacheln).toBe(s1.open.length);
     await playOneMove(page);
-    await page.locator('.toolbar .round-btn').first().click();
-    const tray = await page.evaluate(() => window.__cns.state.tray.map(t => ({ v: t.v, used: t.used })));
-    expect(tray.some(t => t.used)).toBe(false);
-    expect(tray.map(t => t.v)).toEqual([...tray.map(t => t.v)].sort((a, b) => a - b));
-    await expect(page.locator('.tray .tile')).toHaveCount(tray.length);
+    const s2 = await snap();
+    expect(s2.open).toEqual([...s2.open].sort((a, b) => a - b));
+    expect(s2.open.length).toBe(s1.open.length - 1);
+    expect(s2.kacheln).toBe(s2.open.length);   // keine Luecke zurueckgeblieben
   });
 
   test('resuming from pause runs a 1.5s bar countdown before the game continues', async ({ page }) => {
