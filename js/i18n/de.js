@@ -21,6 +21,7 @@ export default {
   },
 
   solo: { title: 'Solo', classic: 'Klassisch', classicHint: 'Ein Rätsel, freie Schwierigkeit', endless: 'Endlos-Aufstieg', endlessHint: 'Immer schwerer – wie weit kommst du?', endlessStart: 'Endlos starten' },
+  diffShift: { toast: 'Die Schwierigkeiten sind eine Stufe nach unten gerückt und oben wartet ein neues, härteres R.I.P. — deine Statistiken sind mitgewandert.' },
   endless: { badge: 'Endlos', best: 'Bester Lauf: Level {n}', cleared: 'Level {n} geschafft!', lifeGained: '+1 Leben', overTitle: 'Lauf beendet', reached: 'Level {n} erreicht', record: 'Neuer Rekord!', levelDone: 'Level {n} geschafft!', continue: 'Fortsetzen', livesLabel: 'Leben', levelShort: 'Level {n}', levelTime: 'Zeit für dieses Level', totalTime: 'Gesamtzeit des Laufs', backfillToast: 'Frühere Endlos-Läufe nachgetragen: {wins} Siege aus {runs} Läufen zählen jetzt in deinen Statistiken!' },
 
   saves: { title: 'Spielstände', manage: 'Spielstände verwalten', moreN: 'Weitere Spielstände ({n})', livesLeft: 'Noch {n} von {max} Leben', openN: 'Alle Spielstände ({n})', intro: 'Jede Partie wird einzeln gesichert — starte ruhig ein neues Spiel, der alte Stand bleibt erhalten. Platz für {max} Stände.', running: 'läuft', delete: 'Löschen', deleteTitle: 'Spielstand löschen?', deleteMsg: 'Dieser Stand wird endgültig entfernt.', deleted: 'Spielstand gelöscht', empty: 'Noch keine gespeicherten Partien.', justNow: 'gerade eben', minsAgo: 'vor {n} Min.', hoursAgo: 'vor {n} Std.', yesterday: 'gestern', daysAgo: 'vor {n} Tagen' },
@@ -495,6 +496,7 @@ export default {
         'settings/boardPalette': { l: 'Brett-Farbpalette (ausgerüstet)', d: 'Aktive Cage-Farbpalette („classic“ = eingebaute Farben).' },
         'settings/winEffect': { l: 'Sieg-Animation (ausgerüstet)', d: 'Aktive Sieganimation („confetti“ = Konfetti; andere Effekte müssen im Inventar liegen).' },
         'settings/masterCelebrated': { l: 'Großmeister-Feier gezeigt', d: 'Ob die einmalige Freischalt-Feier für das Großmeister-Abzeichen (alle 12 Kategorien auf Legendär) bereits gezeigt wurde.' },
+        'settings/diffShiftDone': { l: 'Leiter-Verschiebung gelaufen', d: 'Ob die einmalige Migration bereits lief, die jeder Schwierigkeit die Konfiguration der bis dahin nächst-schwereren gegeben hat (samt ihrer Statistik) und oben eine neue härteste Stufe einführte.' },
         'settings/endlessBackfillDone': { l: 'Endlos-Nachbuchung gelaufen', d: 'Ob die einmalige Migration, die frühere Endlos-Läufe rückwirkend als Einzelspiele in die Statistiken einbucht, bereits ausgeführt wurde.' },
         history: { l: 'Rätsel-Verlauf', d: 'Die letzten 20 gespielten Rätsel (Ringpuffer) — Grundlage für „Verlauf“ im Menü.' },
         activeGame: { l: 'Laufendes Solo-Spiel', d: 'Kompletter zwischengespeicherter Solo-Spielstand (für „Fortsetzen“). Leeren = kein Fortsetzen-Angebot.' },
