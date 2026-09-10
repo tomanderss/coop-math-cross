@@ -18,7 +18,7 @@ import * as Music from './music.js';
 import {
   loadSettings, saveSettings, loadActiveGame, saveActiveGame, loadActiveGameCoop, saveActiveGameCoop, loadActiveGameEndless, saveActiveGameEndless, snapshotSolved,
   loadSaves, upsertSave, removeSave, snapshotProgress, SAVES_MAX,
-  loadStats, recordResult, recordEndlessRun, applyEndlessBackfill,
+  loadStats, recordResult, recordEndlessRun, applyEndlessBackfill, applyDifficultyShift,
   loadSeenVersion, saveSeenVersion,
   exportToFile, importFromFile, deleteAllData, loadStreak, recordStreakResult,
   loadHistory, recordHistory,
@@ -1642,6 +1642,28 @@ function runEndlessBackfill() {
     syncCloudNow('endlessBackfill');
   }
   setSetting('endlessBackfillDone', true);
+}
+// Einmalige Migration zur verschobenen Schwierigkeitsleiter: jede Stufe hat die
+// Konfiguration der bis dahin NÄCHST-SCHWEREREN bekommen (die leichteste Stufe
+// war zu leicht, oben fehlte eine Herausforderung). Die Statistik gehört zum
+// RÄTSEL, nicht zum Namen — Bismillah erbt also die alten R.I.P.-Werte, R.I.P.
+// startet bei null, und die Werte der alten leichtesten Stufe fallen weg.
+// Idempotent über das CLOUD-SYNCTE Settings-Flag diffShiftDone, damit ein
+// Zweitgerät nicht ein zweites Mal verschiebt (Zähler mergen sonst als MAX und
+// die Werte wanderten Stufe um Stufe weiter nach unten).
+function runDifficultyShift() {
+  if (state.settings.diffShiftDone) return;
+  const ids = DIFFICULTIES.map(d => d.id);
+  const vorher = Object.keys(state.stats.byDifficulty || {}).length;
+  if (vorher > 0) {
+    state.stats = applyDifficultyShift(ids);
+    log('game', 'Schwierigkeitsleiter verschoben — Statistik mitgezogen', {
+      stufen: vorher, nachher: Object.keys(state.stats.byDifficulty || {}).length,
+    });
+    showToast(t('diffShift.toast'), 'info', 7000);
+    syncCloudNow('diffShift');
+  }
+  setSetting('diffShiftDone', true);
 }
 function endlessAgain() { state.endlessSummary = null; startEndless(); }
 function closeEndlessSummary() {
@@ -7115,6 +7137,11 @@ function init() {
   Coop.onTyping((uids) => { state.chat.typingUids = uids; });
   refreshResume();
   initMissions();   // Wochen-Missionen laden / bei Wochenwechsel neu setzen
+  // ZUERST verschieben, DANN nachbuchen: die Verschiebung gilt nur den Werten,
+  // die VOR der Leiter-Änderung erspielt wurden. Der Endlos-Backfill rekonstruiert
+  // seine Einträge bereits mit den heutigen Leiter-Ids — liefe er vorher, würde die
+  // Verschiebung ihn ein zweites Mal versetzen (E2E endless.spec.js fing genau das ab).
+  runDifficultyShift();   // einmalig: Statistik mit der verschobenen Schwierigkeitsleiter mitziehen
   runEndlessBackfill();   // einmalig: alte Endlos-Läufe rückwirkend als Einzelspiele anrechnen
   refreshAccountFromLocal();
   if (loadProfile().accountId) {

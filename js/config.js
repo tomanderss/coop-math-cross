@@ -25,15 +25,15 @@ export const LIVES = 3;
 // blankRatio: Zielanteil der Felder, die der Spieler füllt (Rest = Vorgaben).
 // accent/accentD/heat: reine Anzeige-Metadaten für die Slider-Auswahl.
 export const DIFFICULTIES = [
-  { id: 'sehrleicht', name: 'Sehr Leicht', emoji: 'lvl-green',  dim: { r: 4, c: 4 }, eqTarget: 6,  ops: ['+', '-'],           maxOperand: 10, maxResult: 60,  ternaryChance: 0,    blankRatio: 0.55, maxTier: 2.5, genBudget: 40, accent: '#3fb27f', accentD: '#2a7d59', heat: 0.02 },
-  { id: 'leicht',     name: 'Leicht',      emoji: 'lvl-yellow', dim: { r: 5, c: 4 }, eqTarget: 8,  ops: ['+', '-'],           maxOperand: 12, maxResult: 80,  ternaryChance: 0,    blankRatio: 0.58, maxTier: 2.5, genBudget: 40, accent: '#f2c024', accentD: '#c99a10', heat: 0.13 },
-  { id: 'mittel',     name: 'Mittel',      emoji: 'lvl-orange', dim: { r: 5, c: 5 }, eqTarget: 11, ops: ['+', '-', '*'],      maxOperand: 12, maxResult: 99,  ternaryChance: 0,    blankRatio: 0.60, maxTier: 3,   genBudget: 50, accent: '#f2953b', accentD: '#c96f1e', heat: 0.24 },
-  { id: 'schwer',     name: 'Schwer',      emoji: 'lvl-red',    dim: { r: 6, c: 5 }, eqTarget: 13, ops: ['+', '-', '*', '/'], maxOperand: 15, maxResult: 120, ternaryChance: 0,    blankRatio: 0.60, maxTier: 3,   genBudget: 50, accent: '#e7405a', accentD: '#b02a40', heat: 0.37 },
-  { id: 'extrem',     name: 'Extrem',      emoji: 'lvl-purple', dim: { r: 6, c: 6 }, eqTarget: 15, ops: ['+', '-', '*', '/'], maxOperand: 15, maxResult: 130, ternaryChance: 0,    blankRatio: 0.62, maxTier: 3,   genBudget: 60, accent: '#9a6bff', accentD: '#6b3fd0', heat: 0.50 },
-  { id: 'mashallah',  name: 'Mashallah',   emoji: 'skull',      dim: { r: 7, c: 6 }, eqTarget: 19, ops: ['+', '-', '*', '/'], maxOperand: 22, maxResult: 150, ternaryChance: 0.10, blankRatio: 0.62, maxTier: 3,   genBudget: 60, accent: '#c7cdd6', accentD: '#7f8a99', heat: 0.64 },
-  { id: 'dikkawas',   name: 'Dikka was',   emoji: 'ghost',      dim: { r: 7, c: 7 }, eqTarget: 23, ops: ['+', '-', '*', '/'], maxOperand: 24, maxResult: 170, ternaryChance: 0.15, blankRatio: 0.64, maxTier: 3,   genBudget: 70, accent: '#b9a5ff', accentD: '#6b57c0', heat: 0.77 },
-  { id: 'bismillah',  name: 'Bismillah',   emoji: 'meteor',     dim: { r: 8, c: 7 }, eqTarget: 27, ops: ['+', '-', '*', '/'], maxOperand: 26, maxResult: 190, ternaryChance: 0.20, blankRatio: 0.65, maxTier: 3,   genBudget: 70, accent: '#ff7a1a', accentD: '#b34e08', heat: 0.89 },
-  { id: 'rip',        name: 'R.I.P.',      emoji: 'grave',      dim: { r: 9, c: 7 }, eqTarget: 32, ops: ['+', '-', '*', '/'], maxOperand: 28, maxResult: 210, ternaryChance: 0.25, blankRatio: 0.66, maxTier: 3,   genBudget: 80, accent: '#aab3bd', accentD: '#5a636e', heat: 1.00 },
+  { id: 'sehrleicht', name: 'Sehr Leicht', emoji: 'lvl-green',  dim: { r: 5, c: 4 },  eqTarget: 8,  ops: ['+', '-'],           maxOperand: 12, maxResult: 80,  ternaryChance: 0,    blankRatio: 0.58, maxTier: 2.5, genBudget: 40,  accent: '#3fb27f', accentD: '#2a7d59', heat: 0.02 },
+  { id: 'leicht',     name: 'Leicht',      emoji: 'lvl-yellow', dim: { r: 5, c: 5 },  eqTarget: 11, ops: ['+', '-', '*'],      maxOperand: 12, maxResult: 99,  ternaryChance: 0,    blankRatio: 0.60, maxTier: 3,   genBudget: 50,  accent: '#f2c024', accentD: '#c99a10', heat: 0.13 },
+  { id: 'mittel',     name: 'Mittel',      emoji: 'lvl-orange', dim: { r: 6, c: 5 },  eqTarget: 13, ops: ['+', '-', '*', '/'], maxOperand: 15, maxResult: 120, ternaryChance: 0,    blankRatio: 0.60, maxTier: 3,   genBudget: 50,  accent: '#f2953b', accentD: '#c96f1e', heat: 0.24 },
+  { id: 'schwer',     name: 'Schwer',      emoji: 'lvl-red',    dim: { r: 6, c: 6 },  eqTarget: 15, ops: ['+', '-', '*', '/'], maxOperand: 15, maxResult: 130, ternaryChance: 0,    blankRatio: 0.62, maxTier: 3,   genBudget: 60,  accent: '#e7405a', accentD: '#b02a40', heat: 0.37 },
+  { id: 'extrem',     name: 'Extrem',      emoji: 'lvl-purple', dim: { r: 7, c: 6 },  eqTarget: 19, ops: ['+', '-', '*', '/'], maxOperand: 22, maxResult: 150, ternaryChance: 0.10, blankRatio: 0.62, maxTier: 3,   genBudget: 60,  accent: '#9a6bff', accentD: '#6b3fd0', heat: 0.50 },
+  { id: 'mashallah',  name: 'Mashallah',   emoji: 'skull',      dim: { r: 7, c: 7 },  eqTarget: 23, ops: ['+', '-', '*', '/'], maxOperand: 24, maxResult: 170, ternaryChance: 0.15, blankRatio: 0.64, maxTier: 3,   genBudget: 70,  accent: '#c7cdd6', accentD: '#7f8a99', heat: 0.64 },
+  { id: 'dikkawas',   name: 'Dikka was',   emoji: 'ghost',      dim: { r: 8, c: 7 },  eqTarget: 27, ops: ['+', '-', '*', '/'], maxOperand: 26, maxResult: 190, ternaryChance: 0.20, blankRatio: 0.65, maxTier: 3,   genBudget: 70,  accent: '#b9a5ff', accentD: '#6b57c0', heat: 0.77 },
+  { id: 'bismillah',  name: 'Bismillah',   emoji: 'meteor',     dim: { r: 9, c: 7 },  eqTarget: 32, ops: ['+', '-', '*', '/'], maxOperand: 28, maxResult: 210, ternaryChance: 0.25, blankRatio: 0.66, maxTier: 3,   genBudget: 80,  accent: '#ff7a1a', accentD: '#b34e08', heat: 0.89 },
+  { id: 'rip',        name: 'R.I.P.',      emoji: 'grave',      dim: { r: 10, c: 8 }, eqTarget: 40, ops: ['+', '-', '*', '/'], maxOperand: 32, maxResult: 250, ternaryChance: 0.35, blankRatio: 0.68, maxTier: 3,   genBudget: 120, accent: '#aab3bd', accentD: '#5a636e', heat: 1.00 },
 ];
 
 // „Große Zahlen": derselbe Bauplan, nur ein deutlich größerer Zahlenraum
@@ -310,6 +310,11 @@ export const DEFAULT_SETTINGS = {
                             // aus dem Geldverlauf rückwirkend als Einzelspiele
                             // verbucht — cloud-synct, damit Zweitgeräte nicht
                             // doppelt nachbuchen)
+  diffShiftDone: false,     // einmalige Migration gelaufen? (Schwierigkeitsleiter
+                            // eine Stufe Richtung „leichter" gerückt, neue Spitze
+                            // oben — die Statistik ist mit der Konfiguration
+                            // mitgewandert; cloud-synct, damit ein Zweitgerät sie
+                            // nicht ein zweites Mal verschiebt)
   // Prozedurale Zen-Hintergrundmusik (js/music.js), pro Bereich schaltbar.
   // Default an; Lautstärke 0..1. "competition" deckt Race (1v1) UND Team (2v2) ab.
   // musicMenu = Menüs/Statistik/Verlauf usw. (alle Nicht-Spiel-Screens). Sind

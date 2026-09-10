@@ -244,6 +244,37 @@ export function loadStats() {
 }
 function saveStats(s) { save(KEYS.STATS, s); }
 
+/**
+ * Verschiebt die Schwierigkeits-Statistik MIT der Konfiguration (rein, unit-getestet).
+ *
+ * Die Leiter ist einmalig eine Stufe Richtung „leichter" gerückt: jede Stufe hat
+ * die Konfiguration der bis dahin NÄCHST-SCHWEREREN bekommen (Leicht → Sehr
+ * Leicht, …, R.I.P. → Bismillah) und ganz oben steht ein brandneues, härteres
+ * R.I.P. Die Statistik gehört zum RÄTSEL, nicht zum Namen — sie muss also
+ * denselben Weg gehen: `ids` ist die Leiter von leicht nach schwer, jede Stufe
+ * erbt die Werte ihres bisherigen Nachbarn rechts, die alte leichteste Stufe
+ * fällt weg und die neue Spitze startet bei null.
+ */
+export function shiftDifficultyStats(byDifficulty, ids) {
+  const alt = byDifficulty && typeof byDifficulty === 'object' ? byDifficulty : {};
+  const leiter = Array.isArray(ids) ? ids : [];
+  const neu = {};
+  for (let i = 0; i < leiter.length; i++) {
+    const quelle = leiter[i + 1];                 // die bisher NÄCHST-SCHWERERE Stufe
+    if (quelle && alt[quelle]) neu[leiter[i]] = { ...alt[quelle] };
+  }
+  // Stufen, die gar nicht in der Leiter stehen (z.B. Alt-Ids), unverändert lassen.
+  for (const [id, wert] of Object.entries(alt)) if (!leiter.includes(id)) neu[id] = wert;
+  return neu;
+}
+/** Wendet die Verschiebung an und sichert sie. Gibt die neue Statistik zurück. */
+export function applyDifficultyShift(ids) {
+  const s = loadStats();
+  s.byDifficulty = shiftDifficultyStats(s.byDifficulty, ids);
+  saveStats(s);
+  return s;
+}
+
 // outcome: 'won' | 'lost' (alle Leben verloren)
 // Highscore (bestTimeMs je Schwierigkeit) gilt NUR für fehlerfreie Spiele —
 // sonst wäre die Bestzeit nicht vergleichbar.

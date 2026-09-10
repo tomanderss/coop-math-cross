@@ -21,6 +21,7 @@ export default {
   },
 
   solo: { title: 'Solo', classic: 'Clásico', classicHint: 'Un puzle, dificultad libre', endless: 'Ascenso sin fin', endlessHint: 'Cada vez más difícil, ¿hasta dónde llegas?', endlessStart: 'Iniciar sin fin' },
+  diffShift: { toast: 'Cada dificultad ha bajado un escalón y arriba espera un R.I.P. nuevo y más duro: tus estadísticas se han movido con ellas.' },
   endless: { badge: 'Sin fin', best: 'Mejor racha: nivel {n}', cleared: '¡Nivel {n} superado!', lifeGained: '+1 vida', overTitle: 'Fin de la partida', reached: 'Nivel {n} alcanzado', record: '¡Nuevo récord!', levelDone: '¡Nivel {n} superado!', continue: 'Continuar', livesLabel: 'Vidas', levelShort: 'Nivel {n}', levelTime: 'Tiempo de este nivel', totalTime: 'Tiempo total de la partida', backfillToast: 'Partidas sin fin anteriores acreditadas: ¡{wins} victorias de {runs} partidas ya cuentan en tus estadísticas!' },
 
   saves: { title: 'Partidas guardadas', manage: 'Gestionar partidas', moreN: 'Más partidas guardadas ({n})', livesLeft: '{n} de {max} vidas restantes', openN: 'Todas las partidas ({n})', intro: 'Cada partida se guarda por separado: empieza otra cuando quieras, la anterior se conserva. Espacio para {max}.', running: 'en curso', delete: 'Eliminar', deleteTitle: 'Eliminar partida?', deleteMsg: 'Esta partida se eliminara definitivamente.', deleted: 'Partida eliminada', empty: 'Aun no hay partidas guardadas.', justNow: 'ahora mismo', minsAgo: 'hace {n} min', hoursAgo: 'hace {n} h', yesterday: 'ayer', daysAgo: 'hace {n} dias' },

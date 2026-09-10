@@ -26,7 +26,7 @@ const {
   loadActiveGameEndless, saveActiveGameEndless,
   loadWalletLog, mergeWalletLogs, unexplainedWalletDelta, dataRev,
   loadPlaySamples, addPlaySample, mergePlaySamples, PLAY_SAMPLES_MAX,
-  loadSaves, saveSaves, upsertSave, removeSave, pruneSaves, mergeSaves,
+  loadSaves, saveSaves, upsertSave, removeSave, pruneSaves, mergeSaves, shiftDifficultyStats,
   loadSavesGone, mergeSavesGone,
 } = await import('../../js/storage.js');
 const { DEFAULT_SETTINGS } = await import('../../js/config.js');
@@ -1013,5 +1013,42 @@ describe('Bibliothek: erledigte Partien bleiben erledigt', () => {
     removeSave('x');
     const daten = collectExportData('sync');
     assert.ok(daten.savesGone && 'x' in daten.savesGone, 'savesGone ist Teil des Snapshots');
+  });
+});
+
+
+// Die Leiter ist einmalig eine Stufe Richtung „leichter" gerueckt: jede Stufe hat
+// die Konfiguration der bis dahin NAECHST-SCHWEREREN bekommen, oben kam eine neue
+// haerteste Stufe dazu. Die Statistik gehoert zum RAETSEL, nicht zum Namen — sie
+// muss also denselben Weg gehen.
+describe('Schwierigkeitsleiter: Statistik wandert mit', () => {
+  const leiter = ['a', 'b', 'c', 'd'];
+  const werte = { a: { won: 1 }, b: { won: 2 }, c: { won: 3 }, d: { won: 4 } };
+
+  test('jede Stufe erbt die Werte ihres bisherigen Nachbarn rechts', () => {
+    const neu = shiftDifficultyStats(werte, leiter);
+    assert.deepEqual(neu.a, { won: 2 }, 'a bekommt, was b war');
+    assert.deepEqual(neu.b, { won: 3 });
+    assert.deepEqual(neu.c, { won: 4 }, 'die zweithoechste Stufe erbt die alte Spitze');
+    assert.equal('d' in neu, false, 'die neue Spitze startet bei null');
+  });
+
+  test('die Werte der alten leichtesten Stufe fallen weg, nichts wird geteilt', () => {
+    const neu = shiftDifficultyStats(werte, leiter);
+    assert.notEqual(neu.a, werte.b, 'kopiert, nicht dieselbe Referenz');
+    neu.a.won = 99;
+    assert.equal(werte.b.won, 2, 'die Eingabe bleibt unberuehrt');
+  });
+
+  test('unbekannte Stufen (Alt-Ids) bleiben unangetastet, Leerfaelle sind harmlos', () => {
+    const neu = shiftDifficultyStats({ ...werte, uralt: { won: 7 } }, leiter);
+    assert.deepEqual(neu.uralt, { won: 7 });
+    assert.deepEqual(shiftDifficultyStats(null, leiter), {});
+    assert.deepEqual(shiftDifficultyStats(werte, []), { ...werte });
+  });
+
+  test('eine Stufe ohne Werte erzeugt keinen leeren Eintrag', () => {
+    const neu = shiftDifficultyStats({ b: { won: 2 } }, leiter);
+    assert.deepEqual(Object.keys(neu), ['a'], 'nur a erbt etwas, der Rest bleibt leer');
   });
 });
