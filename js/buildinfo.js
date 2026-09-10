@@ -1,8 +1,15 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.16';
-export const BUILD_HASH = '83d1c8f';
+export const BUILD      = '1.17';
+export const BUILD_HASH = 'fc9f868';
 
 export const CHANGELOG = [
+  {
+    "version": "1.17",
+    "date": "10.09.2026",
+    "changes": [
+      "1v1: Nach einem Match war der Schwierigkeitsregler zum Weiterspielen auf niedrigen Bildschirmen halb abgeschnitten und nicht erreichbar"
+    ]
+  },
   {
     "version": "1.16",
     "date": "10.09.2026",
