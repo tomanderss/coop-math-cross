@@ -1,8 +1,16 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.17';
-export const BUILD_HASH = 'fc9f868';
+export const BUILD      = '1.18';
+export const BUILD_HASH = '03d04fc';
 
 export const CHANGELOG = [
+  {
+    "version": "1.18",
+    "date": "10.09.2026",
+    "changes": [
+      "Alle Schwierigkeiten sind eine Stufe nach unten gerückt — oben wartet ein neues, deutlich härteres R.I.P. (10×8, 46 Steine)",
+      "Deine Statistiken sind mit den Schwierigkeiten mitgewandert: Bismillah führt jetzt deine bisherigen R.I.P.-Werte"
+    ]
+  },
   {
     "version": "1.17",
     "date": "10.09.2026",
