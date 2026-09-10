@@ -2010,12 +2010,35 @@ function computeCellSize() {
 // eingepasst — die erste (evtl. noch nicht ausgemessene) Berechnung wird direkt
 // korrigiert, kein Zeilen/Spalten-Overflow beim Start/Fortsetzen.
 let boardResizeObserver = null;
+let boardResizeRaf = 0;
+let lastBoardBox = '';
+// Der Rückruf darf NICHT synchron rechnen: computeCellSize schreibt cellPx/
+// trayTile, das Brett und der Vorrat ändern daraufhin ihre Größe, .board-wrap
+// meldet erneut — im selben Frame. Der Browser schafft die Zustellung dann nicht
+// und meldet „ResizeObserver loop completed with undelivered notifications".
+// Das ist harmlos, landete aber über window.onerror als roter Vollbild-Fehler
+// über der laufenden Partie (gemeldet, Desktop).
+// Deshalb: einmal pro Frame rechnen (rAF) UND nur, wenn sich die gemessene Größe
+// wirklich geändert hat — damit endet die Kette nach dem ersten Durchlauf.
+function onBoardWrapResized() {
+  if (boardResizeRaf) return;
+  boardResizeRaf = requestAnimationFrame(() => {
+    boardResizeRaf = 0;
+    const wrap = document.querySelector('.board-wrap');
+    if (!wrap) return;
+    const box = `${wrap.clientWidth}x${wrap.clientHeight}`;
+    if (box === lastBoardBox) return;      // nichts Neues → keine weitere Runde
+    lastBoardBox = box;
+    computeCellSize();
+  });
+}
 function observeBoardWrap() {
   try {
     if (typeof ResizeObserver !== 'function') return;
     const wrap = document.querySelector('.board-wrap');
     if (!wrap) return;
-    if (!boardResizeObserver) boardResizeObserver = new ResizeObserver(() => computeCellSize());
+    lastBoardBox = '';
+    if (!boardResizeObserver) boardResizeObserver = new ResizeObserver(onBoardWrapResized);
     else boardResizeObserver.disconnect();
     boardResizeObserver.observe(wrap);
   } catch (_) {}
