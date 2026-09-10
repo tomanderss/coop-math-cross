@@ -1,8 +1,15 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.15';
-export const BUILD_HASH = 'eaede43';
+export const BUILD      = '1.16';
+export const BUILD_HASH = '83d1c8f';
 
 export const CHANGELOG = [
+  {
+    "version": "1.16",
+    "date": "10.09.2026",
+    "changes": [
+      "Verlorene und gelöschte Partien bleiben jetzt endgültig weg — sie kamen vorher beim Geräte-Abgleich aus der Cloud zurück"
+    ]
+  },
   {
     "version": "1.15",
     "date": "10.09.2026",
