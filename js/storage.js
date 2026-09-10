@@ -10,6 +10,9 @@ const KEYS = {
   SETTINGS: 'cmc_settings',
   ACTIVE_GAME: 'cmc_active_game',
   ACTIVE_GAME_COOP: 'cmc_active_game_coop',
+  SAVES_GONE: 'cmc_saves_gone',  // GRABSTEINE: ids beendeter/geloeschter Partien {id: ts}.
+                                 // Ohne sie holte der Union-Merge jeden geloeschten Stand
+                                 // beim naechsten Sync aus der Cloud zurueck (gemeldet).
   SAVES: 'cmc_saves',  // Bibliothek gespeicherter Partien [{id,kind,ts,...snapshot}] — ein Eintrag JE Partie (gameId),
                        // damit ein neues Spiel nie einen alten Stand ueberschreibt. SYNCT (Union-Merge nach id).
   ACTIVE_GAME_ENDLESS: 'cmc_active_game_endless',  // fortsetzbarer Solo-Endlos-Lauf (SYNCT als Teil des Snapshots, Merge via pickEndlessSlot)
@@ -52,7 +55,7 @@ const USER_DATA_KEYS = new Set([
   'cmc_settings', 'cmc_active_game', 'cmc_active_game_coop', 'cmc_active_game_endless',
   'cmc_stats', 'cmc_daily',
   'cmc_history', 'cmc_achievements', 'cmc_missions', 'cmc_race', 'cmc_inventory', 'cmc_wallet', 'cmc_profile',
-  'cmc_completed_games', 'cmc_wallet_log', 'cmc_play_samples', 'cmc_saves',
+  'cmc_completed_games', 'cmc_wallet_log', 'cmc_play_samples', 'cmc_saves', 'cmc_saves_gone',
 ]);
 // Wie lange „Coop fortsetzen" nach der letzten Sicherung angeboten wird. Der
 // Raum lebt in der RTDB weiter, solange ihn niemand aktiv verlässt (Präsenz-
@@ -699,6 +702,7 @@ export function collectExportData(type = 'manual') {
     activeGameCoop: load(KEYS.ACTIVE_GAME_COOP, null),
     activeGameEndless: load(KEYS.ACTIVE_GAME_ENDLESS, null),
     saves: loadSaves(),   // Bibliothek gespeicherter Partien (Union-Merge nach id)
+    savesGone: loadSavesGone(),   // Grabsteine: erledigte Partien bleiben erledigt (s. mergeSaves)
     stats: load(KEYS.STATS, {}),
     daily: load(KEYS.DAILY, {}),
     history: load(KEYS.HISTORY, []),
@@ -778,21 +782,67 @@ export function snapshotSolved(g) {
 // bestehende Fortsetzen. Die Bibliothek ist das ARCHIV, das nichts mehr verliert.
 export const SAVES_MAX = 12;
 
+// ── Grabsteine ───────────────────────────────────────────────────────────────
+// Eine beendete oder geloeschte Partie muss WEG BLEIBEN. Die Bibliothek wird
+// geraeteuebergreifend als UNION nach id gemergt — eine nur lokal entfernte
+// Partie kam damit beim naechsten Sync aus der Cloud zurueck (gemeldet:
+// „verlorene Spiele sind auch nach manuellem Loeschen noch da"). Deshalb merkt
+// sich die App die ids der erledigten Partien; sie synchronisieren mit und
+// gewinnen beim Merge gegen jeden noch vorhandenen Eintrag.
+const SAVES_GONE_MAX = 300;
+export function loadSavesGone() {
+  const g = load(KEYS.SAVES_GONE, {});
+  return (g && typeof g === 'object' && !Array.isArray(g)) ? g : {};
+}
+// Neueste zuerst kappen: ein zu alter Grabstein faellt raus, sein Eintrag ist in
+// der (auf SAVES_MAX gekappten) Bibliothek dann laengst nicht mehr vorhanden.
+export function pruneSavesGone(gone) {
+  const ids = Object.keys(gone || {});
+  if (ids.length <= SAVES_GONE_MAX) return { ...(gone || {}) };
+  ids.sort((a, b) => (Number(gone[b]) || 0) - (Number(gone[a]) || 0));
+  const out = {};
+  for (const id of ids.slice(0, SAVES_GONE_MAX)) out[id] = gone[id];
+  return out;
+}
+export function saveSavesGone(gone) { save(KEYS.SAVES_GONE, pruneSavesGone(gone)); }
+export function noteSaveGone(id) {
+  if (!id) return loadSavesGone();
+  const gone = pruneSavesGone({ ...loadSavesGone(), [id]: Date.now() });
+  save(KEYS.SAVES_GONE, gone);
+  return gone;
+}
+/** Union zweier Grabstein-Karten; der spaetere Zeitpunkt gewinnt. Rein. */
+export function mergeSavesGone(a, b) {
+  const out = { ...(a && typeof a === 'object' ? a : {}) };
+  for (const [id, ts] of Object.entries(b && typeof b === 'object' ? b : {})) {
+    if (!(id in out) || (Number(ts) || 0) > (Number(out[id]) || 0)) out[id] = ts;
+  }
+  return pruneSavesGone(out);
+}
+
 export function loadSaves() {
   const a = load(KEYS.SAVES, []);
-  return Array.isArray(a) ? a.filter((g) => g && g.id).map(healSnapshot) : [];
+  if (!Array.isArray(a)) return [];
+  const gone = loadSavesGone();
+  return a.filter((g) => g && g.id && !(g.id in gone)).map(healSnapshot);
 }
 export function saveSaves(list) { save(KEYS.SAVES, pruneSaves(list)); }
 
 // Neueste zuerst, gekappt. Ein bereits vollständig gelöstes Brett fliegt raus —
 // es ist faktisch abgeschlossen und als „Fortsetzen" nutzlos (dieselbe Regel wie
-// im Aktivspiel-Slot, s. snapshotSolved).
+// im Aktivspiel-Slot, s. snapshotSolved). Dasselbe gilt für ein VERLORENES Spiel:
+// ohne Leben lässt es sich nicht fortsetzen. Das fängt zusätzlich Alt-Einträge
+// ab, die vor den Grabsteinen (SAVES_GONE) entstanden sind und deshalb schon in
+// der Cloud liegen — sie räumen sich beim nächsten Laden von selbst weg.
+// `lives` fehlt in ganz alten Snapshots (undefined ⇒ NaN ⇒ Vergleich false), die
+// bleiben also unangetastet.
 export function pruneSaves(list) {
   const seen = new Set();
   const out = [];
   for (const g of (Array.isArray(list) ? list : [])) {
     if (!g || !g.id || seen.has(g.id)) continue;
     if (!g.pending && (!g.puzzle || snapshotSolved(g))) continue;
+    if (!g.pending && Number(g.lives) <= 0) continue;
     seen.add(g.id);
     out.push(g);
   }
@@ -811,6 +861,7 @@ export function upsertSave(entry) {
   return pruned;
 }
 export function removeSave(id) {
+  noteSaveGone(id);            // ZUERST: sonst holt der naechste Cloud-Merge den Stand zurueck
   const list = loadSaves().filter((g) => g.id !== id);
   save(KEYS.SAVES, list);
   return list;
@@ -839,10 +890,11 @@ export function snapshotProgress(g) {
 
 // Zwei Bibliotheken zusammenführen (Geräte-Merge): Union nach id, bei gleicher id
 // gewinnt der JÜNGERE Stand. Nichts geht verloren, solange die Kappung reicht.
-export function mergeSaves(a, b) {
+export function mergeSaves(a, b, gone = null) {
+  const dead = gone && typeof gone === 'object' ? gone : loadSavesGone();
   const byId = new Map();
   for (const g of [...(Array.isArray(a) ? a : []), ...(Array.isArray(b) ? b : [])]) {
-    if (!g || !g.id) continue;
+    if (!g || !g.id || (g.id in dead)) continue;   // erledigt = bleibt erledigt
     const prev = byId.get(g.id);
     if (!prev || (Number(g.ts) || 0) > (Number(prev.ts) || 0)) byId.set(g.id, g);
   }
@@ -908,6 +960,9 @@ export function importFromFile(jsonText) {
   }
   // Bibliothek: Union nach id, nie ersetzen — ein Import darf keine Partie
   // verlieren, die nur auf DIESEM Geraet existiert.
+  // Grabsteine ZUERST vereinigen — sie entscheiden im mergeSaves darunter mit,
+  // sonst kaeme ein auf dem anderen Geraet geloeschter Stand hier wieder herein.
+  if (data.savesGone !== undefined) saveSavesGone(mergeSavesGone(loadSavesGone(), data.savesGone));
   if (data.saves !== undefined) saveSaves(mergeSaves(loadSaves(), data.saves));
   if (data.activeGameEndless !== undefined) {
     saveActiveGameEndless(pickEndlessSlot(loadActiveGameEndless(), data.activeGameEndless));
@@ -919,6 +974,7 @@ export function importFromFile(jsonText) {
 export function deleteAllData() {
   remove(KEYS.SETTINGS);
   remove(KEYS.SAVES);
+  remove(KEYS.SAVES_GONE);
   remove(KEYS.ACTIVE_GAME_ENDLESS);
   remove(KEYS.ACTIVE_GAME);
   remove(KEYS.ACTIVE_GAME_COOP);
