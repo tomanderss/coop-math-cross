@@ -1,8 +1,15 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.14';
-export const BUILD_HASH = '62f4ff3';
+export const BUILD      = '1.15';
+export const BUILD_HASH = 'eaede43';
 
 export const CHANGELOG = [
+  {
+    "version": "1.15",
+    "date": "10.09.2026",
+    "changes": [
+      "Am Desktop legte sich nach ein paar Zügen ein roter Fehler-Bildschirm über die Partie — behoben (harmlose Größen-Meldung des Browsers)"
+    ]
+  },
   {
     "version": "1.14",
     "date": "07.09.2026",
