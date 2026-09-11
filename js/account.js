@@ -653,6 +653,46 @@ export async function watchFriends(cb) {
   } catch (e) { log('account', 'watchFriends fehlgeschlagen', e); return () => {}; }
 }
 
+/**
+ * Repariert Freundes-Einträge OHNE Namen (rein transportseitig; die Zuordnung
+ * selbst ist `uidToName`, unit-getestet).
+ *
+ * Der Name wird beim Handschlag EINMAL in den Eintrag geschrieben. War er in dem
+ * Moment noch nicht bekannt — typisch für ein Konto, das in der Schwester-App
+ * angelegt wurde und dessen Profil hier erst beim ersten Start nachgetragen wird
+ * — blieb er für immer leer, und die Liste zeigte die nackte uid (gemeldet:
+ * „ganz komischer, kryptischer Name"). Das eigene Profil eines Freundes darf man
+ * nicht lesen (Rules: nur Besitzer/Admin), wohl aber den Namensindex
+ * `mc/usernames` (.read für alle Angemeldeten) — also rückwärts darin suchen.
+ * Der gefundene Name wird zugleich im eigenen Eintrag nachgetragen, damit die
+ * Suche nur einmal nötig ist. Kein Entfernen/Neu-Hinzufügen nötig.
+ */
+export function uidToName(index) {
+  const out = {};
+  for (const [name, uid] of Object.entries(index || {})) if (typeof uid === 'string' && !(uid in out)) out[uid] = name;
+  return out;
+}
+export async function resolveFriendNames(friends) {
+  const offen = (friends || []).filter((f) => f && f.uid && !String(f.username || '').trim());
+  if (!offen.length) return null;
+  try {
+    const fb = await ensureFirebase();
+    const u = currentUser(fb);
+    if (!u || u.isAnonymous) return null;
+    const namen = uidToName((await fb.get(fb.ref(fb.db, 'usernames'))).val());
+    const gefunden = {};
+    for (const f of offen) if (namen[f.uid]) gefunden[f.uid] = namen[f.uid];
+    if (!Object.keys(gefunden).length) return null;
+    // Im eigenen Eintrag nachtragen (fire-and-forget) — beim nächsten Start ist
+    // der Name direkt da, ohne erneute Suche.
+    for (const [uid, name] of Object.entries(gefunden)) {
+      fb.set(userRef(fb, u.uid, `friends/${uid}/username`), name).catch(() => {});
+    }
+    log('account', 'Fehlende Freundes-Namen aus dem Namensindex ergänzt', { anzahl: Object.keys(gefunden).length });
+    return gefunden;
+  } catch (e) { log('account', 'Freundes-Namen konnten nicht ergänzt werden', e); return null; }
+}
+
 // Präsenz-Listener auf die /status-Knoten mehrerer Freunde. cb(uid, status|null).
 export async function watchPresence(uids, cb) {
   try {
