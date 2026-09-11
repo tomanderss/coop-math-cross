@@ -319,6 +319,8 @@ export default {
     displayName: 'Nombre visible',
     myColor: 'Mi color',
     colorHint: 'Los demás compañeros recibirán automáticamente su propio color único.',
+    markColor: 'Color de marca',
+    markColorHint: 'Color de tus marcas personales: mantén pulsada una casilla para resaltarla. La marca no significa nada para el puzle: tú decides para qué la usas. Solo tú la ves.',
     coopRemovedOutline: 'Contorno en números eliminados',
     coopRemovedOutlineHint: 'Muestra en color quién eliminó un número — puede resultar confuso.',
     data: 'Datos',

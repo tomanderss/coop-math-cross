@@ -355,3 +355,98 @@ test.describe('Vorrat bleibt exakt', () => {
     }
   });
 });
+
+// Drei Gesten auf einem Zahl-Feld, alle ohne Regel-Bedeutung fuer das Raetsel.
+test.describe('Gesten auf dem Brett', () => {
+  // ZWEI Felder legen, deren Rechnungen auch nach dem Tausch offen bleiben —
+  // sonst waere der Tausch eine vollstaendige, falsche Rechnung und wuerde zu
+  // Recht als Fehler abgelehnt (gleiche Auswahl wie im Zieh-Tausch-Test oben).
+  async function legeZwei(page) {
+    return page.evaluate(() => {
+      const { state, placeAt } = window.__cns;
+      const p = state.puzzle;
+      const cellsOf = (eq) => { const out = []; for (let i = 0; i <= eq.n; i++) out.push(eq.dir === 'h' ? [eq.r, eq.c + i] : [eq.r + i, eq.c]); return out; };
+      const eqsAt = (r, c) => p.equations.filter((e) => cellsOf(e).some(([rr, cc]) => rr === r && cc === c));
+      const openBlanks = (eq) => cellsOf(eq).filter(([r, c]) => !p.slots[r][c].given && state.placed[r][c] == null).length;
+      const safe = [];
+      for (let r = 0; r < p.rows; r++) for (let c = 0; c < p.cols; c++) {
+        const sl = p.slots[r][c];
+        if (!sl || sl.given) continue;
+        if (eqsAt(r, c).every((e) => openBlanks(e) >= 2)) safe.push({ r, c, v: sl.v });
+      }
+      for (const x of safe) for (const y of safe) {
+        if (x === y || x.v === y.v) continue;
+        if (eqsAt(x.r, x.c).some((e) => eqsAt(y.r, y.c).includes(e))) continue;
+        placeAt(x.r, x.c, x.v); placeAt(y.r, y.c, y.v);
+        return [x, y];
+      }
+      return null;
+    });
+  }
+  const feld = (page, z) => page.locator(`.cell[data-r="${z.r}"][data-c="${z.c}"]`);
+
+  test('langes Druecken markiert ein Feld farbig und hebt die Markierung wieder auf', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page, 'mittel');
+    const ziel = await page.evaluate(() => window.__cns.firstBlank());
+    const zelle = feld(page, ziel);
+
+    const box = await zelle.boundingBox();
+    const halten = async (ms) => {
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.waitForTimeout(ms);
+      await page.mouse.up();
+    };
+    await halten(700);
+    await expect(zelle).toHaveClass(/marked/);
+    expect(await page.evaluate(() => window.__cns.state.hl.length), 'genau eine Markierung').toBe(1);
+    // Die Markierung darf KEINEN Stein gelegt haben.
+    expect(await page.evaluate(({ r, c }) => window.__cns.state.placed[r][c], ziel)).toBeNull();
+
+    await halten(700);
+    await expect(zelle).not.toHaveClass(/marked/);
+    expect(await page.evaluate(() => window.__cns.state.hl.length)).toBe(0);
+  });
+
+  test('die Markierungsfarbe kommt aus den Einstellungen', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page, 'mittel');
+    await page.evaluate(() => window.__cns.setSetting('markColor', '#ff00ff'));
+    const varWert = await page.evaluate(() => getComputedStyle(document.querySelector('.board')).getPropertyValue('--markhl').trim());
+    expect(varWert).toBe('#ff00ff');
+  });
+
+  test('zwei gelegte Zahlen lassen sich per Antippen tauschen', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page, 'mittel');
+    const paar = await legeZwei(page);
+    expect(paar, 'kein tauschbares Feldpaar gefunden').not.toBeNull();
+    const [a, b] = paar;
+
+    await feld(page, a).click();
+    expect(await page.evaluate(() => !!window.__cns.state.pick), 'erster Tipp waehlt aus').toBe(true);
+    await expect(feld(page, a)).toHaveClass(/picked/);
+
+    await feld(page, b).click();
+    const nach = await page.evaluate(({ a, b }) => ({ a: window.__cns.state.placed[a.r][a.c], b: window.__cns.state.placed[b.r][b.c] }), { a, b });
+    expect(nach.a, 'die Werte sind getauscht').toBe(b.v);
+    expect(nach.b).toBe(a.v);
+    expect(await page.evaluate(() => window.__cns.state.pick), 'die Auswahl ist verbraucht').toBeNull();
+  });
+
+  test('dreimal antippen schickt eine Zahl zurueck in den Vorrat', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page, 'mittel');
+    const paar = await legeZwei(page);
+    expect(paar, 'kein geeignetes Feldpaar gefunden').not.toBeNull();
+    const [a] = paar;
+    const offenVorher = await page.evaluate(() => window.__cns.state.tray.filter((t) => !t.used).length);
+
+    const zelle = feld(page, a);
+    await zelle.click(); await zelle.click(); await zelle.click();
+
+    expect(await page.evaluate(({ r, c }) => window.__cns.state.placed[r][c], a), 'das Feld ist wieder leer').toBeNull();
+    expect(await page.evaluate(() => window.__cns.state.tray.filter((t) => !t.used).length), 'der Stein liegt wieder im Vorrat').toBe(offenVorher + 1);
+  });
+});

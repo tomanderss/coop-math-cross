@@ -319,6 +319,8 @@ export default {
     displayName: 'Görünen ad',
     myColor: 'Benim rengim',
     colorHint: 'Diğer takım arkadaşlarına otomatik olarak kendi benzersiz renkleri atanır.',
+    markColor: 'İşaret rengi',
+    markColorHint: 'Kendi notların için işaret rengi: bir kareye basılı tutarsan vurgulanır. İşaretin bulmaca için hiçbir anlamı yok — ne için kullanacağına sen karar verirsin. Yalnızca sen görürsün.',
     coopRemovedOutline: 'Silinen sayılarda çerçeve',
     coopRemovedOutlineHint: 'Bir sayıyı kimin sildiğini renkle gösterir — kafa karıştırabilir.',
     data: 'Veriler',

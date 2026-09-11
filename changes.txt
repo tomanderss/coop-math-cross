@@ -1,0 +1,3 @@
+Felder lassen sich lange gedrückt halten, um sie farbig zu markieren — die Farbe wählst du in den Einstellungen, die Markierung ist nur für dich
+Gelegte Zahlen lassen sich jetzt auch per Antippen auswählen und tauschen, nicht mehr nur per Ziehen
+Dreimal auf eine gelegte Zahl tippen schickt sie zurück in den Vorrat

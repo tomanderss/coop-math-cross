@@ -279,6 +279,10 @@ export const DEFAULT_SETTINGS = {
                              // (frei belegbar; '' = aus). keydown wird preventDefault()et,
                              // damit z.B. Tab NICHT den Browser-Fokus verschiebt.
   coopName: '',              // eigener Anzeigename im Coop-Modus
+  // Farbe der PERSÖNLICHEN Feld-Markierung (langes Drücken auf ein Zahl-Feld).
+  // Rein private Notiz ohne Regel-Bedeutung; jeder darf ihr seine eigene geben.
+  // Bewusst NICHT die Spielerfarbe: die sagt im Mehrspieler, WER gesetzt hat.
+  markColor: '#f2c024',
   coopMyColor: '#3b82f6',    // eigene Spielerfarbe -- gilt für die eigenen Markierungen in JEDEM
                               // Modus (auch solo), nicht nur Coop (Default: Blau). Name des Storage-
                               // Keys bewusst beibehalten, um bestehende Nutzerfarben nicht zu verlieren.
