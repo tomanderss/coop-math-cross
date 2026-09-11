@@ -1,8 +1,16 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.18';
-export const BUILD_HASH = '03d04fc';
+export const BUILD      = '1.19';
+export const BUILD_HASH = '55a41ce';
 
 export const CHANGELOG = [
+  {
+    "version": "1.19",
+    "date": "11.09.2026",
+    "changes": [
+      "Freunde ohne Namen werden jetzt aufgelöst — statt der kryptischen Kennung steht wieder der Benutzername da (kein Neu-Hinzufügen nötig)",
+      "Der Benutzername steht direkt beim Start auf dem Startbildschirm, nicht erst nach dem Cloud-Abgleich"
+    ]
+  },
   {
     "version": "1.18",
     "date": "10.09.2026",
