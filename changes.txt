@@ -1,0 +1,2 @@
+Freunde ohne Namen werden jetzt aufgelöst — statt der kryptischen Kennung steht wieder der Benutzername da (kein Neu-Hinzufügen nötig)
+Der Benutzername steht direkt beim Start auf dem Startbildschirm, nicht erst nach dem Cloud-Abgleich
