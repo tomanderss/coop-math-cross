@@ -319,6 +319,8 @@ export default {
     displayName: '표시 이름',
     myColor: '내 색상',
     colorHint: '다른 동료에게는 자동으로 고유한 색상이 할당됩니다.',
+    markColor: '표시 색상',
+    markColorHint: '나만의 메모 표시 색상입니다. 칸을 길게 누르면 강조됩니다. 표시는 퍼즐에 아무 영향이 없으며 용도는 자유롭게 정하면 됩니다. 나만 볼 수 있습니다.',
     coopRemovedOutline: '삭제된 숫자 테두리',
     coopRemovedOutlineHint: '누가 숫자를 지웠는지 색으로 표시합니다. 헷갈릴 수 있습니다.',
     data: '데이터',

@@ -1130,6 +1130,19 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .cell.filled.done { background: color-mix(in srgb, var(--good) 14%, color-mix(in srgb, var(--markcol, var(--accent)) 18%, var(--cell-bg))); }
 .cell.picked { --ring: inset 0 0 0 3px var(--accent); z-index: 3; }
 .cell.droppable.empty { --ring: inset 0 0 0 2px var(--accent); }
+
+/* PERSÖNLICHE Feld-Markierung (langes Drücken). Reine Notiz ohne Regel-Bedeutung,
+   die Farbe kommt aus den Einstellungen (--markhl am Brett). Bewusst nur ein
+   getönter Grund + Rahmen: die Zahl und der Fertig-/Fehler-Zustand müssen
+   weiterhin klar lesbar bleiben, und der Ablege-Ring (--ring) darf sie
+   überschreiben. Kein Filter, kein Schatten — das Brett hat hunderte Zellen
+   (Render-Kernregel in CLAUDE.md). */
+.cell.marked { background: color-mix(in srgb, var(--markhl) 30%, var(--cell-bg)); }
+.cell.marked::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--markhl) 75%, transparent);
+  border-radius: inherit;
+}
 /* Feld unter dem gezogenen Stein: klar sichtbares Ziel, bevor man loslässt. */
 .cell.drop-hot { --ring: inset 0 0 0 3px var(--accent); z-index: 3; }
 .cell.flash { background: var(--bad-soft) !important; animation: shake .3s; }

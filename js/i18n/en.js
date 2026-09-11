@@ -319,6 +319,8 @@ export default {
     displayName: 'Display name',
     myColor: 'My color',
     colorHint: 'Highlights your own marks in every mode — including solo. In co-op, other players automatically get their own unique color.',
+    markColor: 'Highlight color',
+    markColorHint: 'Color for your own note markers: press and hold a cell to highlight it. The marker means nothing to the puzzle — you decide what you use it for. Only you can see it.',
     coopRemovedOutline: 'Outline on removed numbers',
     coopRemovedOutlineHint: 'Shows in color who removed a number — can be confusing for hidden cells.',
     data: 'Data',

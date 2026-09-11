@@ -319,6 +319,8 @@ export default {
     displayName: '表示名',
     myColor: '自分の色',
     colorHint: '他の仲間には自動的に固有の色が割り当てられます。',
+    markColor: '目印の色',
+    markColorHint: '自分用の目印の色です。マスを長押しすると目立たせられます。目印はパズルの進行には関係なく、使い道は自由。ほかの人には見えません。',
     coopRemovedOutline: '削除した数字の枠線',
     coopRemovedOutlineHint: '誰が数字を削除したかを色で表示します。わかりにくい場合はオフにできます。',
     data: 'データ',

@@ -319,6 +319,8 @@ export default {
     displayName: 'Nome visualizzato',
     myColor: 'Il mio colore',
     colorHint: 'Agli altri compagni viene assegnato automaticamente un colore unico.',
+    markColor: 'Colore del segno',
+    markColorHint: 'Colore dei tuoi segni personali: tieni premuta una casella per evidenziarla. Il segno non ha alcun significato per il puzzle: decidi tu a cosa serve. Lo vedi solo tu.',
     coopRemovedOutline: 'Contorno sui numeri rimossi',
     coopRemovedOutlineHint: 'Mostra a colori chi ha rimosso un numero — può creare confusione.',
     data: 'Dati',

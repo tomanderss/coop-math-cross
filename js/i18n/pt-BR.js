@@ -319,6 +319,8 @@ export default {
     displayName: 'Nome de exibição',
     myColor: 'Minha cor',
     colorHint: 'Outros parceiros recebem automaticamente sua própria cor única.',
+    markColor: 'Cor da marcação',
+    markColorHint: 'Cor das suas marcações pessoais: mantenha uma casa pressionada para destacá-la. A marcação não significa nada para o quebra-cabeça — você decide para que serve. Só você a vê.',
     coopRemovedOutline: 'Contorno em números removidos',
     coopRemovedOutlineHint: 'Mostra em cor quem removeu um número — pode confundir.',
     data: 'Dados',

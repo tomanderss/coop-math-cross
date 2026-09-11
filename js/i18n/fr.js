@@ -319,6 +319,8 @@ export default {
     displayName: "Nom d'affichage",
     myColor: 'Ma couleur',
     colorHint: 'Les autres partenaires reçoivent automatiquement leur propre couleur unique.',
+    markColor: 'Couleur de repère',
+    markColorHint: 'Couleur de tes repères personnels : appuie longuement sur une case pour la mettre en évidence. Le repère n\'a aucun sens pour la grille — à toi de décider à quoi il sert. Toi seul le vois.',
     coopRemovedOutline: 'Contour sur les nombres supprimés',
     coopRemovedOutlineHint: 'Indique en couleur qui a supprimé un nombre — peut être déroutant.',
     data: 'Données',

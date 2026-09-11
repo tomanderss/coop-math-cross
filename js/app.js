@@ -94,6 +94,9 @@ const state = reactive({
   trainingDone: false,        // true, sobald keine weiteren Tier-1-Schritte mehr gefunden wurden
   placed: [],                // 2D-Raster der GELEGTEN Zahlen (null = Lücke noch offen)
   tray: [],                  // Vorrat [{ id, v, used }] — ein benutzter Stein hinterlässt eine Lücke
+  hl: [],                    // eigene Farb-Markierungen als "r-c"-Schlüssel (langes Drücken).
+                             // REIN PERSÖNLICH: nie an Mitspieler gesendet, ohne Spielregel-
+                             // Bedeutung — jeder darf sich damit merken, was er will.
   display: null,             // Anzeige-Raster (2*rows-1 × 2*cols-1) aus board.buildDisplay
   drag: null,                // laufendes Ziehen { v, from:{r,c}|null, tileId, x, y } oder null
   pick: null,                // per Antippen gewählter Stein { v, from:{r,c}|null, tileId } oder null
@@ -1043,6 +1046,8 @@ const gridStyle = computed(() => {
     '--opcell': Math.round(state.cellPx * (state.opRatio || OP_RATIO)) + 'px',
     '--emptycell': EMPTY_TRACK + 'px',
     '--fs': Math.max(9, Math.round(state.cellPx * 0.46)) + 'px',
+    // Farbe der persönlichen Feld-Markierung (Einstellungen ▸ Farbe).
+    '--markhl': state.settings.markColor || '#f2c024',
   };
 });
 
@@ -1215,6 +1220,9 @@ function buildBoardState(puzzle, saved) {
   if (fixed.length !== tray.length) log('game', 'Vorrat mit dem Brett abgeglichen', { vorher: tray.length, nachher: fixed.length });
   state.tray = fixed;
   sortTrayAsc();
+  // Markierungen des geladenen Stands übernehmen (nur Strings; ein über die RTDB
+  // gereistes Array kann Löcher haben — die fliegen hier raus).
+  state.hl = Array.isArray(saved?.hl) ? saved.hl.filter((k) => typeof k === 'string') : [];
   resetCellVersions(puzzle.rows, puzzle.cols);
   state.drag = null;
   state.pick = null;
@@ -2453,8 +2461,8 @@ function onDragMove(e) {
   highlightUnder(e);
   e.preventDefault();
 }
-function onDragEnd(e) {
-  if (!dragSrc) return;
+function onDragEnd(e, cell = null) {
+  if (!dragSrc) { if (cell) handleCellTap(cell.r, cell.c); return; }
   const src = dragSrc;
   dragSrc = null;
   state.drag = null;
@@ -2466,10 +2474,12 @@ function onDragEnd(e) {
   const p = dragMoved ? dropPoint(e) : null;
   dragOrigin = null;
   dragArmed = false;
-  if (!dragMoved) { pickTile(src.v, src.from, src.tileId); return; }  // reiner Tipp = auswählen
+  // Reiner Tipp: auf dem BRETT entscheidet handleCellTap (Auswahl/Tausch/
+  // Dreifach-Tipp), im Vorrat bleibt es beim schlichten Aufnehmen.
+  if (!dragMoved) { if (cell) handleCellTap(cell.r, cell.c); else pickTile(src.v, src.from, src.tileId); return; }
   const el = document.elementFromPoint(p.x, p.y);
-  const cell = el && el.closest && el.closest('.cell[data-r]');
-  if (cell) { dropOn(parseInt(cell.dataset.r, 10), parseInt(cell.dataset.c, 10), src); return; }
+  const ziel = el && el.closest && el.closest('.cell[data-r]');
+  if (ziel) { dropOn(parseInt(ziel.dataset.r, 10), parseInt(ziel.dataset.c, 10), src); return; }
   if (el && el.closest && el.closest('.tray')) { dropOnTray(src); return; }
   state.pick = null;
 }
@@ -2479,11 +2489,80 @@ function onDragCancel() {
 }
 
 // Klick auf ein Feld: mit aufgenommenem Stein ablegen, sonst den dort liegenden aufnehmen.
-function onCellTap(r, c) {
-  if (boardLocked()) return;
-  if (state.pick) { dropOn(r, c); return; }
-  pickFromCell(r, c);
+// ── Farb-Markierung, Auswahl und Dreifach-Tipp ──────────────────────────────
+// Drei Gesten auf einem Zahl-Feld, alle ohne Regel-Bedeutung fürs Rätsel:
+//  • LANGES DRÜCKEN  → Farb-Markierung an/aus (persönliche Notiz, Farbe in den
+//    Einstellungen wählbar; wird NICHT an Mitspieler gesendet).
+//  • EINMAL TIPPEN   → gelegten Stein auswählen; die Auswahl BLEIBT stehen, ein
+//    Tipp auf einen anderen gelegten Stein tauscht die beiden. Vorher ging der
+//    Tausch nur per Ziehen: der @click-Handler feuerte NACH dem Zeiger-Pfad, sah
+//    die dort gerade gesetzte Auswahl und hob sie als „Ablegen auf sich selbst"
+//    sofort wieder auf.
+//  • DREIMAL TIPPEN  → der Stein wandert zurück in den Vorrat.
+const LONG_PRESS_MS = 450;   // ab hier gilt es als „gedrückt halten"
+const TRIPLE_TAP_MS = 700;   // max. Pause zwischen zwei Tipps derselben Folge
+let longPressTimer = 0, longPressFired = false, pressPt = null;
+let tapKey = '', tapCount = 0, tapAt = 0, pointerTapAt = 0;
+
+function hlKey(r, c) { return `${r}-${c}`; }
+function toggleHighlight(r, c) {
+  const k = hlKey(r, c);
+  const i = state.hl.indexOf(k);
+  if (i >= 0) state.hl.splice(i, 1); else state.hl.push(k);
+  persistGame();
 }
+// Ein Tipp auf ein Feld — aus dem Zeiger-Pfad ODER von der Tastatur.
+function handleCellTap(r, c) {
+  if (boardLocked()) return;
+  const key = hlKey(r, c);
+  const jetzt = Date.now();
+  tapCount = (key === tapKey && jetzt - tapAt < TRIPLE_TAP_MS) ? tapCount + 1 : 1;
+  tapKey = key; tapAt = jetzt;
+
+  // Etwas in der Hand? Dann ablegen bzw. tauschen — das hat Vorrang, und die
+  // Tipp-Folge beginnt danach von vorn.
+  const pick = state.pick;
+  if (pick && !(pick.from && pick.from.r === r && pick.from.c === c)) {
+    tapCount = 0; tapKey = '';
+    dropOn(r, c);
+    return;
+  }
+  if (!isBlankCell(r, c) || state.placed[r][c] == null) { state.pick = null; return; }
+  if (tapCount >= 3) { tapCount = 0; tapKey = ''; state.pick = null; clearAt(r, c); return; }
+  // 1. Tipp wählt aus, 2. Tipp hebt die Auswahl wieder auf.
+  if (state.pick) state.pick = null; else pickFromCell(r, c);
+}
+// Tastatur/Maus-Fallback: der Zeiger-Pfad hat denselben Tipp ggf. schon erledigt.
+function onCellTap(r, c) {
+  if (Date.now() - pointerTapAt < 400) return;
+  handleCellTap(r, c);
+}
+function onCellDown(e, cell) {
+  if (boardLocked()) return;
+  longPressFired = false;
+  pressPt = { x: e.clientX, y: e.clientY };
+  clearTimeout(longPressTimer);
+  longPressTimer = setTimeout(() => {
+    longPressTimer = 0; longPressFired = true;
+    onDragCancel();                       // eine begonnene Zug-Vorbereitung verwerfen
+    toggleHighlight(cell.r, cell.c);
+    try { navigator.vibrate && navigator.vibrate(15); } catch (_) {}
+  }, LONG_PRESS_MS);
+  if (!cell.given && cellValue(cell) != null) onDragStart(e, cellValue(cell), { r: cell.r, c: cell.c });
+}
+function cancelLongPress() { clearTimeout(longPressTimer); longPressTimer = 0; pressPt = null; }
+function onCellMove(e) {
+  if (longPressTimer && pressPt
+      && (Math.abs(e.clientX - pressPt.x) > DRAG_SLOP || Math.abs(e.clientY - pressPt.y) > DRAG_SLOP)) cancelLongPress();
+  onDragMove(e);
+}
+function onCellUp(e, cell) {
+  cancelLongPress();
+  if (longPressFired) { longPressFired = false; return; }   // die Geste WAR das Markieren
+  pointerTapAt = Date.now();
+  onDragEnd(e, cell);
+}
+function onCellCancel() { cancelLongPress(); longPressFired = false; onDragCancel(); }
 
 function afterMove() {
   persistGame();
@@ -4482,6 +4561,7 @@ function activeSnapshot() {
     puzzle: state.puzzle, placed: wirePlaced(), tray: state.tray.map(t => ({ v: t.v, used: t.used ? 1 : 0 })), markedBy: wireMarkedBy(), lives: state.lives, maxLives: state.maxLives,
     mistakes: state.mistakes,
     elapsed: state.elapsed, difficulty: state.puzzle.difficulty,
+    hl: state.hl.slice(),   // eigene Farb-Markierungen mitsichern (persönlich, nie an Mitspieler)
     gameId: state.gameId,   // Partie-Identität mitsichern (Multi-Device-Session/Fortsetzen)
     ts: Date.now(),
   };
@@ -7391,6 +7471,9 @@ const BoardGrid = {
   setup() {
     return {
       state, cellClasses, cellStyle, cellValue, onCellTap, onDragStart, onDragMove, onDragEnd, onDragCancel,
+      // Zell-Gesten: langes Drücken (markieren), Tippen (auswählen/tauschen),
+      // dreimal tippen (zurück in den Vorrat). Siehe handleCellTap.
+      onCellDown, onCellMove, onCellUp, onCellCancel,
       eqSolvedR, skinBoardClasses, skinVars, gridStyle, boardFontClass, boardFrameClass,
       countRender: () => { boardRenderCount++; return ''; },
     };
@@ -7407,10 +7490,10 @@ const BoardGrid = {
                      @click="onCellTap(cell.r, cell.c)"
                      @keydown.enter.prevent="onCellTap(cell.r, cell.c)"
                      @keydown.space.prevent="onCellTap(cell.r, cell.c)"
-                     @pointerdown="!cell.given && cellValue(cell)!=null && onDragStart($event, cellValue(cell), { r: cell.r, c: cell.c })"
-                     @pointermove="onDragMove($event)"
-                     @pointerup="onDragEnd($event)"
-                     @pointercancel="onDragCancel()"
+                     @pointerdown="onCellDown($event, cell)"
+                     @pointermove="onCellMove($event)"
+                     @pointerup="onCellUp($event, cell)"
+                     @pointercancel="onCellCancel()"
                      @contextmenu.prevent>
                   <span class="cnum">{{ cellValue(cell) }}</span>
                 </div>
@@ -8785,6 +8868,14 @@ const App = {
             <small class="set-hint">{{ t('settings.colorHint') }}</small>
           </div>
 
+          <div class="set-group-title">{{ t('settings.markColor') }}</div>
+          <div class="set-row col">
+            <div class="coop-swatches">
+              <input type="color" class="swatch-custom" v-model="state.settings.markColor" :title="t('common.pickColorTitle')" />
+            </div>
+            <small class="set-hint">{{ t('settings.markColorHint') }}</small>
+          </div>
+
           <!-- Dynamischer Skin (1.0): Code-Einlösung immer sichtbar; Editor nur, wenn freigeschaltet -->
           <div class="set-group-title skin-editor">{{ t('skin.title') }}</div>
           <!-- Vorschau + An/Aus: für Besitzer des exklusiven Skins ODER einer
@@ -9885,6 +9976,9 @@ const cellAriaLabels = computed(() => {
   return out;
 });
 function cellAriaLabel(r, c) { return (cellAriaLabels.value[r] && cellAriaLabels.value[r][c]) || ''; }
+// Markierungen als Set — cellClasses darf pro Zelle NICHT durchs Array suchen
+// (Render-Kernregel). Rechnet nur bei einer Änderung von state.hl neu.
+const hlSet = computed(() => new Set(state.hl));
 function cellClasses(cell) {
   const { r, c } = cell;
   const v = cell.given ? state.puzzle.slots[r][c].v : state.placed[r][c];
@@ -9902,6 +9996,7 @@ function cellClasses(cell) {
     done: cellInSolvedEq(r, c),
     flash: !!state.flash[`${r}-${c}`],
     picked: !!picked,
+    marked: hlSet.value.has(`${r}-${c}`),   // persönliche Farb-Markierung (langes Drücken)
     // Beim Ziehen UND beim reinen Antippen eines Steins: solange ein Stein „in der
     // Hand" liegt, zeigen alle freien Felder ihren Ablege-Ring. Vorher hing das nur
     // an state.drag — beim Antippen erlosch die Hervorhebung mit dem Abheben des
