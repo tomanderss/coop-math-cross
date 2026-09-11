@@ -1,8 +1,17 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.19';
-export const BUILD_HASH = '55a41ce';
+export const BUILD      = '1.20';
+export const BUILD_HASH = 'de07417';
 
 export const CHANGELOG = [
+  {
+    "version": "1.20",
+    "date": "11.09.2026",
+    "changes": [
+      "Felder lassen sich lange gedrückt halten, um sie farbig zu markieren — die Farbe wählst du in den Einstellungen, die Markierung ist nur für dich",
+      "Gelegte Zahlen lassen sich jetzt auch per Antippen auswählen und tauschen, nicht mehr nur per Ziehen",
+      "Dreimal auf eine gelegte Zahl tippen schickt sie zurück in den Vorrat"
+    ]
+  },
   {
     "version": "1.19",
     "date": "11.09.2026",
