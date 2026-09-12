@@ -1,8 +1,15 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.23';
-export const BUILD_HASH = '15ececc';
+export const BUILD      = '1.24';
+export const BUILD_HASH = 'b6579ea';
 
 export const CHANGELOG = [
+  {
+    "version": "1.24",
+    "date": "12.09.2026",
+    "changes": [
+      "Offline-Start abgesichert: das Brett-Modul fehlte im Zwischenspeicher des Service-Workers"
+    ]
+  },
   {
     "version": "1.23",
     "date": "12.09.2026",
