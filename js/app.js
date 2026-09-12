@@ -2558,11 +2558,28 @@ function onCellMove(e) {
 }
 function onCellUp(e, cell) {
   cancelLongPress();
-  if (longPressFired) { longPressFired = false; return; }   // die Geste WAR das Markieren
+  // Die Geste WAR das Markieren: kein Tipp, keine Auswahl. `pointerTapAt` MUSS
+  // trotzdem gestempelt werden — sonst sieht der @click-Fallback (onCellTap)
+  // den Zeiger-Pfad als „nicht zustaendig" an, waehlt den Stein aus und die
+  // frisch markierte Zahl haengt zum Umsetzen in der Hand (gemeldet). Die
+  // Tipp-Folge beginnt danach von vorn, damit ein Markieren nicht als Tipp in
+  // eine Dreifach-Folge mitzaehlt.
+  if (longPressFired) {
+    longPressFired = false;
+    pointerTapAt = Date.now();
+    tapCount = 0; tapKey = '';
+    state.pick = null;
+    return;
+  }
   pointerTapAt = Date.now();
   onDragEnd(e, cell);
 }
-function onCellCancel() { cancelLongPress(); longPressFired = false; onDragCancel(); }
+function onCellCancel() {
+  cancelLongPress();
+  if (longPressFired) { pointerTapAt = Date.now(); tapCount = 0; tapKey = ''; }
+  longPressFired = false;
+  onDragCancel();
+}
 
 function afterMove() {
   persistGame();

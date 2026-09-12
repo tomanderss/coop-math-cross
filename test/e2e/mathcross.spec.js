@@ -452,5 +452,27 @@ test.describe('Gesten auf dem Brett', () => {
 
     expect(await page.evaluate(({ r, c }) => window.__cns.state.placed[r][c], a), 'das Feld ist wieder leer').toBeNull();
     expect(await page.evaluate(() => window.__cns.state.tray.filter((t) => !t.used).length), 'der Stein liegt wieder im Vorrat').toBe(offenVorher + 1);
+    expect(await page.evaluate(() => window.__cns.state.pick), 'nichts bleibt in der Hand').toBeNull();
+  });
+
+  test('das Markieren einer gelegten Zahl laesst sie NICHT ausgewaehlt zurueck', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page, 'mittel');
+    const paar = await legeZwei(page);
+    expect(paar, 'kein geeignetes Feldpaar gefunden').not.toBeNull();
+    const [a] = paar;
+    const zelle = feld(page, a);
+
+    const box = await zelle.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.waitForTimeout(700);
+    await page.mouse.up();
+
+    await expect(zelle).toHaveClass(/marked/);
+    // Der @click-Fallback darf nach dem Markieren nicht doch noch auswaehlen.
+    expect(await page.evaluate(() => window.__cns.state.pick), 'die Zahl haengt nicht in der Hand').toBeNull();
+    await expect(zelle).not.toHaveClass(/picked/);
+    expect(await page.evaluate(({ r, c }) => window.__cns.state.placed[r][c], a), 'die Zahl liegt unveraendert').toBe(a.v);
   });
 });
