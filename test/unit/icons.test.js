@@ -63,3 +63,21 @@ test('das Home-Logo verweist auf die Icon-Datei statt auf ein eingebettetes Bild
   const sw = readFileSync(new URL('../../sw.js', import.meta.url), 'utf8');
   assert.ok(sw.includes(m[1]), `${m[1]} fehlt in der ASSETS-Liste von sw.js`);
 });
+
+// Ein js/-Modul, das nicht in der ASSETS-Liste steht, fehlt offline: der
+// Service-Worker legt es beim Precache nie an, und ein Kaltstart ohne Netz
+// bricht am fehlenden Import ab. Genau so war `board.js` — das Kernmodul des
+// Bretts — durchgerutscht. Die Regel steht in CLAUDE.md, ab jetzt haelt sie
+// ein Test fest, nicht nur die Doku.
+test('jedes js/-Modul steht in der ASSETS-Liste von sw.js', async () => {
+  const { readFileSync, readdirSync } = await import('node:fs');
+  const sw = readFileSync(new URL('../../sw.js', import.meta.url), 'utf8');
+  const liste = sw.slice(sw.indexOf('ASSETS'), sw.indexOf('\n];', sw.indexOf('ASSETS')));
+  const dir = new URL('../../js/', import.meta.url);
+  for (const datei of readdirSync(dir).filter((f) => f.endsWith('.js'))) {
+    assert.ok(liste.includes(`./js/${datei}`), `js/${datei} fehlt in der ASSETS-Liste von sw.js (offline nicht ladbar)`);
+  }
+  for (const datei of readdirSync(new URL('../../js/i18n/', import.meta.url)).filter((f) => f.endsWith('.js'))) {
+    assert.ok(liste.includes(`./js/i18n/${datei}`), `js/i18n/${datei} fehlt in der ASSETS-Liste von sw.js`);
+  }
+});
