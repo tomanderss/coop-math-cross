@@ -1,1 +1,0 @@
-Offline-Start abgesichert: das Brett-Modul fehlte im Zwischenspeicher des Service-Workers
