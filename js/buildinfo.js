@@ -1,8 +1,15 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.21';
-export const BUILD_HASH = '0c1da25';
+export const BUILD      = '1.22';
+export const BUILD_HASH = 'c72d7e3';
 
 export const CHANGELOG = [
+  {
+    "version": "1.22",
+    "date": "12.09.2026",
+    "changes": [
+      "Ein Spielstand, der zum Fortsetzen angeboten wird, taucht jetzt immer auch unter „Spielstände verwalten\" auf — sonst ließ er sich nicht löschen"
+    ]
+  },
   {
     "version": "1.21",
     "date": "12.09.2026",
