@@ -1,1 +1,0 @@
-Ein Spielstand, der zum Fortsetzen angeboten wird, taucht jetzt immer auch unter „Spielstände verwalten" auf — sonst ließ er sich nicht löschen
