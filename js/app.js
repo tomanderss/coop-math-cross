@@ -17,7 +17,7 @@ import { nextTrainingStep } from './training.js';
 import * as Music from './music.js';
 import {
   loadSettings, saveSettings, loadActiveGame, saveActiveGame, loadActiveGameCoop, saveActiveGameCoop, loadActiveGameEndless, saveActiveGameEndless, snapshotSolved,
-  loadSaves, upsertSave, removeSave, snapshotProgress, SAVES_MAX,
+  loadSaves, upsertSave, removeSave, isSaveGone, snapshotProgress, SAVES_MAX,
   loadStats, recordResult, recordEndlessRun, applyEndlessBackfill, applyDifficultyShift,
   loadSeenVersion, saveSeenVersion,
   exportToFile, importFromFile, deleteAllData, loadStreak, recordStreakResult,
@@ -4625,7 +4625,10 @@ function persistGame() {
       // Autosave liegt 400 ms VOR dem Siegzug, der Eintrag sieht dort also noch
       // ungeloest aus — ohne dieses Aufraeumen wuerde der Fortsetzen-Knopf das
       // fertige Spiel wieder anbieten (genau das faengt home.spec.js ab).
-      if (state.gameId) state.saves = removeSave(state.gameId);
+      if (state.gameId) {
+        log('storage', 'Stand aus der Bibliothek entfernt (Partie beendet)', { status: state.status, slot: state.saveSlot });
+        state.saves = removeSave(state.gameId);
+      }
     }
     // unbekannter/kein Slot → nichts anfassen (Solo-Slot bleibt unberührt)
     // Der Fortsetzen-Knopf haengt an ABGELEITETEM Zustand (state.resumeAvailable).
@@ -4857,6 +4860,19 @@ function refreshResume() {
   if (!state.resumeAvailableEndless) {
     const nextE = state.saves.find((x) => saveIsEndless(x) && (x.pending || (x.puzzle && x.placed)));
     if (nextE) { saveActiveGameEndless(nextE); state.resumeAvailableEndless = nextE; }
+  }
+  // GARANTIE: Was als „Fortsetzen" angeboten wird, MUSS auch in der Bibliothek
+  // stehen — sonst fehlt der Zugang „Spielstände verwalten" und der Stand lässt
+  // sich nicht löschen (gemeldet). Die beiden Quellen sind getrennt (Aktivspiel-
+  // Slot ⟷ Bibliothek); läuft eine davon leer, wird sie hier wieder aufgefüllt.
+  // Ein als ERLEDIGT vermerkter Stand (Grabstein) bleibt draußen — sonst käme ein
+  // gelöschtes Spiel über diesen Weg zurück.
+  const nachtragen = [[state.resumeAvailable, 'solo'], [state.resumeAvailableEndless, 'endless']];
+  for (const [g, kind] of nachtragen) {
+    const id = g && (kind === 'endless' ? ((g.endless && g.endless.runId) || g.gameId) : g.gameId);
+    if (!id || isSaveGone(id) || state.saves.some((x) => x.id === id)) continue;
+    state.saves = upsertSave({ ...g, id, kind, ts: g.ts || Date.now() });
+    log('storage', 'Fortsetzbarer Stand fehlte in der Bibliothek — nachgetragen', { kind });
   }
 }
 // Ein gespeicherter Stand ohne (vollständiges) markedBy bekäme beim Fortsetzen

@@ -116,3 +116,57 @@ test.describe('resume', () => {
     await expect(page.locator('.btn-resume')).toBeVisible();
   });
 });
+
+// Gemeldet: „wenn nur ein Spielstand da ist, sehe ich die Flaeche zum Verwalten
+// nicht" — und damit gibt es keinen Weg, ihn zu loeschen. Aktivspiel-Slot und
+// Bibliothek sind zwei getrennte Quellen; laeuft die Bibliothek leer, waehrend
+// der Slot noch einen Stand haelt, bot der Knopf nichts an. refreshResume traegt
+// so einen Stand jetzt nach.
+test.describe('Fortsetzbares ist immer verwaltbar', () => {
+  test('ein Stand nur im Aktivspiel-Slot taucht in der Bibliothek auf', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page, 'sehrleicht');
+    await page.evaluate(() => window.__cns.placeOne());
+    await page.waitForTimeout(600);
+
+    // Die Bibliothek leeren, OHNE dass die App sie gleich wieder fuellt: beim
+    // Neuladen schreibt pagehide zuerst den laufenden Stand zurueck. Das Leeren
+    // muss also NACH pagehide und VOR dem App-Start passieren — genau dafuer ist
+    // addInitScript da. So bootet die App mit vollem Aktivspiel-Slot und leerer
+    // Bibliothek: die Lage, in der der Verwalten-Knopf verschwand.
+    await page.addInitScript(() => localStorage.setItem('cmc_saves', '[]'));
+    await page.reload();
+    await page.waitForSelector('#splash', { state: 'hidden', timeout: 10000 });
+    await page.waitForFunction(() => window.__cns && window.__cns.state.saves);
+
+    const st = await page.evaluate(() => ({
+      saves: window.__cns.state.saves.length,
+      resume: !!window.__cns.state.resumeAvailable,
+    }));
+    expect(st.resume, 'der Stand wird weiterhin zum Fortsetzen angeboten').toBe(true);
+    expect(st.saves, 'und steht dafuer auch in der Bibliothek').toBeGreaterThan(0);
+    await expect(page.locator('.saves-expand'), 'der Zugang zum Verwalten ist da').toHaveCount(1);
+  });
+
+  test('ein geloeschter Stand kommt ueber diesen Weg NICHT zurueck', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page, 'sehrleicht');
+    await page.evaluate(() => window.__cns.placeOne());
+    await page.waitForTimeout(600);
+    const id = await page.evaluate(() => window.__cns.state.gameId);
+
+    // Loeschen wie im Bibliotheks-Dialog: Grabstein + Aktivspiel-Slot raeumen.
+    await page.evaluate((gid) => {
+      localStorage.setItem('cmc_saves_gone', JSON.stringify({ [gid]: Date.now() }));
+    }, id);
+    // Wie oben: erst nach pagehide leeren, sonst schreibt die App beides zurueck.
+    await page.addInitScript(() => {
+      localStorage.setItem('cmc_saves', '[]');
+      localStorage.setItem('cmc_active_game', JSON.stringify(null));
+    });
+    await page.reload();
+    await page.waitForSelector('#splash', { state: 'hidden', timeout: 10000 });
+    await page.waitForFunction(() => window.__cns && window.__cns.state.saves);
+    expect(await page.evaluate(() => window.__cns.state.saves.length), 'bleibt geloescht').toBe(0);
+  });
+});
