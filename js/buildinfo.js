@@ -1,8 +1,15 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.22';
-export const BUILD_HASH = 'c72d7e3';
+export const BUILD      = '1.23';
+export const BUILD_HASH = '15ececc';
 
 export const CHANGELOG = [
+  {
+    "version": "1.23",
+    "date": "12.09.2026",
+    "changes": [
+      "Eine Zahl, die man durch langes Drücken farbig markiert, bleibt danach nicht mehr zum Umsetzen ausgewählt"
+    ]
+  },
   {
     "version": "1.22",
     "date": "12.09.2026",
