@@ -245,6 +245,10 @@ test.describe('Vorrat', () => {
 
   test('auch das größte Level zeigt ALLE Steine ohne Scrollen', async ({ page }) => {
     await gotoApp(page);
+    // Das groesste Brett (10x8) ist teuer zu erzeugen: 1,8 s Median, bis 5,2 s
+    // im Einzellauf — unter der Parallel-Last der vollen Suite reicht das
+    // Standard-Limit von 30 s nicht zuverlaessig (genau so einmal rot geworden).
+    test.setTimeout(90000);
     await startNewGame(page, 'rip');   // die meisten Steine
     const t = await page.evaluate(() => {
       const tray = document.querySelector('.tray');

@@ -836,6 +836,8 @@ export function pruneSavesGone(gone) {
   return out;
 }
 export function saveSavesGone(gone) { save(KEYS.SAVES_GONE, pruneSavesGone(gone)); }
+/** Ist dieser Stand als erledigt vermerkt? (Grabstein — s. removeSave/mergeSaves) */
+export function isSaveGone(id) { return !!id && (id in loadSavesGone()); }
 export function noteSaveGone(id) {
   if (!id) return loadSavesGone();
   const gone = pruneSavesGone({ ...loadSavesGone(), [id]: Date.now() });
