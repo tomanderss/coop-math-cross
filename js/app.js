@@ -9541,6 +9541,8 @@ const App = {
           <li v-html="t('howto.rule2')"></li>
           <li v-html="t('howto.rule3')"></li>
           <li v-html="t('howto.rule4')"></li>
+          <li v-html="t('howto.ruleTapBack')"></li>
+          <li v-html="t('howto.ruleMark')"></li>
           <li v-html="t('howto.rule5')"></li>
           <li v-html="t('howto.rule6')"></li>
           <li v-if="state.coop.active" v-html="t('howto.rule7Coop')"></li>

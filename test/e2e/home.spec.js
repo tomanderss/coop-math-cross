@@ -47,6 +47,25 @@ test.describe('home screen', () => {
     await expect(page.locator('.modal-bg')).toHaveCount(0);
   });
 
+  // Die Anleitung muss die GRUNDBEDIENUNG vollstaendig erklaeren. Beim Einbau der
+  // Zell-Gesten blieb sie zurueck (sie beschrieb nur noch das Ziehen) — dieser Test
+  // haelt sie fest: jede Geste, mit der man das Spiel bedient, gehoert hier hinein.
+  test('die Anleitung erklaert jede Bedien-Geste', async ({ page }) => {
+    await gotoApp(page);
+    await page.locator('.home-settings-btn').click();
+    await gotoSettingsSection(page, 'Spiel');
+    await page.locator('.set-howto-btn').click();
+    const regeln = (await page.locator('.modal .rules').innerText()).toLowerCase();
+    for (const [was, wort] of [
+      ['Ziehen', 'zieh'],
+      ['Antippen zum Setzen', 'antippen'],
+      ['Tauschen', 'tausch'],
+      ['Dreifach-Tipp', 'dreimal'],
+      ['Farb-Markierung', 'gedrückt halten'],
+      ['Einstellbare Farbe', 'einstellungen'],
+    ]) expect(regeln, `${was} muss in der Anleitung stehen`).toContain(wort);
+  });
+
   test('opens and closes the changelog modal from settings', async ({ page }) => {
     await gotoApp(page);
     await page.locator('.home-settings-btn').click();
