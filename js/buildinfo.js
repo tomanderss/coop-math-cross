@@ -1,8 +1,15 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.24';
-export const BUILD_HASH = 'b6579ea';
+export const BUILD      = '1.25';
+export const BUILD_HASH = '5188e09';
 
 export const CHANGELOG = [
+  {
+    "version": "1.25",
+    "date": "12.09.2026",
+    "changes": [
+      "Coop-Endlos: Wer zwischen zwei Leveln die Verbindung verliert, hängt nicht mehr in der Bereit-Lobby fest"
+    ]
+  },
   {
     "version": "1.24",
     "date": "12.09.2026",
