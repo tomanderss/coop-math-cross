@@ -1,8 +1,16 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.20';
-export const BUILD_HASH = 'de07417';
+export const BUILD      = '1.21';
+export const BUILD_HASH = '0c1da25';
 
 export const CHANGELOG = [
+  {
+    "version": "1.21",
+    "date": "12.09.2026",
+    "changes": [
+      "Spielanleitung nachgezogen: Setzen per Antippen, Tauschen, Dreifach-Tipp und die Farb-Markierung sind jetzt erklärt",
+      "Anleitung: im Coop fehlte das Wort „Leben\" im Satz über die geteilten Herzen"
+    ]
+  },
   {
     "version": "1.20",
     "date": "11.09.2026",
