@@ -255,3 +255,46 @@ test.describe('Desktop: Größen-Rückkopplung', () => {
     await expect(page.locator('#err'), 'ein echter Fehler wird weiterhin gezeigt').toBeVisible();
   });
 });
+
+// Der Vorrat schrumpft nur auf einem SCHMALEN Bildschirm zeilenweise — der
+// Fehler wurde auf dem Handy gemeldet, also hier bewusst die Standard-Ansicht
+// (Pixel 7) statt des Desktop-Viewports der Nachbar-Suite.
+test.describe('Vorrat-Schrumpfen', () => {
+// Gemeldet: unten hinter dem Vorrat standen noch Umrisse von Feldern, die dort
+// laengst nicht mehr liegen; Pausieren oder ein Ausflug ins Menue heilte es.
+// Nachgemessen ist es KEIN DOM-Element — ueber den ganzen Spielverlauf ragt
+// kein Knoten je unter den Vorrat. Es sind stehengebliebene Pixel: mit jedem
+// gelegten Stein verliert der Vorrat irgendwann eine Reihe, .board-wrap
+// bekommt deren Hoehe dazu, und WebKit macht den freigewordenen Streifen nicht
+// sauber ungueltig. Der Test haelt beides fest: der Vorrat bleibt DOM-seitig
+// sauber, und eine echte Groessenaenderung loest den Repaint-Stups aus.
+test('ein schrumpfender Vorrat raeumt hinter sich auf', async ({ page }) => {
+  test.setTimeout(90000);
+  await gotoApp(page);
+  await startNewGame(page, 'schwer');
+  const vorher = await page.evaluate(() => window.__cns.repaintNudges());
+
+  let hoehen = [];
+  for (let runde = 0; runde < 8; runde++) {
+    await page.evaluate(() => { for (let i = 0; i < 6; i++) if (!window.__cns.placeOne()) break; });
+    await page.waitForTimeout(220);
+    const r = await page.evaluate(() => {
+      const tray = document.querySelector('.tray');
+      const tb = tray.getBoundingClientRect();
+      let drunter = 0;
+      for (const el of document.querySelectorAll('.screen.game *')) {
+        const b = el.getBoundingClientRect();
+        if (b.height > 0 && b.bottom > tb.bottom + 1 && b.top > tb.top - 2) drunter++;
+      }
+      return { h: Math.round(tb.height), drunter };
+    });
+    expect(r.drunter, 'nichts ragt unter den Vorrat').toBe(0);
+    hoehen.push(r.h);
+  }
+
+  // Der Vorrat MUSS dabei mindestens eine Reihe verloren haben — sonst prueft
+  // der Test die interessante Lage gar nicht.
+  expect(Math.max(...hoehen), 'der Vorrat schrumpft im Spielverlauf').toBeGreaterThan(Math.min(...hoehen));
+  expect(await page.evaluate(() => window.__cns.repaintNudges()), 'die Groessenaenderung stoesst ein Neuzeichnen an').toBeGreaterThan(vorher);
+});
+});

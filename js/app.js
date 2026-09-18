@@ -2061,6 +2061,19 @@ function onBoardWrapResized() {
     if (box === lastBoardBox) return;      // nichts Neues → keine weitere Runde
     lastBoardBox = box;
     computeCellSize();
+    // Die Spielflaeche waechst waehrend der Partie: mit jedem gelegten Stein
+    // verliert der Vorrat irgendwann eine ganze Reihe, .board-wrap bekommt deren
+    // Hoehe dazu und das Brett wird neu gesetzt. WebKit macht den freigewordenen
+    // Streifen dabei nicht immer sauber ungueltig — im gemeldeten Fall standen
+    // unten, hinter dem Vorrat, noch die ALTEN Brett-Pixel (Umrisse von Feldern,
+    // die dort langst nicht mehr liegen). Es ist kein DOM-Element: kein Knoten
+    // ragt je unter den Vorrat (nachgemessen ueber den ganzen Spielverlauf), nur
+    // stehengebliebene Pixel. Deshalb hier derselbe Opacity-Stups wie bei der
+    // iOS-Schwarzbild-Praevention — er erzwingt genau das Neuzeichnen, das sonst
+    // erst Pausieren oder ein Ausflug ins Menue ausloeste (beides heilte es,
+    // vom Nutzer bestaetigt). Laeuft nur bei ECHTER Groessenaenderung, also ein
+    // paar Mal pro Partie, und aendert kein Layout (kein Observer-Kreis).
+    nudgeRepaint('boardResize');
   });
 }
 function observeBoardWrap() {
@@ -10166,6 +10179,7 @@ app.mount('#app');
 if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') window.__cns = { state, isSolved, handleCoopMsg, handleCoopConnection, coopSend, upsertPlayer, removePlayer, onSoloInviteRoomOpen, onSoloInviteJoin, cellStyle, cellClasses, Music, launchWinFx,
   placeAt, clearAt, pickTile, dropOn, setSetting, dragLift: DRAG_LIFT,
   sentLog: () => sentLog.slice(), clearSentLog: () => { sentLog = []; },
+  repaintNudges: () => repaintNudgeCount,
   // Test-Helfer: erstes offenes Feld (mit seinem richtigen Wert) bzw. genau
   // einen korrekten Stein legen — spart jedem E2E-Test dieselbe Suchschleife.
   firstBlank: () => {
@@ -10213,9 +10227,11 @@ window.addEventListener('pagehide', () => { persistGame(); if (state.account.sta
 // erzeugen (das täte `transform`/`filter`, nicht aber `opacity`). Rein additiv,
 // unsichtbar, nur bei Sichtbarwerden (kein Per-Frame-Kosten).
 let repaintNudgeScheduled = false;
+let repaintNudgeCount = 0;      // nur fuer den E2E-Test sichtbar (window.__cns)
 function nudgeRepaint(reason) {
   if (repaintNudgeScheduled) return;
   repaintNudgeScheduled = true;
+  repaintNudgeCount++;
   requestAnimationFrame(() => {
     const el = document.querySelector('.app') || document.body;
     if (el) {
