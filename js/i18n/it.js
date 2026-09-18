@@ -704,7 +704,7 @@ export default {
     ruleTapBack: 'Toccare <b>tre volte</b> una tessera posata la rimanda nella riserva.',
     ruleMark: '<b>Tieni premuta</b> una casella per evidenziarla. È solo un appunto per te: non significa nulla per il puzzle e nessun altro lo vede — decidi tu a cosa serve. Il colore si sceglie nelle impostazioni.',
     rule5: 'La riserva contiene <b>esattamente</b> i numeri mancanti: se ne avanza qualcuno, qualcosa è fuori posto.',
-    rule6: 'Ogni schema ha una soluzione unica, <b>senza tirare a indovinare</b>. C’è <b>errore</b> solo quando una tessera completa un calcolo che non torna: costa una vita.',
+    rule6: 'Ogni schema ha una soluzione unica, <b>senza tirare a indovinare</b>. C’è <b>errore</b> solo quando una tessera completa un calcolo che non torna: costa una vita. Mettere una tessera in una casella dove alla fine va un <b>altro</b> numero <b>non</b> è quindi un errore: finché il calcolo ha ancora un vuoto, non succede nulla. Puoi provare con calma.',
     rule7Coop: 'In co-op condividete le <b>vite</b>: una vita persa viene barrata nel colore del giocatore che ha sbagliato.',
     rule9: 'Un <b>record</b> conta solo per una partita <b>senza errori</b>: dopo un errore te lo segnaliamo durante e a fine partita.',
     understood: 'Capito',

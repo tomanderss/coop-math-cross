@@ -66,6 +66,22 @@ test.describe('home screen', () => {
     ]) expect(regeln, `${was} muss in der Anleitung stehen`).toContain(wort);
   });
 
+  // Gemeldet als Verstaendnisluecke: die Anleitung sagte nur, WANN ein Fehler
+  // zaehlt (eine vollstaendige Rechnung geht nicht auf) — nicht ausdruecklich,
+  // dass ein Stein auf einem noch offenen Feld folgenlos bleibt. Genau das
+  // entscheidet aber, ob man sich zu probieren traut. Der Code bestaetigt es:
+  // placementBreaksEquation prueft equationHolds(...) === false, und das wird nur
+  // bei einer VOLLSTAENDIG besetzten Rechnung falsch.
+  test('die Anleitung sagt, dass ein noch offenes Feld folgenlos ist', async ({ page }) => {
+    await gotoApp(page);
+    await page.locator('.home-settings-btn').click();
+    await gotoSettingsSection(page, 'Spiel');
+    await page.locator('.set-howto-btn').click();
+    const regeln = (await page.locator('.modal .rules').innerText()).toLowerCase();
+    expect(regeln, 'kein Fehler auf einem noch offenen Feld').toContain('kein');
+    expect(regeln, 'die Luecke als Bedingung wird genannt').toContain('lücke');
+  });
+
   test('opens and closes the changelog modal from settings', async ({ page }) => {
     await gotoApp(page);
     await page.locator('.home-settings-btn').click();

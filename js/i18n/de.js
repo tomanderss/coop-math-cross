@@ -815,7 +815,7 @@ export default {
     ruleTapBack: '<b>Dreimal</b> auf einen gelegten Stein tippen schickt ihn zurück in den Vorrat.',
     ruleMark: 'Ein Feld <b>lange gedrückt halten</b> markiert es farbig. Das ist nur eine Notiz für dich: es bedeutet nichts fürs Rätsel, niemand sonst sieht es — wofür du es nutzt, entscheidest du. Die Farbe wählst du in den Einstellungen.',
     rule5: 'Der Vorrat enthält <b>exakt</b> die fehlenden Zahlen — bleibt am Ende etwas übrig, liegt etwas falsch.',
-    rule6: 'Jedes Rätsel ist <b>ohne Raten</b> eindeutig lösbar. Ein <b>Fehler</b> ist nur, wenn ein Stein eine Rechnung vollständig macht, die dann nicht aufgeht — das kostet ein Leben.',
+    rule6: 'Jedes Rätsel ist <b>ohne Raten</b> eindeutig lösbar. Ein <b>Fehler</b> ist nur, wenn ein Stein eine Rechnung vollständig macht, die dann nicht aufgeht — das kostet ein Leben. Einen Stein auf ein Feld zu legen, auf das am Ende eine <b>andere</b> Zahl gehört, ist also <b>kein</b> Fehler — solange die Rechnung noch eine Lücke hat, passiert nichts. Du darfst also in Ruhe ausprobieren.',
     rule7Coop: 'Im Coop teilt ihr euch die <b>Leben</b> — ein verbrauchtes Herz wird in der Farbe des Spielers durchgestrichen, der den Fehler gemacht hat.',
     rule9: 'Eine <b>Bestzeit</b> zählt nur bei einem <b>fehlerfreien</b> Spiel — nach einem Fehler wirst du im Spiel und am Ende darauf hingewiesen.',
     understood: 'Verstanden',

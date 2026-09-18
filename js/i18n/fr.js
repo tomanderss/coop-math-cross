@@ -704,7 +704,7 @@ export default {
     ruleTapBack: 'Toucher <b>trois fois</b> une tuile posée la renvoie dans la réserve.',
     ruleMark: '<b>Appuie longuement</b> sur une case pour la mettre en évidence. Ce n\'est qu\'une note pour toi : cela ne change rien à la grille et personne d\'autre ne le voit — à toi de décider à quoi ça sert. La couleur se choisit dans les réglages.',
     rule5: 'La réserve contient <b>exactement</b> les nombres manquants : s’il en reste, quelque chose est mal placé.',
-    rule6: 'Chaque grille a une solution unique, <b>sans deviner</b>. Il n’y a <b>erreur</b> que si une tuile complète un calcul qui ne tombe pas juste — cela coûte une vie.',
+    rule6: 'Chaque grille a une solution unique, <b>sans deviner</b>. Il n’y a <b>erreur</b> que si une tuile complète un calcul qui ne tombe pas juste — cela coûte une vie. Poser une tuile sur une case où un <b>autre</b> nombre ira finalement n’est donc <b>pas</b> une erreur : tant que le calcul a encore un trou, il ne se passe rien. Tu peux essayer tranquillement.',
     rule7Coop: 'En coop, vous partagez les <b>vies</b> — une vie perdue est barrée dans la couleur du joueur ayant fait l\'erreur.',
     rule9: 'Un <b>meilleur temps</b> ne compte que pour une partie <b>sans erreur</b> : après une erreur, tu es prévenu pendant et à la fin de la partie.',
     understood: 'Compris',

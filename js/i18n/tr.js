@@ -704,7 +704,7 @@ export default {
     ruleTapBack: 'Yerleştirilmiş bir taşa <b>üç kez</b> dokunmak onu stoka geri gönderir.',
     ruleMark: 'Bir kareye <b>basılı tutarsan</b> renkle işaretlenir. Bu yalnızca senin notun: bulmaca için bir anlamı yok, başkası göremez — ne için kullanacağına sen karar verirsin. Rengi ayarlardan seçersin.',
     rule5: 'Stokta eksik sayılar <b>tam olarak</b> vardır: artan olursa bir şey yanlış yerdedir.',
-    rule6: 'Her bulmaca <b>tahmin gerektirmeden</b> tek çözümlüdür. Sadece bir taş bir işlemi tamamlayıp işlem tutmuyorsa <b>hata</b> olur; bu bir can götürür.',
+    rule6: 'Her bulmaca <b>tahmin gerektirmeden</b> tek çözümlüdür. Sadece bir taş bir işlemi tamamlayıp işlem tutmuyorsa <b>hata</b> olur; bu bir can götürür. Yani sonunda <b>başka</b> bir sayının geleceği bir kareye taş koymak <b>hata değildir</b>: işlemde hâlâ boşluk varsa hiçbir şey olmaz. Rahatça deneyebilirsin.',
     rule7Coop: "Coop'ta <b>canları</b> paylaşırsınız — kaybedilen bir can, hatayı yapan oyuncunun renginde üstü çizilerek gösterilir.",
     rule9: 'Bir <b>en iyi süre</b> yalnızca <b>hatasız</b> bir oyunda geçerlidir — hata yaptığında oyun sırasında ve sonunda bilgilendirilirsin.',
     understood: 'Anladım',

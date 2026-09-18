@@ -704,7 +704,7 @@ export default {
     ruleTapBack: 'Tocar <b>tres veces</b> una ficha colocada la devuelve al montón.',
     ruleMark: '<b>Mantén pulsada</b> una casilla para resaltarla. Es solo una nota tuya: no significa nada para el puzle y nadie más la ve; tú decides para qué usarla. El color se elige en los ajustes.',
     rule5: 'El montón contiene <b>exactamente</b> los números que faltan: si sobra alguno, algo está mal colocado.',
-    rule6: 'Cada rompecabezas tiene una solución única <b>sin adivinar</b>. Solo es un <b>error</b> cuando una ficha completa una operación que no cuadra: eso cuesta una vida.',
+    rule6: 'Cada rompecabezas tiene una solución única <b>sin adivinar</b>. Solo es un <b>error</b> cuando una ficha completa una operación que no cuadra: eso cuesta una vida. Por eso, colocar una ficha en una casilla donde al final va <b>otro</b> número <b>no</b> es un error: mientras la operación tenga un hueco, no pasa nada. Puedes probar con tranquilidad.',
     rule7Coop: 'En cooperativo compartís las <b>vidas</b>: una vida perdida se tacha con el color del jugador que cometió el error.',
     rule9: 'Un <b>mejor tiempo</b> solo cuenta en una partida <b>sin errores</b>: tras un error se te avisa durante la partida y al final.',
     understood: 'Entendido',

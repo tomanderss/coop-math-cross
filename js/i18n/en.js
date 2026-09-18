@@ -704,7 +704,7 @@ export default {
     ruleTapBack: 'Tapping a placed tile <b>three times</b> sends it back to the tray.',
     ruleMark: '<b>Press and hold</b> a cell to highlight it. That is just a note for you: it means nothing to the puzzle, nobody else sees it — what you use it for is up to you. Pick the color in the settings.',
     rule5: 'The tray holds <b>exactly</b> the missing numbers — if tiles are left over, something is in the wrong place.',
-    rule6: 'Every puzzle is uniquely solvable <b>without guessing</b>. A <b>mistake</b> is only made when a tile completes an equation that then does not work out — that costs a life.',
+    rule6: 'Every puzzle is uniquely solvable <b>without guessing</b>. A <b>mistake</b> is only made when a tile completes an equation that then does not work out — that costs a life. So putting a tile on a square where a <b>different</b> number belongs in the end is <b>not</b> a mistake — as long as the equation still has a gap, nothing happens. Feel free to try things out.',
     rule7Coop: 'In co-op you share the <b>lives</b> — a lost life is struck through in the color of the player who made the mistake.',
     rule9: 'A <b>best time</b> only counts for a <b>flawless</b> game — after a mistake you are told during and at the end of the game.',
     understood: 'Got it',
