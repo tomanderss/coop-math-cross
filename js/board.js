@@ -43,7 +43,9 @@ export function normalizePuzzle(p) {
  * geraden Koordinaten, Operator-/Gleichheitszeichen dazwischen.
  * @returns {{rows, cols, cells}} cells[dr][dc] = null | {t:'num',r,c,given} | {t:'op',sym}
  */
-export function buildDisplay(puzzle) {
+// `divSym` beschriftet die Divisions-Felder (Nutzer-Einstellung, s. DIV_STYLES
+// in config.js). Default = Obelus, damit jeder Alt-Aufruf unverändert bleibt.
+export function buildDisplay(puzzle, divSym = '÷') {
   const rows = puzzle.rows * 2 - 1, cols = puzzle.cols * 2 - 1;
   const cells = Array.from({ length: rows }, () => new Array(cols).fill(null));
   for (let r = 0; r < puzzle.rows; r++) {
@@ -56,7 +58,7 @@ export function buildDisplay(puzzle) {
     const cs = eqCells(eq);
     for (let i = 0; i < eq.n; i++) {
       const [r1, c1] = cs[i], [r2, c2] = cs[i + 1];
-      const sym = i < eq.n - 1 ? OP_SYMBOL[eq.ops[i]] : '=';
+      const sym = i < eq.n - 1 ? (eq.ops[i] === '/' ? divSym : OP_SYMBOL[eq.ops[i]]) : '=';
       cells[r1 + r2][c1 + c2] = { t: 'op', sym, eqIndex: puzzle.equations.indexOf(eq) };
     }
   }

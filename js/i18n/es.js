@@ -264,6 +264,13 @@ export default {
     rematch: 'Jugar de nuevo',
   },
   settings: {
+    divStyle: 'Signo de división',
+    divStyleAsk: '¿Cómo quieres que se vea «dividido por» en el tablero?',
+    divStyleHint: 'Solo visual: los rompecabezas no cambian. Puedes cambiarlo aquí cuando quieras.',
+    div_obelus: 'Óbelo',
+    div_colon: 'Dos puntos',
+    div_slash: 'Barra',
+    divExample: 'p. ej. 12 {sym} 3 = 4',
     title: 'Ajustes',
     tabGeneral: 'General',
     tabGame: 'Juego',

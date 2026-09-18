@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as B from '../../js/board.js';
 import { generatePuzzle } from '../../js/generator.js';
-import { genOptionsFor } from '../../js/config.js';
+import { genOptionsFor, divSymbolFor } from '../../js/config.js';
 import { nextForcedStep } from '../../js/hinttutor.js';
 import { nextTrainingStep } from '../../js/training.js';
 
@@ -209,4 +209,40 @@ test('Tauschen zweier gelegter Steine erzeugt keinen Stein aus dem Nichts', () =
   for (const v of taken) B.takeFromTray(tray, v);
   assert.equal(tray.length, 3, 'kein zusätzlicher Stein');
   assert.equal(multiset(tray.filter((t) => !t.used).map((t) => t.v)), '5');
+});
+
+// Das Geteilt-Zeichen ist reine ANZEIGE: gerechnet wird immer mit '/'. Nur die
+// Beschriftung der Operator-Felder wechselt, und der Default (Obelus) laesst
+// jeden Alt-Aufruf unveraendert.
+// 12 : 3 = 4 (waagerecht)
+function divFixture() {
+  return {
+    rows: 1, cols: 3,
+    slots: [[{ v: 12, given: true }, { v: 3, given: true }, { v: 4, given: false }]],
+    equations: [{ dir: 'h', r: 0, c: 0, n: 2, ops: ['/'] }],
+    tray: [4],
+  };
+}
+const opSyms = (d) => d.cells.flat().filter((c) => c && c.t === 'op').map((c) => c.sym);
+
+test('buildDisplay beschriftet die Divisions-Felder mit dem gewaehlten Zeichen', () => {
+  const p = divFixture();
+  assert.deepEqual(opSyms(B.buildDisplay(p)), ['÷', '='], 'ohne Angabe der Obelus');
+  assert.deepEqual(opSyms(B.buildDisplay(p, ':')), [':', '=']);
+  assert.deepEqual(opSyms(B.buildDisplay(p, '/')), ['/', '=']);
+});
+
+test('das gewaehlte Zeichen ruehrt an keinem anderen Operator', () => {
+  const p = fixture();   // enthaelt nur - und +
+  const standard = opSyms(B.buildDisplay(p));
+  assert.deepEqual(opSyms(B.buildDisplay(p, ':')), standard);
+  assert.ok(!standard.includes('÷'));
+});
+
+test('divSymbolFor faellt auf den Obelus zurueck', () => {
+  assert.equal(divSymbolFor('obelus'), '÷');
+  assert.equal(divSymbolFor('colon'), ':');
+  assert.equal(divSymbolFor('slash'), '/');
+  assert.equal(divSymbolFor(null), '÷');        // noch nie gewaehlt
+  assert.equal(divSymbolFor('quatsch'), '÷');   // unbekannter Wert aus der Cloud
 });

@@ -14,7 +14,10 @@ import { OP_SYMBOL, currentValues, equationsAt } from './board.js';
 import { logicalSolve, TIER } from './solver.js';
 
 /** Eine Gleichung als Text, mit „?" für noch leere Felder. */
-export function equationText(puzzle, eq, values, highlight = null) {
+// `divSym` beschriftet die Division im Erklaertext — dieselbe Nutzer-Wahl wie
+// auf dem Brett (DIV_STYLES in config.js), damit Text und Feld nicht
+// auseinanderlaufen. Default = Obelus, jeder Alt-Aufruf bleibt unveraendert.
+export function equationText(puzzle, eq, values, highlight = null, divSym = '÷') {
   const cells = eqCells(eq);
   const cols = puzzle.cols;
   const parts = [];
@@ -23,7 +26,7 @@ export function equationText(puzzle, eq, values, highlight = null) {
     const v = values[r * cols + c];
     const isTarget = highlight && highlight[0] === r && highlight[1] === c;
     parts.push(v == null ? (isTarget ? '?' : '□') : String(v));
-    if (i < eq.n - 1) parts.push(OP_SYMBOL[eq.ops[i]]);
+    if (i < eq.n - 1) parts.push(eq.ops[i] === '/' ? divSym : OP_SYMBOL[eq.ops[i]]);
     else if (i === eq.n - 1) parts.push('=');
   }
   return parts.join(' ');

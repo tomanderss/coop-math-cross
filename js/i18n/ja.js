@@ -264,6 +264,13 @@ export default {
     rematch: 'もう一度プレイ',
   },
   settings: {
+    divStyle: '割り算の記号',
+    divStyleAsk: '盤面の「割る」をどう表示しますか？',
+    divStyleHint: '表示だけの設定です。問題そのものは変わりません。いつでもここで変更できます。',
+    div_obelus: '除算記号',
+    div_colon: 'コロン',
+    div_slash: 'スラッシュ',
+    divExample: '例: 12 {sym} 3 = 4',
     title: '設定',
     tabGeneral: '一般',
     tabGame: 'ゲーム',
