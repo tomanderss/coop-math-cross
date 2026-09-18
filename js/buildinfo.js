@@ -1,8 +1,15 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.26';
-export const BUILD_HASH = 'bf44256';
+export const BUILD      = '1.27';
+export const BUILD_HASH = '5ae4469';
 
 export const CHANGELOG = [
+  {
+    "version": "1.27",
+    "date": "18.09.2026",
+    "changes": [
+      "Geteilt-Zeichen: Punkte sitzen weiter vom Strich entfernt, und du kannst zwischen ÷, : und / wählen"
+    ]
+  },
   {
     "version": "1.26",
     "date": "18.09.2026",
