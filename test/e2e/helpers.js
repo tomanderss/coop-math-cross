@@ -17,6 +17,18 @@ export async function gotoApp(page) {
   // effort per „Später"-Knopf wegklicken, damit Klicks aufs Menü nicht abgefangen
   // werden; no-op, falls es (künftig) nicht erscheint.
   await page.locator('.skin-unlock-modal .btn-ghost').click({ timeout: 2000 }).catch(() => {});
+  // Beim ersten Raetsel MIT Division fragt die App einmalig nach dem
+  // Geteilt-Zeichen (settings.divStyle). Fuer jeden anderen Test ist dieses
+  // Pop-up nur ein Overlay, das Klicks abfaengt — deshalb hier einmal
+  // vorbelegen, genau wie „Was ist neu" und die Skin-Feier oben weggeklickt
+  // werden. divstyle.spec.js setzt es bewusst auf null zurueck und prueft die
+  // Frage selbst.
+  // NUR vorbelegen, wenn noch nichts gewaehlt ist — sonst ueberschriebe ein
+  // Reload mitten im Test die gerade getroffene Wahl (genau so einmal rot
+  // geworden).
+  await page.evaluate(() => {
+    if (window.__cns && !window.__cns.state.settings.divStyle) window.__cns.setSetting('divStyle', 'obelus');
+  });
   await page.waitForSelector('.screen.home');
   await installTestPuzzle(page);
 }

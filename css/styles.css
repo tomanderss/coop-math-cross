@@ -1090,6 +1090,22 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   font-weight: 900; font-size: calc(var(--fs) * .9); line-height: 1;
   user-select: none; transition: color .2s, background .12s;
 }
+/* Selbst gezeichneter Obelus. Der Font-Obelus setzt die Punkte so dicht an den
+   Strich, dass das Zeichen auf kleinen Feldern wie ein Plus aussieht (gemeldet).
+   Hier sitzen sie ganz aussen, der Abstand zum Strich ist damit gut doppelt so
+   gross. Alles in em, skaliert also mit der Feldgroesse; die Punkte haengen an
+   Pseudo-Elementen, der Strich ist ein Hintergrund-Layer — kein zusaetzliches
+   DOM im Brett-Renderpfad. */
+.op-obelus {
+  display: block; position: relative; width: 1em; height: 1em;
+  background: linear-gradient(currentColor, currentColor) 50% 50% / .8em .13em no-repeat;
+}
+.op-obelus::before, .op-obelus::after {
+  content: ''; position: absolute; left: 50%; transform: translateX(-50%);
+  width: .22em; height: .22em; border-radius: 50%; background: currentColor;
+}
+.op-obelus::before { top: .02em; }
+.op-obelus::after { bottom: .02em; }
 .opcell.done { color: var(--good); background: color-mix(in srgb, var(--good) 22%, var(--cell-bg)); }
 .opcell.pulse { animation: opPulse .8s ease-out; }
 @keyframes opPulse { 0%,100% { transform: scale(1); } 40% { transform: scale(1.35); color: var(--good); } }
@@ -3122,3 +3138,18 @@ select.admin-row-input { flex-basis: 56%; max-width: 230px; font-size: .82rem; }
 .save-del:hover, .save-del:focus-visible { color: var(--bad); background: color-mix(in srgb, var(--bad) 22%, transparent); }
 .save-del:active { transform: scale(.9); }
 .saves-empty { margin: 18px 0; text-align: center; font-size: .82rem; font-weight: 600; color: var(--text2); opacity: .8; }
+
+/* ─── Auswahl des Geteilt-Zeichens (Einstellungen + einmaliges Pop-up) ─── */
+.div-choice { display: flex; gap: 8px; width: 100%; }
+.div-opt {
+  flex: 1 1 0; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 10px 6px; border: 0; border-radius: 12px; cursor: pointer;
+  background: var(--bg2); color: var(--text); font: inherit;
+  box-shadow: inset 0 0 0 2px transparent; transition: box-shadow .12s, background .12s;
+}
+.div-opt.on { background: color-mix(in srgb, var(--accent) 16%, var(--bg2)); box-shadow: inset 0 0 0 2px var(--accent); }
+.div-opt small { color: var(--text2); font-size: .78rem; }
+.div-opt .op-obelus, .div-opt .div-sample { color: var(--text); }
+/* Grosse Vorschau: dasselbe gezeichnete Zeichen wie im Brett, nur groesser. */
+.op-obelus-lg { font-size: 1.6rem; }
+.div-sample { font-size: 1.6rem; line-height: 1; font-weight: 900; display: block; }

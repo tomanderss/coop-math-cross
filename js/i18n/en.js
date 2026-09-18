@@ -264,6 +264,13 @@ export default {
     rematch: 'Play again',
   },
   settings: {
+    divStyle: 'Division sign',
+    divStyleAsk: 'How should “divided by” look on the board?',
+    divStyleHint: 'Display only — the puzzles stay identical. Changeable here at any time.',
+    div_obelus: 'Obelus',
+    div_colon: 'Colon',
+    div_slash: 'Slash',
+    divExample: 'e.g. 12 {sym} 3 = 4',
     title: 'Settings',
     tabGeneral: 'General',
     tabGame: 'Game',

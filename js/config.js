@@ -271,6 +271,23 @@ export const COOP_MAX_PLAYERS = 4;
 export const DONATE_URL = 'https://ko-fi.com/tomanders';
 
 // ─── STANDARD-EINSTELLUNGEN ───────────────────────────────────────────────────
+// Anzeige des Geteilt-Zeichens. REIN KOSMETISCH — das Rätsel, seine Lösung und
+// jede Prüfung rechnen unverändert mit '/'; nur die Beschriftung der Operator-
+// Felder (und der Erklärtext des Tipp-Tutors) ändert sich. Der Obelus ist in
+// vielen Schriften so eng gesetzt, dass er auf kleinen Feldern wie ein Plus
+// aussieht (gemeldet) — deshalb ist er selbst gezeichnet (.op-obelus in
+// styles.css) und es gibt zusätzlich die beiden schriftunabhängigen Alternativen.
+export const DIV_STYLES = [
+  { id: 'obelus', sym: '÷' },
+  { id: 'colon', sym: ':' },
+  { id: 'slash', sym: '/' },
+];
+export const DIV_STYLE_DEFAULT = 'obelus';
+export function divSymbolFor(styleId) {
+  const d = DIV_STYLES.find(x => x.id === styleId);
+  return d ? d.sym : '÷';
+}
+
 export const DEFAULT_SETTINGS = {
   // 'auto' folgt dem System-Theme (prefers-color-scheme, live bei Systemwechsel);
   // 'dark'/'light' = manuelle Wahl. Alte gespeicherte darkMode-Booleans migriert
@@ -283,6 +300,10 @@ export const DEFAULT_SETTINGS = {
   // Rein private Notiz ohne Regel-Bedeutung; jeder darf ihr seine eigene geben.
   // Bewusst NICHT die Spielerfarbe: die sagt im Mehrspieler, WER gesetzt hat.
   markColor: '#f2c024',
+  // Geteilt-Zeichen (s. DIV_STYLES). null = noch NIE aktiv gewählt → beim
+  // ersten Rätsel mit einer Division fragt ein Pop-up einmalig nach; danach
+  // steht hier die Wahl und die Frage kommt nie wieder.
+  divStyle: null,
   coopMyColor: '#3b82f6',    // eigene Spielerfarbe -- gilt für die eigenen Markierungen in JEDEM
                               // Modus (auch solo), nicht nur Coop (Default: Blau). Name des Storage-
                               // Keys bewusst beibehalten, um bestehende Nutzerfarben nicht zu verlieren.

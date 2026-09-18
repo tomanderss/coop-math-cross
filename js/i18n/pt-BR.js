@@ -264,6 +264,13 @@ export default {
     rematch: 'Jogar de novo',
   },
   settings: {
+    divStyle: 'Sinal de divisão',
+    divStyleAsk: 'Como “dividido por” deve aparecer no tabuleiro?',
+    divStyleHint: 'Apenas visual: os quebra-cabeças não mudam. Alterável aqui a qualquer momento.',
+    div_obelus: 'Óbelo',
+    div_colon: 'Dois-pontos',
+    div_slash: 'Barra',
+    divExample: 'ex.: 12 {sym} 3 = 4',
     title: 'Configurações',
     tabGeneral: 'Geral',
     tabGame: 'Jogo',

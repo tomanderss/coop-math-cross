@@ -264,6 +264,13 @@ export default {
     rematch: 'Сыграть снова',
   },
   settings: {
+    divStyle: 'Знак деления',
+    divStyleAsk: 'Как должно выглядеть «разделить на» на поле?',
+    divStyleHint: 'Только отображение — сами головоломки не меняются. Изменить можно здесь в любой момент.',
+    div_obelus: 'Обелюс',
+    div_colon: 'Двоеточие',
+    div_slash: 'Косая черта',
+    divExample: 'напр. 12 {sym} 3 = 4',
     title: 'Настройки',
     tabGeneral: 'Общие',
     tabGame: 'Игра',

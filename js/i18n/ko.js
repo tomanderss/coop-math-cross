@@ -264,6 +264,13 @@ export default {
     rematch: '다시 플레이',
   },
   settings: {
+    divStyle: '나누기 기호',
+    divStyleAsk: '보드에서 ‘나누기’를 어떻게 표시할까요?',
+    divStyleHint: '표시만 바뀝니다. 퍼즐 자체는 그대로이며 언제든 여기서 바꿀 수 있습니다.',
+    div_obelus: '오벨루스',
+    div_colon: '콜론',
+    div_slash: '슬래시',
+    divExample: '예: 12 {sym} 3 = 4',
     title: '설정',
     tabGeneral: '일반',
     tabGame: '게임',

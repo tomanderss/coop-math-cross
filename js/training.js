@@ -12,7 +12,7 @@ import { TIER } from './solver.js';
  * weiterkommt (dann darf frei zu Ende gespielt werden).
  * @returns {{r, c, v, key, params}|null}
  */
-export function nextTrainingStep(puzzle, placed, restTray) {
+export function nextTrainingStep(puzzle, placed, restTray, divSym = '÷') {
   const found = nextForcedStep(puzzle, placed, restTray, { maxTier: TIER.DIRECT });
   if (!found) return null;
   const { step } = found;
@@ -22,6 +22,6 @@ export function nextTrainingStep(puzzle, placed, restTray) {
   return {
     r, c, v,
     key: 'training.step.direct',
-    params: { v, eq: step.eq ? equationText(puzzle, step.eq, values, [r, c]) : '' },
+    params: { v, eq: step.eq ? equationText(puzzle, step.eq, values, [r, c], divSym) : '' },
   };
 }

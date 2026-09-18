@@ -264,6 +264,13 @@ export default {
     rematch: 'Rivincita',
   },
   settings: {
+    divStyle: 'Segno di divisione',
+    divStyleAsk: 'Come deve apparire «diviso» sulla griglia?',
+    divStyleHint: 'Solo visivo: gli schemi restano identici. Modificabile qui in qualsiasi momento.',
+    div_obelus: 'Obelo',
+    div_colon: 'Due punti',
+    div_slash: 'Barra',
+    divExample: 'es. 12 {sym} 3 = 4',
     title: 'Impostazioni',
     tabGeneral: 'Generale',
     tabGame: 'Gioco',

@@ -264,6 +264,13 @@ export default {
     rematch: 'Rejouer',
   },
   settings: {
+    divStyle: 'Signe de division',
+    divStyleAsk: 'À quoi doit ressembler « divisé par » sur la grille ?',
+    divStyleHint: 'Affichage seulement — les grilles restent identiques. Modifiable ici à tout moment.',
+    div_obelus: 'Obèle',
+    div_colon: 'Deux-points',
+    div_slash: 'Barre oblique',
+    divExample: 'ex. 12 {sym} 3 = 4',
     title: 'Paramètres',
     tabGeneral: 'Général',
     tabGame: 'Jeu',

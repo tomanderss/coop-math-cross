@@ -1,7 +1,7 @@
 // app.js — Coop Math Cross (Vue 3, esm-browser). Solo-Spiel; Coop folgt später.
 import { createApp, reactive, computed, watch, nextTick, onMounted, markRaw, ref } from './vue.esm-browser.prod.js';
 import { BUILD, CHANGELOG } from './buildinfo.js';
-import { DIFFICULTIES, DIFF_BY_ID, REGION_COLORS, COOP_COLORS, COOP_COLORS_CB, DEFAULT_GAME_OPTIONS, bigNumbersAllowed, genOptionsFor, LIVES, COOP_MAX_PLAYERS, DONATE_URL, coinReward, coinMultiplier, coinBaseForIndex, coinStreakBonus, COIN_STREAK_STEP, hexToRgb } from './config.js';
+import { DIFFICULTIES, DIFF_BY_ID, REGION_COLORS, COOP_COLORS, COOP_COLORS_CB, DEFAULT_GAME_OPTIONS, bigNumbersAllowed, genOptionsFor, LIVES, COOP_MAX_PLAYERS, DONATE_URL, coinReward, coinMultiplier, coinBaseForIndex, coinStreakBonus, COIN_STREAK_STEP, hexToRgb, DIV_STYLES, DIV_STYLE_DEFAULT, divSymbolFor } from './config.js';
 import { generatePuzzle } from './generator.js';
 import { validPuzzleShape as puzzleShapeOk } from './model.js';
 import {
@@ -1200,7 +1200,7 @@ function startCoopRound() {
 // wird EINMAL je Partie gebaut — es ändert sich während des Spiels nie, nur die
 // gelegten Zahlen tun das.
 function buildBoardState(puzzle, saved) {
-  state.display = markRaw(buildDisplay(puzzle));
+  state.display = markRaw(buildDisplay(puzzle, activeDivSym()));
   state.placed = Coop.normalizeGrid(saved?.placed, puzzle.rows, puzzle.cols, null);
   // Vorrat aus dem Rätsel aufbauen und alles abziehen, was schon auf dem Brett liegt.
   const tray = saved?.tray && Array.isArray(saved.tray) && saved.tray.length
@@ -1862,7 +1862,7 @@ function startTrainingGame() {
 // -- die Markierung selbst passiert erst im "anwenden"-Klick (applyTrainingStep),
 // damit die Begründung zuerst gelesen werden kann, bevor sich das Feld ändert.
 function trainingNextStep() {
-  state.trainingStep = nextTrainingStep(state.puzzle, state.placed, trayValues.value);
+  state.trainingStep = nextTrainingStep(state.puzzle, state.placed, trayValues.value, activeDivSym());
   state.trainingDone = !state.trainingStep;
 }
 
@@ -1949,6 +1949,7 @@ function loadPuzzleIntoState(puzzle, saved) {
   nextTick(() => { computeCellSize(); observeBoardWrap(); });
   startPlayLog();   // Spielstil-Aufzeichnung für diese Partie beginnen
   persistGame();
+  maybeAskDivStyle();   // einmalige Frage nach dem Geteilt-Zeichen (s. dort)
 }
 
 // ─── ZELLGRÖSSE (responsiv + Zoom) ────────────────────────────────────────────
@@ -5488,6 +5489,36 @@ function toggleSetting(key) {
     else if (key === 'sfxUndo') Music.sfxUndo();
   }
 }
+// ─── GETEILT-ZEICHEN ──────────────────────────────────────────────────────────
+// Rein kosmetisch (s. DIV_STYLES in config.js): gerechnet wird immer mit '/',
+// nur die Beschriftung der Operator-Felder wechselt. Solange nichts GEWÄHLT ist
+// (settings.divStyle === null) gilt der Obelus, und beim ersten Rätsel mit einer
+// Division fragt ein Pop-up einmalig nach.
+function activeDivSym() { return divSymbolFor(state.settings.divStyle || DIV_STYLE_DEFAULT); }
+// Das Anzeige-Raster wird beim Laden EINMAL gebaut (markRaw, bewusst nicht
+// reaktiv — Render-Kernregel). Eine Änderung der Wahl mitten im Spiel muss es
+// deshalb aktiv neu bauen; die Neuzuweisung allein löst den Render aus.
+function rebuildDisplay() {
+  if (!state.puzzle) return;
+  state.display = markRaw(buildDisplay(state.puzzle, activeDivSym()));
+}
+function puzzleHasDivision(p) {
+  return !!p && (p.equations || []).some(eq => (eq.ops || []).includes('/'));
+}
+// Einmalige Abfrage beim Spielstart — nur wenn wirklich geteilt wird, sonst
+// fragt die App nach etwas, das auf diesem Brett gar nicht vorkommt. Nie über
+// ein anderes Modal drüber (z.B. „Was ist neu"), sonst stapeln sich Dialoge.
+function maybeAskDivStyle() {
+  if (state.settings.divStyle || state.modal) return;
+  if (!puzzleHasDivision(state.puzzle)) return;
+  state.modal = 'divStyle';
+  log('game', 'Frage nach dem Geteilt-Zeichen (noch nie gewählt)');
+}
+function chooseDivStyle(id) {
+  setSetting('divStyle', id);
+  if (state.modal === 'divStyle') state.modal = null;
+  log('game', 'Geteilt-Zeichen gewählt', { id });
+}
 function setSetting(key, val) {
   state.settings[key] = val;
   if (key === 'language') applyLocale();
@@ -5495,6 +5526,7 @@ function setSetting(key, val) {
   if (key === 'sfxPack') Music.setSfxPack(shopEquippedId('sfx'));
   if (key === 'musicPack') { Music.setMusicPack(shopEquippedId('music')); updateMusic(); }
   if (key === 'musicVolume') { Music.setVolume(val); updateMusic(); }
+  if (key === 'divStyle') rebuildDisplay();
 }
 // Eigene Markierungsfarbe oder Brett-Palette geändert → Cage-Farben neu auf
 // Sichtbarkeit der Markierung prüfen. Als watch statt setSetting-Hook, weil der
@@ -5615,7 +5647,7 @@ function doDeleteAllData() {
 // Undo, siehe state.history), siehe ROADMAP/Plan.
 function openHistoryDetail(entry) {
   const puzzle = generatePuzzle({ difficulty: entry.difficulty, seed: entry.seed, dim: entry.dim });
-  state.historyDetail = { entry, puzzle, display: markRaw(buildDisplay(puzzle)) };
+  state.historyDetail = { entry, puzzle, display: markRaw(buildDisplay(puzzle, activeDivSym())) };
 }
 function closeHistoryDetail() { state.historyDetail = null; }
 function historyGridStyle(puzzle) {
@@ -7613,7 +7645,7 @@ const BoardGrid = {
             <template v-for="(row, dr) in state.display.cells" :key="'dr'+dr">
               <template v-for="(cell, dc) in row" :key="dr+'-'+dc">
                 <div v-if="!cell" class="gapcell"></div>
-                <div v-else-if="cell.t==='op'" class="opcell" :class="{ done: eqSolvedR(cell.eqIndex), pulse: !!state.justResolved['eq-'+cell.eqIndex] }">{{ cell.sym }}</div>
+                <div v-else-if="cell.t==='op'" class="opcell" :class="{ done: eqSolvedR(cell.eqIndex), pulse: !!state.justResolved['eq-'+cell.eqIndex] }"><span v-if="cell.sym==='÷'" class="op-obelus" role="img" aria-label="÷"></span><template v-else>{{ cell.sym }}</template></div>
                 <div v-else class="cell" :class="cellClasses(cell)" :style="cellStyle(cell)"
                      :data-r="cell.r" :data-c="cell.c"
                      role="button" :tabindex="cell.given ? -1 : 0"
@@ -7861,6 +7893,7 @@ const App = {
       generalStats, fmtDuration, whatsNewEntries,
       state, BUILD, CHANGELOG, DIFFICULTIES, DIFF_BY_ID, ACHIEVEMENTS, achievementsUnlockedCount,
       livesArr, lifeLossColor, opponentLivesArr, opponentTeamLivesArr, coopPerformance, mvpId, opponentTeamPerformance, progress, myProgressPct, gridStyle, coopAvailable,
+      divStyles: DIV_STYLES, activeDivStyleId: computed(() => state.settings.divStyle || DIV_STYLE_DEFAULT), chooseDivStyle,
       navigate, navTo, goBack, newGame, setupStart, goNextPuzzle, startEndless, endlessAgain, endlessContinue, endlessTotalMs, closeEndlessSummary, resumeGame, resumeCoopGame, resumeEndlessGame, onCellTap,
       openMissions, claimMissionReward, missionsClaimable, missionProgressVal, missionDone, missionClaimedUI, missionClaimableUI, onDragStart, onDragMove, onDragEnd, onDragCancel, undo,
       eqSolvedR, cellValue, pickTile, dropOn, dropOnTray, trayRemaining,
@@ -8999,6 +9032,17 @@ const App = {
             <small class="set-hint">{{ t('settings.colorHint') }}</small>
           </div>
 
+          <div class="set-group-title">{{ t('settings.divStyle') }}</div>
+          <div class="set-row col">
+            <div class="div-choice">
+              <button v-for="d in divStyles" :key="d.id" class="div-opt" :class="{ on: activeDivStyleId===d.id }" @click="chooseDivStyle(d.id)">
+                <span v-if="d.sym==='÷'" class="op-obelus op-obelus-lg"></span><b v-else class="div-sample">{{ d.sym }}</b>
+                <small>{{ t('settings.div_' + d.id) }}</small>
+              </button>
+            </div>
+            <small class="set-hint">{{ t('settings.divStyleHint') }}</small>
+          </div>
+
           <div class="set-group-title">{{ t('settings.markColor') }}</div>
           <div class="set-row col">
             <div class="coop-swatches">
@@ -9704,6 +9748,22 @@ const App = {
       </div>
     </div>
 
+    <!-- Einmalige Frage nach dem Geteilt-Zeichen. Bewusst OHNE Abbrechen und ohne
+         Klick-daneben: eine der drei Schaltflächen IST die Antwort, danach kommt
+         die Frage nie wieder (settings.divStyle) und lässt sich in den
+         Einstellungen jederzeit ändern. -->
+    <div v-if="state.modal==='divStyle'" class="modal-bg">
+      <div class="modal">
+        <h3>{{ t('settings.divStyle') }}</h3>
+        <p class="coop-tagline">{{ t('settings.divStyleAsk') }}</p>
+        <button v-for="d in divStyles" :key="d.id" class="btn" :class="d.id==='obelus' ? 'btn-primary' : 'btn-ghost'" @click="chooseDivStyle(d.id)">
+          <span class="btn-ic"><span v-if="d.sym==='÷'" class="op-obelus op-obelus-lg"></span><b v-else class="div-sample">{{ d.sym }}</b></span>
+          <span class="btn-tx"><b>{{ t('settings.div_' + d.id) }}</b><small>{{ t('settings.divExample', { sym: d.sym }) }}</small></span>
+        </button>
+        <small class="set-hint">{{ t('settings.divStyleHint') }}</small>
+      </div>
+    </div>
+
     <div v-if="state.modal==='changelog'" class="modal-bg" @click.self="state.modal=null">
       <div class="modal">
         <h3>{{ t('changelog.title') }}</h3>
@@ -9827,7 +9887,7 @@ const App = {
             <template v-for="(row, dr) in state.historyDetail.display.cells" :key="'hdr'+dr">
               <template v-for="(cell, dc) in row" :key="'h'+dr+'-'+dc">
                 <div v-if="!cell" class="gapcell"></div>
-                <div v-else-if="cell.t==='op'" class="opcell">{{ cell.sym }}</div>
+                <div v-else-if="cell.t==='op'" class="opcell"><span v-if="cell.sym==='÷'" class="op-obelus" role="img" aria-label="÷"></span><template v-else>{{ cell.sym }}</template></div>
                 <div v-else class="cell" :class="{ given: cell.given, filled: !cell.given, done: true }">
                   <span class="cnum">{{ state.historyDetail.puzzle.slots[cell.r][cell.c].v }}</span>
                 </div>

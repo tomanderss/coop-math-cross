@@ -264,6 +264,13 @@ export default {
     rematch: 'Tekrar oyna',
   },
   settings: {
+    divStyle: 'Bölme işareti',
+    divStyleAsk: 'Tahtada “bölü” nasıl görünsün?',
+    divStyleHint: 'Yalnızca görünüm — bulmacalar aynı kalır. Buradan istediğin zaman değiştirebilirsin.',
+    div_obelus: 'Obelüs',
+    div_colon: 'İki nokta',
+    div_slash: 'Eğik çizgi',
+    divExample: 'ör. 12 {sym} 3 = 4',
     title: 'Ayarlar',
     tabGeneral: 'Genel',
     tabGame: 'Oyun',
