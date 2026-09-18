@@ -1,8 +1,15 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.27';
-export const BUILD_HASH = '5ae4469';
+export const BUILD      = '1.28';
+export const BUILD_HASH = '9fbca47';
 
 export const CHANGELOG = [
+  {
+    "version": "1.28",
+    "date": "18.09.2026",
+    "changes": [
+      "Anleitung: es ist ausdrücklich kein Fehler, einen Stein auf ein Feld zu legen, auf das am Ende eine andere Zahl gehört"
+    ]
+  },
   {
     "version": "1.27",
     "date": "18.09.2026",
