@@ -1,8 +1,15 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.25';
-export const BUILD_HASH = '5188e09';
+export const BUILD      = '1.26';
+export const BUILD_HASH = 'bf44256';
 
 export const CHANGELOG = [
+  {
+    "version": "1.26",
+    "date": "18.09.2026",
+    "changes": [
+      "Vorrat: beim Schrumpfen bleiben unten keine alten Feld-Umrisse mehr stehen"
+    ]
+  },
   {
     "version": "1.25",
     "date": "12.09.2026",
