@@ -704,7 +704,7 @@ export default {
     ruleTapBack: 'Tocar <b>três vezes</b> numa peça colocada a devolve à reserva.',
     ruleMark: '<b>Mantenha uma casa pressionada</b> para destacá-la. É só uma anotação sua: não significa nada para o quebra-cabeça e mais ninguém vê — você decide para que serve. A cor se escolhe nos ajustes.',
     rule5: 'A reserva tem <b>exatamente</b> os números que faltam: se sobrar alguma peça, algo está no lugar errado.',
-    rule6: 'Cada desafio tem solução única, <b>sem chute</b>. Só é <b>erro</b> quando uma peça completa uma conta que não fecha — isso custa uma vida.',
+    rule6: 'Cada desafio tem solução única, <b>sem chute</b>. Só é <b>erro</b> quando uma peça completa uma conta que não fecha — isso custa uma vida. Então colocar uma peça numa casa onde no fim vai <b>outro</b> número <b>não</b> é erro: enquanto a conta ainda tiver uma lacuna, nada acontece. Pode testar à vontade.',
     rule7Coop: 'No coop vocês dividem as <b>vidas</b>: uma vida perdida é riscada na cor do jogador que errou.',
     rule9: 'Um <b>melhor tempo</b> só conta em uma partida <b>sem erros</b>: após um erro, você é avisado durante e ao final da partida.',
     understood: 'Entendi',
