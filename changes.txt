@@ -1,0 +1,1 @@
+Geteilt-Zeichen: Wer nach dem Update noch nichts gewählt hat, wird zuverlässig gefragt — auch wenn beim Start gerade ein anderes Fenster offen war
