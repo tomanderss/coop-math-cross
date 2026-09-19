@@ -1,8 +1,15 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.28';
-export const BUILD_HASH = '9fbca47';
+export const BUILD      = '1.29';
+export const BUILD_HASH = '52bd4dc';
 
 export const CHANGELOG = [
+  {
+    "version": "1.29",
+    "date": "19.09.2026",
+    "changes": [
+      "Geteilt-Zeichen: Wer nach dem Update noch nichts gewählt hat, wird zuverlässig gefragt — auch wenn beim Start gerade ein anderes Fenster offen war"
+    ]
+  },
   {
     "version": "1.28",
     "date": "18.09.2026",
