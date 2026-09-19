@@ -5509,8 +5509,13 @@ function puzzleHasDivision(p) {
 // fragt die App nach etwas, das auf diesem Brett gar nicht vorkommt. Nie über
 // ein anderes Modal drüber (z.B. „Was ist neu"), sonst stapeln sich Dialoge.
 function maybeAskDivStyle() {
-  if (state.settings.divStyle || state.modal) return;
-  if (!puzzleHasDivision(state.puzzle)) return;
+  if (state.settings.divStyle) return;                 // schon beantwortet
+  if (state.screen !== 'game' || state.modal) return;  // nicht über ein anderes Modal, nicht ausserhalb des Spiels
+  // Im Mehrspieler NICHT fragen: der Partner spielt schon, ein Dialog ohne
+  // Abbrechen würde den Beitretenden mitten in der laufenden Runde blockieren.
+  // Die Frage kommt dann beim nächsten Solo-Rätsel.
+  if (isMultiplayer()) return;
+  if (!puzzleHasDivision(state.puzzle)) return;        // auf diesem Brett wird gar nicht geteilt
   state.modal = 'divStyle';
   log('game', 'Frage nach dem Geteilt-Zeichen (noch nie gewählt)');
 }
@@ -5532,6 +5537,12 @@ function setSetting(key, val) {
 // Sichtbarkeit der Markierung prüfen. Als watch statt setSetting-Hook, weil der
 // Custom-Farbwähler per v-model DIREKT in state.settings schreibt (kein setSetting).
 watch(() => [state.settings.coopMyColor, state.settings.boardPalette], () => { cellStyleCache = []; });
+// Lag beim Laden des Bretts ein anderes Modal obenauf, wurde die Frage nach dem
+// Geteilt-Zeichen übersprungen — sie darf dann nicht bis zum nächsten Rätsel
+// warten, sondern wird nachgeholt, sobald der Bildschirm frei ist. Keine
+// Schleife: maybeAskDivStyle setzt state.modal selbst (truthy → steigt aus),
+// und nach der Antwort ist divStyle gesetzt.
+watch(() => state.modal, (m) => { if (!m) maybeAskDivStyle(); });
 // Settings-Persist ENTPRELLT (Trailing 250 ms): der Werkzeug-Umschalter schreibt
 // bei JEDEM Wechsel state.settings.confirmTool — das synchrone JSON.stringify +
 // localStorage.setItem lag damit mitten im Tap-Pfad (Teil der gemeldeten
