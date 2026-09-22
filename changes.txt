@@ -1,1 +1,0 @@
-Die Frage nach dem Geteilt-Zeichen kommt jetzt beim App-Start — wie die Update-Info — statt an einen Spielstart gekoppelt zu sein
