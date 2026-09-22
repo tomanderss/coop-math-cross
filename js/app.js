@@ -225,6 +225,13 @@ const state = reactive({
   modal: null,               // null | 'howto' | 'changelog' | 'confirm'
   confirm: null,             // { title, msg, onYes }
   showWhatsNew: false,
+  // Einmalige Frage nach dem Geteilt-Zeichen. BEWUSST ein eigenes Flag wie
+  // showWhatsNew statt state.modal: sie haengt damit an nichts als dem
+  // App-Start — nicht an einem Spielstart, einer Schwierigkeit oder daran, ob
+  // gerade ein anderes Fenster offen ist. Genau daran ist sie vorher bei einem
+  // Nutzer NIE erschienen (gemeldet: „noch nie gesehen, auch im frischen
+  // Browser nicht"), obwohl jeder einzelne Pfad lokal nachweislich ausloeste.
+  showDivStyle: false,
   whatsNewSince: null,       // zuletzt gesehene Version beim App-Start -> "Was ist neu" zeigt alle Einträge seither
   updateCheck: 'idle',       // manuelle Update-Prüfung (Klick auf die Version): idle | busy | found (Dialog offen)
   statsTab: 'allgemein',     // aktiver Reiter im Statistik-Screen: allgemein | solo | coop
@@ -1949,7 +1956,6 @@ function loadPuzzleIntoState(puzzle, saved) {
   nextTick(() => { computeCellSize(); observeBoardWrap(); });
   startPlayLog();   // Spielstil-Aufzeichnung für diese Partie beginnen
   persistGame();
-  maybeAskDivStyle();   // einmalige Frage nach dem Geteilt-Zeichen (s. dort)
 }
 
 // ─── ZELLGRÖSSE (responsiv + Zoom) ────────────────────────────────────────────
@@ -5502,26 +5508,12 @@ function rebuildDisplay() {
   if (!state.puzzle) return;
   state.display = markRaw(buildDisplay(state.puzzle, activeDivSym()));
 }
-function puzzleHasDivision(p) {
-  return !!p && (p.equations || []).some(eq => (eq.ops || []).includes('/'));
-}
 // Einmalige Abfrage beim Spielstart — nur wenn wirklich geteilt wird, sonst
 // fragt die App nach etwas, das auf diesem Brett gar nicht vorkommt. Nie über
 // ein anderes Modal drüber (z.B. „Was ist neu"), sonst stapeln sich Dialoge.
-function maybeAskDivStyle() {
-  if (state.settings.divStyle) return;                 // schon beantwortet
-  if (state.screen !== 'game' || state.modal) return;  // nicht über ein anderes Modal, nicht ausserhalb des Spiels
-  // Im Mehrspieler NICHT fragen: der Partner spielt schon, ein Dialog ohne
-  // Abbrechen würde den Beitretenden mitten in der laufenden Runde blockieren.
-  // Die Frage kommt dann beim nächsten Solo-Rätsel.
-  if (isMultiplayer()) return;
-  if (!puzzleHasDivision(state.puzzle)) return;        // auf diesem Brett wird gar nicht geteilt
-  state.modal = 'divStyle';
-  log('game', 'Frage nach dem Geteilt-Zeichen (noch nie gewählt)');
-}
 function chooseDivStyle(id) {
   setSetting('divStyle', id);
-  if (state.modal === 'divStyle') state.modal = null;
+  state.showDivStyle = false;
   log('game', 'Geteilt-Zeichen gewählt', { id });
 }
 function setSetting(key, val) {
@@ -5531,18 +5523,14 @@ function setSetting(key, val) {
   if (key === 'sfxPack') Music.setSfxPack(shopEquippedId('sfx'));
   if (key === 'musicPack') { Music.setMusicPack(shopEquippedId('music')); updateMusic(); }
   if (key === 'musicVolume') { Music.setVolume(val); updateMusic(); }
-  if (key === 'divStyle') rebuildDisplay();
+  // Auch das Setzen aus den Einstellungen (oder aus einem Test) beendet die
+  // offene Frage — sonst bliebe ihr Fenster stehen, obwohl sie beantwortet ist.
+  if (key === 'divStyle') { rebuildDisplay(); if (val) state.showDivStyle = false; }
 }
 // Eigene Markierungsfarbe oder Brett-Palette geändert → Cage-Farben neu auf
 // Sichtbarkeit der Markierung prüfen. Als watch statt setSetting-Hook, weil der
 // Custom-Farbwähler per v-model DIREKT in state.settings schreibt (kein setSetting).
 watch(() => [state.settings.coopMyColor, state.settings.boardPalette], () => { cellStyleCache = []; });
-// Lag beim Laden des Bretts ein anderes Modal obenauf, wurde die Frage nach dem
-// Geteilt-Zeichen übersprungen — sie darf dann nicht bis zum nächsten Rätsel
-// warten, sondern wird nachgeholt, sobald der Bildschirm frei ist. Keine
-// Schleife: maybeAskDivStyle setzt state.modal selbst (truthy → steigt aus),
-// und nach der Antwort ist divStyle gesetzt.
-watch(() => state.modal, (m) => { if (!m) maybeAskDivStyle(); });
 // Settings-Persist ENTPRELLT (Trailing 250 ms): der Werkzeug-Umschalter schreibt
 // bei JEDEM Wechsel state.settings.confirmTool — das synchrone JSON.stringify +
 // localStorage.setItem lag damit mitten im Tap-Pfad (Teil der gemeldeten
@@ -7195,6 +7183,15 @@ function maybeShowWhatsNew() {
   }
 }
 function dismissWhatsNew() { state.showWhatsNew = false; saveSeenVersion(BUILD); }
+// Wie maybeShowWhatsNew, nur an die Einstellung statt an die Version gekoppelt:
+// solange NICHTS gewählt ist, kommt die Frage bei JEDEM Start — beantwortet ist
+// sie für immer weg. Sie erscheint erst, wenn der Update-Dialog zu ist (s.
+// Template), damit sich die beiden nicht stapeln.
+function maybeShowDivStyle() {
+  if (state.settings.divStyle) return;
+  state.showDivStyle = true;
+  log('game', 'Frage nach dem Geteilt-Zeichen (noch nie gewählt)');
+}
 function dismissStreakLostNotice() { state.streakLostNotice = false; }
 function dismissStreakExtended() { state.streakExtended = null; }
 
@@ -7461,6 +7458,7 @@ function init() {
   }, 20000);
   log('account', 'Präsenz-Heartbeat aktiv', { gameMs: 20000, menuMs: 60000, staleMs: Account.PRESENCE_STALE_MS });
   maybeShowWhatsNew();
+  maybeShowDivStyle();
   maybeUnlockV1Skin();  // 1.0-Feier-Skin beim Versionssprung (vor dismissWhatsNew, das die Version speichert)
   // Alt-Spieler, die bereits ALLE 12 Kategorien gemeistert haben, bekommen die
   // Großmeister-Feier EINMAL beim ersten Start nach dem Update (nur auf Home).
@@ -9762,9 +9760,11 @@ const App = {
     <!-- Einmalige Frage nach dem Geteilt-Zeichen. Bewusst OHNE Abbrechen und ohne
          Klick-daneben: eine der drei Schaltflächen IST die Antwort, danach kommt
          die Frage nie wieder (settings.divStyle) und lässt sich in den
-         Einstellungen jederzeit ändern. -->
-    <div v-if="state.modal==='divStyle'" class="modal-bg">
-      <div class="modal">
+         Einstellungen jederzeit ändern. Eigenes Flag statt state.modal und beim
+         START gezeigt — wie „Was ist neu" (s. maybeShowDivStyle). Der
+         Update-Dialog hat Vorrang, damit sich beide nicht stapeln. -->
+    <div v-if="state.showDivStyle && !state.showWhatsNew" class="modal-bg">
+      <div class="modal modal-divstyle">
         <h3>{{ t('settings.divStyle') }}</h3>
         <p class="coop-tagline">{{ t('settings.divStyleAsk') }}</p>
         <button v-for="d in divStyles" :key="d.id" class="btn" :class="d.id==='obelus' ? 'btn-primary' : 'btn-ghost'" @click="chooseDivStyle(d.id)">
