@@ -5,89 +5,62 @@ import { gotoApp, startNewGame } from './helpers.js';
 // Obelus ist in vielen Schriften so eng gesetzt, dass er auf kleinen Feldern wie
 // ein Plus aussieht (gemeldet) — deshalb selbst gezeichnet, und es gibt die
 // beiden schriftunabhaengigen Alternativen ':' und '/'.
+//
+// Die FRAGE haengt bewusst an nichts als dem App-Start (eigenes Flag
+// state.showDivStyle, wie „Was ist neu") — nicht an einem Spielstart, einer
+// Schwierigkeit oder daran, ob gerade ein anderes Fenster offen ist. Vorher war
+// sie an all das gekoppelt und ein Nutzer hat sie NIE zu Gesicht bekommen,
+// obwohl jeder einzelne Pfad lokal ausloeste.
 test.describe('Geteilt-Zeichen', () => {
-  // Ein Brett mit garantierter Division: die leichten Stufen rechnen nur mit
-  // + und -, „schwer" teilt praktisch immer (15 Rechnungen). Trifft es doch mal
-  // keins, holt ein Neuladen ein frisches Brett — und bringt uns nebenbei zurueck
-  // auf den Home-Screen, den startNewGame voraussetzt.
-  // `ungewaehlt`: nach JEDEM gotoApp die Wahl wieder leeren. gotoApp belegt ein
-  // leeres divStyle vor (sonst faengt das Pop-up in allen anderen Tests die
-  // Klicks ab) — ohne das Leeren haette eine interne Wiederholung hier die Frage
-  // stillschweigend abgeschaltet, und der Test waere je nach erzeugtem Brett mal
-  // gruen, mal rot (genau so passiert).
-  async function spielMitDivision(page, { neuLaden = false, ungewaehlt = false } = {}) {
-    for (let versuch = 0; versuch < 4; versuch++) {
-      if (versuch || neuLaden) await gotoApp(page);
-      if (ungewaehlt) await page.evaluate(() => window.__cns.setSetting('divStyle', null));
+  // Wie gotoApp, aber OHNE die Wahl vorzubelegen — hier geht es ja genau darum.
+  async function startenOhneVorbelegung(page) {
+    await page.goto('/');
+    await page.waitForSelector('#splash', { state: 'hidden', timeout: 15000 });
+    const whatsNew = page.locator('.whatsnew-badge');
+    if (await whatsNew.isVisible().catch(() => false)) await page.locator('.modal-bg .btn-primary').first().click();
+    await page.locator('.skin-unlock-modal .btn-ghost').click({ timeout: 2000 }).catch(() => {});
+  }
+  // Eigene Klasse statt Textsuche: der Update-Dialog listet die Aenderung
+  // „Geteilt-Zeichen …" mit auf und wuerde eine Textsuche mit treffen.
+  // „Schwer" teilt fast immer, aber NICHT garantiert — wer ein Brett mit einer
+  // Division braucht, laedt sonst ein frisches. (Ohne das war der Test je nach
+  // erzeugtem Raetsel mal gruen, mal rot.) Setzt eine bereits getroffene Wahl
+  // voraus, sonst belegte gotoApp sie hier vor.
+  async function brettMitDivision(page) {
+    for (let versuch = 0; versuch < 5; versuch++) {
+      if (versuch) await gotoApp(page);
       await startNewGame(page, 'schwer');
-      const hatDiv = await page.evaluate(() => window.__cns.state.puzzle.equations.some((e) => (e.ops || []).includes('/')));
-      if (hatDiv) return true;
+      const hat = await page.evaluate(() => window.__cns.state.puzzle.equations.some((e) => (e.ops || []).includes('/')));
+      if (hat) return true;
     }
     return false;
   }
+  const frage = (page) => page.locator('.modal-bg .modal-divstyle');
 
-  test('fragt einmalig beim Spielstart und merkt sich die Wahl', async ({ page }) => {
+  test('die Frage kommt beim Start und ist nach der Antwort fuer immer weg', async ({ page }) => {
     test.setTimeout(120000);
-    await gotoApp(page);
-    // gotoApp belegt divStyle fuer alle anderen Tests vor — hier gilt der echte
-    // Erstzustand: noch NIE gewaehlt, auch ueber Wiederholungen hinweg.
-    expect(await spielMitDivision(page, { ungewaehlt: true }), 'kein Brett mit Division gefunden').toBe(true);
+    await startenOhneVorbelegung(page);
+    await expect(frage(page), 'die Frage kommt ohne jedes Zutun').toBeVisible();
 
-    const popup = page.locator('.modal-bg .modal', { hasText: 'Geteilt-Zeichen' });
-    await expect(popup).toBeVisible();
-    await popup.getByText('Doppelpunkt').click();
-
+    await frage(page).getByText('Doppelpunkt').click();
     expect(await page.evaluate(() => window.__cns.state.settings.divStyle)).toBe('colon');
-    await expect(page.locator('.modal-bg')).toHaveCount(0);
-    // Das Brett zeigt jetzt ':' und keinen gezeichneten Obelus mehr.
-    await expect(page.locator('.board .opcell', { hasText: ':' }).first()).toBeVisible();
+    await expect(frage(page)).toHaveCount(0);
+
+    // Das Brett zeigt ':' und keinen gezeichneten Obelus mehr.
+    expect(await brettMitDivision(page), 'kein Brett mit Division gefunden').toBe(true);
     expect(await page.locator('.board .op-obelus').count(), 'kein Obelus mehr').toBe(0);
+    await expect(page.locator('.board .opcell', { hasText: ':' }).first()).toBeVisible();
 
-    // Neustart der App + zweites Spiel: die Wahl haelt, keine erneute Frage.
-    expect(await spielMitDivision(page, { neuLaden: true })).toBe(true);
+    // Neustart der App: die Frage kommt nicht wieder.
+    await startenOhneVorbelegung(page);
     expect(await page.evaluate(() => window.__cns.state.settings.divStyle), 'Wahl ueberlebt den Neustart').toBe('colon');
-    await expect(page.locator('.modal-bg')).toHaveCount(0);
-  });
-
-  test('ohne Wahl zeichnet das Brett den Obelus selbst', async ({ page }) => {
-    test.setTimeout(120000);
-    await gotoApp(page);
-    expect(await spielMitDivision(page, { ungewaehlt: true })).toBe(true);
-    await page.evaluate(() => { window.__cns.state.modal = null; });
-    const obelus = page.locator('.board .op-obelus').first();
-    await expect(obelus).toBeVisible();
-    // Kein Schriftzeichen, sondern gezeichnet: die Punkte sitzen als
-    // Pseudo-Elemente deutlich weiter aussen als im Font-Obelus.
-    const mass = await obelus.evaluate((el) => {
-      const s = getComputedStyle(el, '::before');
-      return { text: el.textContent, punktOben: s.top, hoehe: el.getBoundingClientRect().height };
-    });
-    expect(mass.text, 'kein Textinhalt — reine Zeichnung').toBe('');
-    expect(mass.hoehe).toBeGreaterThan(0);
-  });
-
-  test('die Einstellung laesst sich spaeter aendern und wirkt sofort', async ({ page }) => {
-    test.setTimeout(120000);
-    await gotoApp(page);
-    expect(await spielMitDivision(page)).toBe(true);
-    await page.evaluate(() => { window.__cns.setSetting('divStyle', 'obelus'); window.__cns.state.modal = null; });
-    expect(await page.locator('.board .op-obelus').count()).toBeGreaterThan(0);
-
-    await page.evaluate(() => window.__cns.setSetting('divStyle', 'slash'));
-    expect(await page.locator('.board .op-obelus').count(), 'Umschalten wirkt am laufenden Brett').toBe(0);
-    await expect(page.locator('.board .opcell', { hasText: '/' }).first()).toBeVisible();
+    await expect(frage(page)).toHaveCount(0);
   });
 
   // DER Fall, auf den es ankommt: ein Bestandsnutzer, der die App AKTUALISIERT.
-  // Seine gespeicherten Einstellungen kennen `divStyle` gar nicht — er hat also
-  // nie aktiv gewaehlt und MUSS gefragt werden. Der Test schreibt deshalb einen
-  // echten Alt-Stand in den localStorage (vor dem App-Start, via addInitScript —
-  // ein Seed danach wuerde vom Settings-Persist wieder ueberschrieben).
+  // Seine gespeicherten Einstellungen kennen `divStyle` gar nicht.
   test('ein Bestandsnutzer ohne gespeicherte Wahl wird nach dem Update gefragt', async ({ page }) => {
     test.setTimeout(120000);
-    // Ein echter Alt-Stand: gespeicherte Einstellungen, die `divStyle` gar nicht
-    // kennen. Per addInitScript VOR dem App-Start — ein Seed danach wuerde vom
-    // Settings-Persist ueberschrieben. Gilt auch fuer jedes Neuladen unten.
     await page.addInitScript(() => {
       if (!localStorage.getItem('cmc_settings')) {
         localStorage.setItem('cmc_settings', JSON.stringify({
@@ -96,72 +69,50 @@ test.describe('Geteilt-Zeichen', () => {
         }));
       }
     });
-    // Wie gotoApp, aber OHNE divStyle vorzubelegen — genau darum geht es hier.
-    const startenOhneVorbelegung = async () => {
-      await page.goto('/');
-      await page.waitForSelector('#splash', { state: 'hidden', timeout: 10000 });
-      const whatsNew = page.locator('.whatsnew-badge');
-      if (await whatsNew.isVisible().catch(() => false)) await page.locator('.modal-bg .btn-primary').click();
-      await page.locator('.skin-unlock-modal .btn-ghost').click({ timeout: 2000 }).catch(() => {});
-      await page.waitForSelector('.screen.home');
-    };
-
-    await startenOhneVorbelegung();
+    await startenOhneVorbelegung(page);
     expect(await page.evaluate(() => window.__cns.state.settings.divStyle), 'Alt-Stand kennt das Feld nicht').toBeNull();
     expect(await page.evaluate(() => window.__cns.state.settings.coopName), 'der uebrige Alt-Stand bleibt erhalten').toBe('Alt');
-
-    // „Schwer" teilt fast immer, aber nicht garantiert — sonst ein frisches Brett.
-    let gefragt = false;
-    for (let versuch = 0; versuch < 4 && !gefragt; versuch++) {
-      if (versuch) await startenOhneVorbelegung();
-      await startNewGame(page, 'schwer');
-      gefragt = await page.evaluate(() => window.__cns.state.puzzle.equations.some((e) => (e.ops || []).includes('/')));
-    }
-    expect(gefragt, 'kein Brett mit Division gefunden').toBe(true);
-    await expect(page.locator('.modal-bg .modal', { hasText: 'Geteilt-Zeichen' }), 'die Frage kommt').toBeVisible();
+    await expect(frage(page), 'die Frage kommt').toBeVisible();
   });
 
-  test('die Frage wird nachgeholt, wenn beim Start ein anderes Modal offen war', async ({ page }) => {
+  // Die Frage darf nicht unter dem Update-Dialog liegen — sonst sieht man sie
+  // beim ersten Start nach einem Update gar nicht.
+  test('der Update-Dialog hat Vorrang, die Frage kommt danach', async ({ page }) => {
     test.setTimeout(120000);
-    await gotoApp(page);
-    expect(await spielMitDivision(page)).toBe(true);
-    // Lage nachstellen: noch nichts gewaehlt, aber ein anderes Modal liegt obenauf
-    // (so wuerde maybeAskDivStyle beim Laden des Bretts aussteigen).
-    await page.evaluate(() => {
-      window.__cns.setSetting('divStyle', null);
-      window.__cns.state.modal = 'changelog';
-    });
-    expect(await page.evaluate(() => window.__cns.state.modal), 'solange gefragt wird nicht').toBe('changelog');
+    await page.goto('/');
+    await page.waitForSelector('#splash', { state: 'hidden', timeout: 15000 });
+    // Frischer Kontext: „Was ist neu" liegt obenauf, die Frage wartet dahinter.
+    expect(await page.evaluate(() => window.__cns.state.showWhatsNew), 'Update-Dialog steht').toBe(true);
+    expect(await page.evaluate(() => window.__cns.state.showDivStyle), 'die Frage ist vorgemerkt').toBe(true);
+    await expect(frage(page), 'aber noch nicht sichtbar').toHaveCount(0);
 
-    // Modal zu → die Frage kommt nach, statt bis zum naechsten Raetsel zu warten.
-    await page.evaluate(() => { window.__cns.state.modal = null; });
-    await page.waitForFunction(() => window.__cns.state.modal === 'divStyle');
-    await expect(page.locator('.modal-bg .modal', { hasText: 'Geteilt-Zeichen' })).toBeVisible();
+    await page.locator('.modal-bg .btn-primary').first().click();
+    await page.locator('.skin-unlock-modal .btn-ghost').click({ timeout: 2000 }).catch(() => {});
+    await expect(frage(page), 'jetzt kommt sie').toBeVisible();
   });
 
-  // Im Mehrspieler waere ein Dialog ohne Abbrechen eine Blockade mitten in der
-  // laufenden Runde des Partners — dort wird nicht gefragt, sondern erst beim
-  // naechsten Solo-Raetsel.
-  test('im Coop blockiert die Frage den Beitritt nicht', async ({ page }) => {
+  test('ohne Wahl zeichnet das Brett den Obelus selbst', async ({ page }) => {
     test.setTimeout(120000);
-    await gotoApp(page);
-    expect(await spielMitDivision(page)).toBe(true);
-    // Lage nachstellen: noch nichts gewaehlt, Runde laeuft im Coop.
-    // (divStyle ERST hier auf null setzen — spielMitDivision darf zwischendurch
-    // neu laden, und gotoApp belegt ein leeres divStyle wieder vor.)
-    await page.evaluate(() => {
-      window.__cns.setSetting('divStyle', null);
-      window.__cns.state.coop.active = true;
-      window.__cns.state.modal = 'changelog';
-    });
-    await page.evaluate(() => { window.__cns.state.modal = null; });
+    await startenOhneVorbelegung(page);
+    await frage(page).getByText('Obelus').click();
+    expect(await brettMitDivision(page), 'kein Brett mit Division gefunden').toBe(true);
+    const obelus = page.locator('.board .op-obelus').first();
+    await expect(obelus).toBeVisible();
+    // Kein Schriftzeichen, sondern gezeichnet — die Punkte sitzen als
+    // Pseudo-Elemente deutlich weiter aussen als im Font-Obelus.
+    const mass = await obelus.evaluate((el) => ({ text: el.textContent, hoehe: el.getBoundingClientRect().height }));
+    expect(mass.text, 'kein Textinhalt — reine Zeichnung').toBe('');
+    expect(mass.hoehe).toBeGreaterThan(0);
+  });
 
-    expect(await page.evaluate(() => window.__cns.state.modal), 'keine Frage im Coop').toBeNull();
-    expect(await page.evaluate(() => window.__cns.state.settings.divStyle), 'und weiterhin ungewaehlt').toBeNull();
+  test('die Einstellung laesst sich spaeter aendern und wirkt sofort', async ({ page }) => {
+    test.setTimeout(120000);
+    await gotoApp(page);   // belegt 'obelus' vor
+    expect(await brettMitDivision(page), 'kein Brett mit Division gefunden').toBe(true);
+    expect(await page.locator('.board .op-obelus').count()).toBeGreaterThan(0);
 
-    // Zurueck im Solo kommt sie nach.
-    await page.evaluate(() => { window.__cns.state.coop.active = false; window.__cns.state.modal = 'changelog'; });
-    await page.evaluate(() => { window.__cns.state.modal = null; });
-    await page.waitForFunction(() => window.__cns.state.modal === 'divStyle');
+    await page.evaluate(() => window.__cns.setSetting('divStyle', 'slash'));
+    expect(await page.locator('.board .op-obelus').count(), 'Umschalten wirkt am laufenden Brett').toBe(0);
+    await expect(page.locator('.board .opcell', { hasText: '/' }).first()).toBeVisible();
   });
 });
