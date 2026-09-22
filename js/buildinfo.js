@@ -1,8 +1,15 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.29';
-export const BUILD_HASH = '52bd4dc';
+export const BUILD      = '1.30';
+export const BUILD_HASH = '69f65c1';
 
 export const CHANGELOG = [
+  {
+    "version": "1.30",
+    "date": "22.09.2026",
+    "changes": [
+      "Die Frage nach dem Geteilt-Zeichen kommt jetzt beim App-Start — wie die Update-Info — statt an einen Spielstart gekoppelt zu sein"
+    ]
+  },
   {
     "version": "1.29",
     "date": "19.09.2026",
