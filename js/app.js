@@ -95,6 +95,12 @@ const state = reactive({
   placed: [],                // 2D-Raster der GELEGTEN Zahlen (null = Lücke noch offen)
   tray: [],                  // Vorrat [{ id, v, used }] — ein benutzter Stein hinterlässt eine Lücke
   hl: [],                    // eigene Farb-Markierungen als "r-c"-Schlüssel (langes Drücken).
+  // Markierungsmodus: EIN Tipp markiert/entmarkiert, Zahlen sind solange
+  // gesperrt (kein Aufnehmen, kein Ziehen). Gedacht zum schnellen Setzen
+  // mehrerer Markierungen hintereinander; das lange Drücken bleibt daneben
+  // unverändert bestehen. Bewusst NICHT persistiert — ein Modus, kein Zustand:
+  // nach Neuladen/neuem Brett fasst man wieder Zahlen an.
+  markMode: false,
                              // REIN PERSÖNLICH: nie an Mitspieler gesendet, ohne Spielregel-
                              // Bedeutung — jeder darf sich damit merken, was er will.
   display: null,             // Anzeige-Raster (2*rows-1 × 2*cols-1) aus board.buildDisplay
@@ -1231,6 +1237,7 @@ function buildBoardState(puzzle, saved) {
   // Markierungen des geladenen Stands übernehmen (nur Strings; ein über die RTDB
   // gereistes Array kann Löcher haben — die fliegen hier raus).
   state.hl = Array.isArray(saved?.hl) ? saved.hl.filter((k) => typeof k === 'string') : [];
+  state.markMode = false;   // neues Brett = wieder normaler Spielmodus
   resetCellVersions(puzzle.rows, puzzle.cols);
   state.drag = null;
   state.pick = null;
@@ -2457,6 +2464,9 @@ const DRAG_SLOP = 5;   // px, bevor aus dem Tippen ein Ziehen wird
 let dragArmed = false; // Finger liegt auf einem Stein, Zug aber noch nicht gestartet
 function onDragStart(e, v, from, tileId) {
   if (boardLocked()) return;
+  // Im Markierungsmodus lässt sich KEINE Zahl anfassen — weder auf dem Brett
+  // noch im Vorrat (beide Wege laufen hier durch).
+  if (state.markMode) return;
   dragSrc = { v, from: from || null, tileId: tileId ?? null };
   dragOrigin = { x: e.clientX, y: e.clientY };
   dragMoved = false;
@@ -2526,6 +2536,24 @@ let longPressTimer = 0, longPressFired = false, pressPt = null;
 let tapKey = '', tapCount = 0, tapAt = 0, pointerTapAt = 0;
 
 function hlKey(r, c) { return `${r}-${c}`; }
+// Modus an/aus. Beim EINSCHALTEN alles fallen lassen, was gerade in der Hand
+// liegt (aufgenommener Stein, laufendes Ziehen) — sonst klebte die Auswahl
+// unsichtbar weiter und der erste Tipp nach dem Ausschalten legte sie irgendwo ab.
+function toggleMarkMode() {
+  state.markMode = !state.markMode;
+  if (state.markMode) { onDragCancel(); state.pick = null; }
+  log('game', 'Markierungsmodus', { an: state.markMode });
+}
+// „Alle Markierungen löschen" — nur mit Rückfrage: die Markierungen sind
+// Handarbeit und es gibt kein Rückgängig dafür.
+function askClearMarks() {
+  if (!state.hl.length) return;
+  ask(t('game.clearMarksTitle'), t('game.clearMarksMsg', { n: state.hl.length }), () => {
+    log('game', 'Alle Markierungen gelöscht', { n: state.hl.length });
+    state.hl = [];
+    persistGame();
+  });
+}
 function toggleHighlight(r, c) {
   const k = hlKey(r, c);
   const i = state.hl.indexOf(k);
@@ -2535,6 +2563,8 @@ function toggleHighlight(r, c) {
 // Ein Tipp auf ein Feld — aus dem Zeiger-Pfad ODER von der Tastatur.
 function handleCellTap(r, c) {
   if (boardLocked()) return;
+  // Markierungsmodus: EIN Tipp genügt, Zahlen bleiben unangetastet.
+  if (state.markMode) { toggleHighlight(r, c); return; }
   const key = hlKey(r, c);
   const jetzt = Date.now();
   tapCount = (key === tapKey && jetzt - tapAt < TRIPLE_TAP_MS) ? tapCount + 1 : 1;
@@ -2560,6 +2590,10 @@ function onCellTap(r, c) {
 }
 function onCellDown(e, cell) {
   if (boardLocked()) return;
+  // Im Markierungsmodus erledigt der TIPP das Markieren — ein zusätzlicher
+  // Langdruck-Zeitgeber würde beim Halten zweimal umschalten (Timer an, Tipp
+  // wieder aus) und das Feld bliebe scheinbar unverändert.
+  if (state.markMode) return;
   longPressFired = false;
   pressPt = { x: e.clientX, y: e.clientY };
   clearTimeout(longPressTimer);
@@ -7681,7 +7715,7 @@ const TrayBar = {
     return { state, onDragStart, onDragMove, onDragEnd, onDragCancel, pickTile, dropOnTray, trayStyle };
   },
   template: `
-          <div class="tray" :style="trayStyle" @click.self="dropOnTray()">
+          <div class="tray" :class="{ 'mark-mode': state.markMode }" :style="trayStyle" @click.self="dropOnTray()">
             <!-- v-if MUSS in ein template: auf demselben Element hat v-if in Vue 3
                  Vorrang vor v-for, tile waere dort noch gar nicht definiert. -->
             <template v-for="tile in state.tray" :key="tile.id"><div v-if="!tile.used" class="tray-slot">
@@ -7909,7 +7943,7 @@ const App = {
       fmtTime, toggleSetting, setSetting, doExport, doExportLog, doImport,
       resetStats, doDeleteAllData, ask, confirmYes, confirmNo, dismissWhatsNew, dismissStreakLostNotice, dismissStreakExtended,
       checkForUpdate, restartForUpdate, dismissUpdateDialog, safetyBackups, restoreSafetyBackup,
-      quitToHome, setZoom, resetZoom, pauseGame, resumeFromPause, openSettings, closeSettings, startCoopRound,
+      quitToHome, setZoom, resetZoom, toggleMarkMode, askClearMarks, pauseGame, resumeFromPause, openSettings, closeSettings, startCoopRound,
       openShop, closeShop, openShopCategory, closeShopCategory, coinFor, streakBonusPct,
       diffVars, isCoopDiffView,
       openWalletLog, closeWalletLog, walletReasonLabel, walletEntryDetail, walletEntryFactors, walletEntryExpandable, toggleWalletEntry,
@@ -8164,13 +8198,29 @@ const App = {
           </span>
           <span v-if="state.team.active" class="chip coop-chip"><span class="ei" v-html="ic('versus')"></span> {{ t('team.label'+state.team.myTeam) }}</span>
           <span v-if="state.race.active" class="chip coop-chip"><span class="ei" v-html="ic('versus')"></span> {{ state.race.ffa ? t('race.ffaTag', { n: state.race.opponents.length + 1 }) : state.race.opponentName }}</span>
+          <!-- Werkzeugleiste in zwei ABTEILE: links das Markieren, rechts der Zoom.
+               Jeder Knopf, der nur zeitweise da ist (Markierungen löschen, Zoom
+               zurücksetzen), sitzt in einem .tool-slot fester Breite, der IMMER
+               steht — der Knopf darin erscheint und verschwindet, aber nichts
+               daneben verrutscht. Bewusst kein ausgegrauter Knopf: was man nicht
+               betätigen kann, ist weg, nur sein Platz bleibt. Der Zoom-Reset
+               bleibt dabei an seinem angestammten Platz links neben − / +. -->
           <span class="zoomctl">
-            <!-- Reset-Knopf bewusst LINKS: die Leiste ist rechtsbündig (margin-left:auto),
-                 d.h. ein links eingeschobener Knopf wächst nach links und lässt − / +
-                 an ihrer Position -- schnelles, wiederholtes Tippen auf + verrutscht so nicht. -->
-            <button v-if="state.zoom !== 1" class="zoom-btn zoom-reset" @click="resetZoom" :aria-label="t('game.zoomReset')" :title="t('game.zoomReset')">↺</button>
-            <button class="zoom-btn" @click="setZoom(-0.15)">−</button>
-            <button class="zoom-btn" @click="setZoom(0.15)">+</button>
+            <span class="toolgrp" role="group" :aria-label="t('game.markTools')">
+              <span class="tool-slot">
+                <button v-if="state.hl.length" class="zoom-btn mark-clear" @click="askClearMarks"
+                        :aria-label="t('game.clearMarks')" :title="t('game.clearMarks')"><span class="ei" v-html="ic('trash')"></span></button>
+              </span>
+              <button class="zoom-btn mark-toggle" :class="{ on: state.markMode }" :aria-pressed="String(state.markMode)"
+                      @click="toggleMarkMode" :aria-label="t('game.markMode')" :title="t('game.markMode')"><span class="ei" v-html="ic('brush')"></span></button>
+            </span>
+            <span class="toolgrp" role="group" :aria-label="t('game.zoomTools')">
+              <span class="tool-slot">
+                <button v-if="state.zoom !== 1" class="zoom-btn zoom-reset" @click="resetZoom" :aria-label="t('game.zoomReset')" :title="t('game.zoomReset')">↺</button>
+              </span>
+              <button class="zoom-btn" @click="setZoom(-0.15)">−</button>
+              <button class="zoom-btn" @click="setZoom(0.15)">+</button>
+            </span>
           </span>
         </div>
 
