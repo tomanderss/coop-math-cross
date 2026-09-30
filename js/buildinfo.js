@@ -1,8 +1,15 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.31';
-export const BUILD_HASH = '530d8a7';
+export const BUILD      = '1.32';
+export const BUILD_HASH = 'eef45a3';
 
 export const CHANGELOG = [
+  {
+    "version": "1.32",
+    "date": "30.09.2026",
+    "changes": [
+      "Kopfleiste kompakter: Chips, Werkzeuge und Pause teilen sich jetzt eine Zeile — auf kleinen Bildschirmen wird das Spielfeld dadurch deutlich größer"
+    ]
+  },
   {
     "version": "1.31",
     "date": "30.09.2026",
