@@ -1,8 +1,15 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.30';
-export const BUILD_HASH = '69f65c1';
+export const BUILD      = '1.31';
+export const BUILD_HASH = '530d8a7';
 
 export const CHANGELOG = [
+  {
+    "version": "1.31",
+    "date": "30.09.2026",
+    "changes": [
+      "Neuer Markierungsmodus: Pinsel-Knopf oben einschalten, dann markiert ein einfacher Tipp — dazu ein Knopf, der alle Markierungen auf einmal löscht"
+    ]
+  },
   {
     "version": "1.30",
     "date": "22.09.2026",
