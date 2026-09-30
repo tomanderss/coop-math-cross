@@ -117,4 +117,33 @@ test.describe('Markierungsmodus', () => {
     const minus = await page.locator('.toolgrp').nth(1).locator('.zoom-btn').nth(1).boundingBox();
     expect(reset.x, 'Reset sitzt links von −').toBeLessThan(minus.x);
   });
+
+  // Jede Kopf-Zeile ist auf dem Handy Brettflaeche: die Werkzeuge haben deshalb
+  // KEINE eigene Reihe, sondern sitzen in der Kopfleiste, und die Info-Chips
+  // teilen sich die zweite Zeile mit dem Fortschrittsbalken. Gemeldet war genau
+  // der umgekehrte Zustand (Werkzeuge in einer dritten Reihe, Brett kleiner) —
+  // im Solo-Fall muss die Kopfleiste EINE Zeile bleiben.
+  test('die Kopfleiste bleibt einzeilig und laesst dem Brett Platz', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page, 'rip');   // groesstes Brett = der kritische Fall
+    const m = await page.evaluate(() => {
+      const kopf = document.querySelector('.topbar.game-top');
+      const yWerte = [...kopf.children].map((c) => Math.round(c.getBoundingClientRect().y));
+      return {
+        kopfHoehe: Math.round(kopf.getBoundingClientRect().height),
+        // Zwei Kinder auf STARK verschiedenen Hoehen = umgebrochen. Eine kleine
+        // Differenz ist blosse vertikale Zentrierung unterschiedlich hoher Kinder.
+        umbruch: Math.max(...yWerte) - Math.min(...yWerte) > 20,
+        brettOben: Math.round(document.querySelector('.board-wrap').getBoundingClientRect().y),
+        werkzeugeImKopf: !!kopf.querySelector('.zoomctl'),
+        chipsBeimFortschritt: !!document.querySelector('.meta-row .meta-chips') && !!document.querySelector('.meta-row .progress-row'),
+      };
+    });
+    expect(m.werkzeugeImKopf, 'die Werkzeuge sitzen in der Kopfleiste').toBe(true);
+    expect(m.chipsBeimFortschritt, 'Chips teilen die Zeile mit dem Fortschritt').toBe(true);
+    expect(m.umbruch, 'die Kopfleiste bricht im Solo nicht um').toBe(false);
+    expect(m.kopfHoehe, 'Kopfleiste bleibt flach').toBeLessThanOrEqual(56);
+    // Vor dem Umbau begann das Brett bei 158-190 px.
+    expect(m.brettOben, 'das Brett beginnt weit oben').toBeLessThan(120);
+  });
 });
