@@ -1009,7 +1009,29 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .hud-item.timer.total { color: var(--accent); }
 .game-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; flex: 0 0 auto; }
 .chip { background: var(--bg2); color: var(--text2); font-size: .76rem; font-weight: 700; padding: 5px 10px; border-radius: 999px; }
-.zoomctl { margin-left: auto; display: flex; gap: 6px; }
+/* Werkzeugleiste rechts in der HUD-Reihe: zwei ABTEILE (Markieren | Zoom) mit
+   sichtbar eigener Fläche, damit man auf einen Blick sieht, was zusammengehört.
+   Die Abteile stehen fest — optionale Knöpfe sitzen in .tool-slot, der seinen
+   Platz auch leer behält, sodass beim Ein-/Ausblenden nichts verrutscht. */
+.zoomctl { margin-left: auto; display: flex; gap: 10px; flex: 0 0 auto; }
+.toolgrp {
+  display: flex; gap: 4px; padding: 4px; border-radius: 15px;
+  background: color-mix(in srgb, var(--text2) 9%, transparent);
+}
+.tool-slot { width: 40px; height: 40px; flex: 0 0 auto; display: flex; }
+/* Markierungsmodus: im AN-Zustand deutlich als aktiv erkennbar (gefüllt in der
+   Markierungsfarbe), nicht bloss dezent hervorgehoben — man muss jederzeit
+   sehen, dass Zahlen gerade gesperrt sind. */
+.zoom-btn.mark-toggle .ei svg { width: 22px; height: 22px; }
+.zoom-btn.mark-toggle.on {
+  background: var(--markhl, #f2c024); color: #1b1b1b;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--markhl, #f2c024) 45%, transparent), 0 2px 6px var(--shadow);
+}
+.zoom-btn.mark-clear { color: var(--bad, #ef4444); }
+.zoom-btn.mark-clear .ei svg { width: 20px; height: 20px; }
+/* Im Markierungsmodus ist der Vorrat inaktiv — sichtbar zurueckgenommen, damit
+   niemand vergeblich einen Stein zu greifen versucht. */
+.tray.mark-mode { opacity: .5; }
 /* 40x40 statt vormals 30x30 -- liegt jetzt nah an der 44px-Tippflächen-Richtlinie
    (F6), ohne die schmale HUD-Reihe neben den Chips zu sprengen. */
 .zoom-btn { width: 40px; height: 40px; border-radius: 11px; background: var(--bg2); font-size: 1.2rem; font-weight: 800; color: var(--text2); box-shadow: 0 2px 6px var(--shadow); }
