@@ -8162,6 +8162,30 @@ const App = {
           <div v-if="state.endless.active" class="hud-item endless-lvl" :title="t('solo.endless')"><span class="ei" v-html="ic('meteor')"></span><b>{{ state.endless.level }}</b></div>
         </div>
         <div class="top-actions">
+          <!-- Werkzeugleiste in zwei ABTEILE: links das Markieren, rechts der Zoom.
+               Jeder Knopf, der nur zeitweise da ist (Markierungen löschen, Zoom
+               zurücksetzen), sitzt in einem .tool-slot fester Breite, der IMMER
+               steht — der Knopf darin erscheint und verschwindet, aber nichts
+               daneben verrutscht. Bewusst kein ausgegrauter Knopf: was man nicht
+               betätigen kann, ist weg, nur sein Platz bleibt. Der Zoom-Reset
+               bleibt dabei an seinem angestammten Platz links neben − / +. -->
+          <span class="zoomctl">
+            <span class="toolgrp" role="group" :aria-label="t('game.markTools')">
+              <span class="tool-slot">
+                <button v-if="state.hl.length" class="zoom-btn mark-clear" @click="askClearMarks"
+                        :aria-label="t('game.clearMarks')" :title="t('game.clearMarks')"><span class="ei" v-html="ic('trash')"></span></button>
+              </span>
+              <button class="zoom-btn mark-toggle" :class="{ on: state.markMode }" :aria-pressed="String(state.markMode)"
+                      @click="toggleMarkMode" :aria-label="t('game.markMode')" :title="t('game.markMode')"><span class="ei" v-html="ic('brush')"></span></button>
+            </span>
+            <span class="toolgrp" role="group" :aria-label="t('game.zoomTools')">
+              <span class="tool-slot">
+                <button v-if="state.zoom !== 1" class="zoom-btn zoom-reset" @click="resetZoom" :aria-label="t('game.zoomReset')" :title="t('game.zoomReset')">↺</button>
+              </span>
+              <button class="zoom-btn" @click="setZoom(-0.15)">−</button>
+              <button class="zoom-btn" @click="setZoom(0.15)">+</button>
+            </span>
+          </span>
           <button class="icon-btn chat-btn" v-if="isMultiplayer()" @click="toggleChat" :aria-label="t('chat.title')" :title="typingPlayers().length ? t('chat.typing', { name: typingPlayers()[0].name }) : t('chat.title')">
             <span class="ico-wrap" v-html="ic('chat')"></span>
             <span v-if="state.chat.unread" class="chat-unread">{{ state.chat.unread }}</span>
@@ -8190,7 +8214,15 @@ const App = {
              Im Querformat werden sie zu echten Grid-Feldern neben dem
              Spielfeld (siehe @media ... orientation:landscape). -->
         <div class="game-sidebar-top">
-        <div class="game-meta">
+
+        <!-- Eigener Fortschritt (immer sichtbar); im Race-Modus zusätzlich der
+             Gegner-Balken direkt darunter, damit beide Balken auf einen Blick
+             verglichen werden können. -->
+        <!-- Info-Chips teilen sich die Zeile mit dem Fortschrittsbalken: der
+             braucht die Breite nicht, und eine eigene Chip-Reihe waere auf dem
+             Handy eine Brettzeile weniger. -->
+        <div class="meta-row">
+        <div class="meta-chips">
           <span class="chip"><span class="ei" v-html="ic(DIFF_BY_ID[state.puzzle.difficulty].emoji)"></span> {{ t('difficulty.'+state.puzzle.difficulty) }}</span>
           <span class="chip">{{ state.puzzle.rows }}×{{ state.puzzle.cols }}</span>
           <span v-if="state.coop.active" class="chip coop-chip" :class="(state.coop.connected && state.coop.online) ? 'coop-on' : 'coop-off'">
@@ -8198,35 +8230,7 @@ const App = {
           </span>
           <span v-if="state.team.active" class="chip coop-chip"><span class="ei" v-html="ic('versus')"></span> {{ t('team.label'+state.team.myTeam) }}</span>
           <span v-if="state.race.active" class="chip coop-chip"><span class="ei" v-html="ic('versus')"></span> {{ state.race.ffa ? t('race.ffaTag', { n: state.race.opponents.length + 1 }) : state.race.opponentName }}</span>
-          <!-- Werkzeugleiste in zwei ABTEILE: links das Markieren, rechts der Zoom.
-               Jeder Knopf, der nur zeitweise da ist (Markierungen löschen, Zoom
-               zurücksetzen), sitzt in einem .tool-slot fester Breite, der IMMER
-               steht — der Knopf darin erscheint und verschwindet, aber nichts
-               daneben verrutscht. Bewusst kein ausgegrauter Knopf: was man nicht
-               betätigen kann, ist weg, nur sein Platz bleibt. Der Zoom-Reset
-               bleibt dabei an seinem angestammten Platz links neben − / +. -->
-          <span class="zoomctl">
-            <span class="toolgrp" role="group" :aria-label="t('game.markTools')">
-              <span class="tool-slot">
-                <button v-if="state.hl.length" class="zoom-btn mark-clear" @click="askClearMarks"
-                        :aria-label="t('game.clearMarks')" :title="t('game.clearMarks')"><span class="ei" v-html="ic('trash')"></span></button>
-              </span>
-              <button class="zoom-btn mark-toggle" :class="{ on: state.markMode }" :aria-pressed="String(state.markMode)"
-                      @click="toggleMarkMode" :aria-label="t('game.markMode')" :title="t('game.markMode')"><span class="ei" v-html="ic('brush')"></span></button>
-            </span>
-            <span class="toolgrp" role="group" :aria-label="t('game.zoomTools')">
-              <span class="tool-slot">
-                <button v-if="state.zoom !== 1" class="zoom-btn zoom-reset" @click="resetZoom" :aria-label="t('game.zoomReset')" :title="t('game.zoomReset')">↺</button>
-              </span>
-              <button class="zoom-btn" @click="setZoom(-0.15)">−</button>
-              <button class="zoom-btn" @click="setZoom(0.15)">+</button>
-            </span>
-          </span>
         </div>
-
-        <!-- Eigener Fortschritt (immer sichtbar); im Race-Modus zusätzlich der
-             Gegner-Balken direkt darunter, damit beide Balken auf einen Blick
-             verglichen werden können. -->
         <div class="progress-row">
           <div class="progress-line" :aria-label="t('game.progressLabel', { pct: myProgressPct })">
             <span v-if="state.race.active" class="progress-label">{{ t('common.you') }}</span>
@@ -8275,6 +8279,7 @@ const App = {
               </span>
             </span>
           </div>
+        </div>
         </div>
 
         <div v-if="state.coop.active && state.coop.players.length" class="coop-roster">

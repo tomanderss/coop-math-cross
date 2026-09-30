@@ -989,17 +989,22 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 }
 
 /* ─── Game HUD ─── */
-.game-top { padding-bottom: 8px; }
-.hud { display: flex; align-items: center; gap: 14px; }
-.hud-item { font-weight: 800; font-size: 1rem; }
-.lives { display: flex; gap: 3px; align-items: center; }
+/* Die Spiel-Kopfzeile traegt ALLES: Leben, Zeit, Chips, Werkzeuge, Pause. Jede
+   eingesparte Kopf-Zeile ist auf dem Handy eine Brettzeile mehr — genau darum
+   sind die frueheren zwei Reihen (.game-meta mit Chips + Werkzeugen) hier
+   aufgegangen. flex-wrap ist bewusst erlaubt: in der vollsten Lage (Endlos +
+   Coop + Chat) darf sie lieber umbrechen als ueberlaufen. */
+.game-top { padding: 4px 0 6px; gap: 6px; flex-wrap: wrap; }
+.hud { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; flex-wrap: wrap; }
+.hud-item { font-weight: 800; font-size: .92rem; }
+.lives { display: flex; gap: 2px; align-items: center; }
 .heart { display: block; position: relative; color: var(--bad); transition: color .2s, opacity .2s; }
-.heart svg { display: block; width: 20px; height: 20px; }
+.heart svg { display: block; width: 17px; height: 17px; }
 .heart.empty { color: var(--text3); opacity: .4; padding: 0; text-align: left; }
 /* Coop: zeigt, welcher Mitspieler dieses gemeinsame Leben verbraucht hat —
    Diagonale von oben-links nach unten-rechts in dessen Spielerfarbe. */
 .heart-strike {
-  position: absolute; left: 50%; top: 50%; width: 25px; height: 2.4px; border-radius: 2px;
+  position: absolute; left: 50%; top: 50%; width: 21px; height: 2.2px; border-radius: 2px;
   transform: translate(-50%, -50%) rotate(45deg); opacity: .95;
 }
 .timer { color: var(--text2); font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: center; line-height: 1.15; }
@@ -1008,43 +1013,52 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
    → auf den ersten Blick als „Zeit des ganzen Laufs" vom Level-Timer unterscheidbar. */
 .hud-item.timer.total { color: var(--accent); }
 .game-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; flex: 0 0 auto; }
-.chip { background: var(--bg2); color: var(--text2); font-size: .76rem; font-weight: 700; padding: 5px 10px; border-radius: 999px; }
+.chip { background: var(--bg2); color: var(--text2); font-size: .7rem; font-weight: 700; padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
 /* Werkzeugleiste rechts in der HUD-Reihe: zwei ABTEILE (Markieren | Zoom) mit
    sichtbar eigener Fläche, damit man auf einen Blick sieht, was zusammengehört.
    Die Abteile stehen fest — optionale Knöpfe sitzen in .tool-slot, der seinen
    Platz auch leer behält, sodass beim Ein-/Ausblenden nichts verrutscht. */
-.zoomctl { margin-left: auto; display: flex; gap: 10px; flex: 0 0 auto; }
+/* Sitzt jetzt in der Kopfzeile (.top-actions) statt in einer eigenen Reihe.
+   32px statt 40 — immer noch bequem zu treffen, spart aber ueber die ganze
+   Leiste Hoehe, und Hoehe ist auf dem Handy Brettflaeche. */
+.zoomctl { display: flex; gap: 6px; flex: 0 0 auto; }
 .toolgrp {
-  display: flex; gap: 4px; padding: 4px; border-radius: 15px;
+  display: flex; gap: 3px; padding: 3px; border-radius: 12px;
   background: color-mix(in srgb, var(--text2) 9%, transparent);
 }
-.tool-slot { width: 40px; height: 40px; flex: 0 0 auto; display: flex; }
+.tool-slot { width: 32px; height: 32px; flex: 0 0 auto; display: flex; }
 /* Markierungsmodus: im AN-Zustand deutlich als aktiv erkennbar (gefüllt in der
    Markierungsfarbe), nicht bloss dezent hervorgehoben — man muss jederzeit
    sehen, dass Zahlen gerade gesperrt sind. */
-.zoom-btn.mark-toggle .ei svg { width: 22px; height: 22px; }
+.zoom-btn.mark-toggle .ei svg { width: 18px; height: 18px; }
 .zoom-btn.mark-toggle.on {
   background: var(--markhl, #f2c024); color: #1b1b1b;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--markhl, #f2c024) 45%, transparent), 0 2px 6px var(--shadow);
 }
 .zoom-btn.mark-clear { color: var(--bad, #ef4444); }
-.zoom-btn.mark-clear .ei svg { width: 20px; height: 20px; }
+.zoom-btn.mark-clear .ei svg { width: 17px; height: 17px; }
 /* Im Markierungsmodus ist der Vorrat inaktiv — sichtbar zurueckgenommen, damit
    niemand vergeblich einen Stein zu greifen versucht. */
 .tray.mark-mode { opacity: .5; }
 /* 40x40 statt vormals 30x30 -- liegt jetzt nah an der 44px-Tippflächen-Richtlinie
    (F6), ohne die schmale HUD-Reihe neben den Chips zu sprengen. */
-.zoom-btn { width: 40px; height: 40px; border-radius: 11px; background: var(--bg2); font-size: 1.2rem; font-weight: 800; color: var(--text2); box-shadow: 0 2px 6px var(--shadow); }
+.zoom-btn { width: 32px; height: 32px; border-radius: 9px; background: var(--bg2); font-size: 1.05rem; font-weight: 800; color: var(--text2); box-shadow: 0 1px 4px var(--shadow); }
 /* Zoom-Reset (↺): nur sichtbar, wenn gezoomt wurde; dezent in Akzentfarbe vom
    +/- abgesetzt, gleiche Tippfläche. */
-.zoom-btn.zoom-reset { color: var(--accent2); font-size: 1.3rem; }
+.zoom-btn.zoom-reset { color: var(--accent2); font-size: 1.1rem; }
 
 /* ─── Fortschrittsanzeige: Prozent + Balken (immer sichtbar im Spiel) ───────── */
 /* Der Balken ist ein leeres, umrandetes Rechteck -- die rechte Kante markiert
    das Ziel (100%), die Füllung wächst von links. Im Race-Modus liegt der
    Gegner-Balken direkt unter dem eigenen (.progress-row als Spalte statt
    Reihe), damit beide ohne Kopfrechnen auf einen Blick vergleichbar sind. */
-.progress-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; flex: 0 0 auto; }
+/* Info-Chips und Fortschritt teilen sich EINE Zeile: der Balken braucht die
+   Breite nicht, und jede eingesparte Kopfzeile ist auf dem Handy Brettflaeche.
+   Im Wettkampf wird die Fortschritts-Spalte hoeher (mehrere Balken) — die Chips
+   bleiben dann oben buendig, statt in der Mitte zu schweben. */
+.meta-row { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; flex: 0 0 auto; }
+.meta-chips { display: flex; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0; flex-wrap: wrap; padding-top: 1px; }
+.progress-row { display: flex; flex-direction: column; gap: 4px; flex: 1 1 auto; min-width: 0; }
 .progress-line { display: flex; align-items: center; gap: 8px; }
 /* FFA: ausgeschiedener Gegner (Leben verloren/aufgegeben) — gedimmt, Match läuft weiter. */
 .progress-line.ffa-out { opacity: .45; }
@@ -1361,7 +1375,15 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .app.app-game { padding-left: calc(env(safe-area-inset-left) + 8px); padding-right: calc(env(safe-area-inset-right) + 8px); }
 .app.app-game { padding-bottom: env(safe-area-inset-bottom); }
 .icon-btn svg { display: block; }
-.top-actions { display: flex; align-items: center; gap: 6px; }
+.top-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+/* Im Spiel duerfen Pause/Chat kleiner sein als auf den Menue-Screens: hier
+   zaehlt jeder Pixel Hoehe fuers Brett. */
+/* Bricht die Kopfzeile in der vollsten Lage doch um (Endlos + Coop + Chat),
+   bleiben die Werkzeuge rechtsbuendig — sonst sprangen sie auf der zweiten
+   Zeile nach links und die Leiste wirkte zerrissen. */
+.game-top .top-actions { margin-left: auto; }
+.game-top .icon-btn { width: 36px; height: 36px; border-radius: 10px; font-size: 1.15rem; }
+.game-top .icon-btn svg { width: 17px; height: 17px; }
 
 .check-row { padding: 10px 0 4px; flex: 0 0 auto; }
 .btn-check { width: 100%; }
