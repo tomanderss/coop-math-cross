@@ -146,4 +146,49 @@ test.describe('Markierungsmodus', () => {
     // Vor dem Umbau begann das Brett bei 158-190 px.
     expect(m.brettOben, 'das Brett beginnt weit oben').toBeLessThan(120);
   });
+
+  // Gemeldet: beim Sprung 9:59 -> 10:00 kam EIN Zeichen dazu, der Zeit-Kasten
+  // wuchs, die Kopfzeile wurde breiter und die Werkzeugleiste rutschte "eine
+  // Etage tiefer", war also nicht mehr buendig. tabular-nums macht nur die
+  // ZIFFERN gleich breit, nicht ihre ANZAHL — deshalb eine feste Zeit-Box plus
+  // eine Kopfzeile, die gar nicht mehr umbricht (statt ihrer wickelt das HUD
+  // intern um).
+  test('die Zeit-Box bleibt bei jeder Laenge gleich breit und die Leiste buendig', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page, 'mittel');
+    const messen = async (ms) => {
+      await page.evaluate((v) => {
+        const s = window.__cns.state;
+        s.startTime = Date.now() - v;   // der Timer liest die Zeit aus startTime
+        s.elapsed = v;
+      }, ms);
+      await page.waitForTimeout(260);   // Sekunden-Tick abwarten
+      return page.evaluate(() => {
+        const t = document.querySelector('.hud-item.timer').getBoundingClientRect();
+        const z = document.querySelector('.zoomctl').getBoundingClientRect();
+        const kopf = document.querySelector('.topbar.game-top');
+        const ys = [...kopf.children].map((c) => Math.round(c.getBoundingClientRect().y));
+        return {
+          text: document.querySelector('.hud-item.timer').textContent.trim(),
+          boxW: Math.round(t.width),
+          zoomX: Math.round(z.x), zoomY: Math.round(z.y),
+          umbruch: Math.max(...ys) - Math.min(...ys) > 20,
+        };
+      });
+    };
+    const a = await messen(599000);     // 9:59
+    const b = await messen(600000);     // 10:00  <- der gemeldete Sprung
+    const c = await messen(6000000);    // 100:00 (dreistellige Minuten)
+    const d = await messen(59999000);   // 999:59 (oberes Ende der Reserve)
+
+    expect(a.text).toContain('9:59');
+    expect(b.text).toContain('10:00');
+    expect(d.text).toContain('999:59');
+    for (const [name, m] of [['10:00', b], ['100:00', c], ['999:59', d]]) {
+      expect(m.boxW, `Zeit-Box bleibt bei ${name} gleich breit`).toBe(a.boxW);
+      expect(m.zoomX, `Werkzeugleiste bleibt bei ${name} an ihrem Platz (x)`).toBe(a.zoomX);
+      expect(m.zoomY, `Werkzeugleiste rutscht bei ${name} keine Etage tiefer (y)`).toBe(a.zoomY);
+      expect(m.umbruch, `die Kopfzeile bricht bei ${name} nicht um`).toBe(false);
+    }
+  });
 });
