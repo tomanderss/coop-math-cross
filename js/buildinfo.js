@@ -1,8 +1,16 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.32';
-export const BUILD_HASH = 'eef45a3';
+export const BUILD      = '1.33';
+export const BUILD_HASH = 'c242c64';
 
 export const CHANGELOG = [
+  {
+    "version": "1.33",
+    "date": "14.10.2026",
+    "changes": [
+      "Die Zeitanzeige hat jetzt einen festen Platz: beim Sprung von 9:59 auf 10:00 wurde sie bisher breiter, dadurch verschob sich die ganze Kopfzeile und die Werkzeugleiste rutschte eine Etage tiefer. Jetzt bleibt alles stehen, egal wie lang die Zeit wird.",
+      "Die Kopfzeile bricht nicht mehr um: wird es eng, stapeln sich Leben und Zeiten, aber Werkzeuge und Pause bleiben oben rechts an ihrem Platz."
+    ]
+  },
   {
     "version": "1.32",
     "date": "30.09.2026",
