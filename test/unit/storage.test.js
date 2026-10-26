@@ -28,6 +28,7 @@ const {
   loadPlaySamples, addPlaySample, mergePlaySamples, PLAY_SAMPLES_MAX,
   loadSaves, saveSaves, upsertSave, removeSave, pruneSaves, mergeSaves, shiftDifficultyStats,
   loadSavesGone, mergeSavesGone,
+  splitSnapshot, joinSnapshot, ACCOUNT_FIELDS, GAME_FIELDS,
 } = await import('../../js/storage.js');
 const { DEFAULT_SETTINGS } = await import('../../js/config.js');
 const { todayDateStr, shiftDateStr } = await import('../../js/streak.js');
@@ -1051,4 +1052,51 @@ describe('Schwierigkeitsleiter: Statistik wandert mit', () => {
     const neu = shiftDifficultyStats({ b: { won: 2 } }, leiter);
     assert.deepEqual(Object.keys(neu), ['a'], 'nur a erbt etwas, der Rest bleibt leer');
   });
+});
+
+// ─── Kontoweite vs. spieleigene Daten ────────────────────────────────────────
+// Beide Spiele haengen am SELBEN Firebase-Projekt und schrieben denselben Knoten
+// `users/{uid}/data` — mit voller Ueberschreibung und beim Reconcile zusaetzlich
+// inhaltlich gemergt. Dadurch vermischten sich Statistiken und Bestzeiten der
+// beiden Spiele. Die Aufteilung muss bitgenau zu coop-number-sums passen.
+test('splitSnapshot trennt Konto- von Spieldaten', () => {
+  const snap = {
+    ts: 7, v: 1, label: 'sync', rev: 42,
+    settings: { theme: 'dark' }, wallet: { balance: 5 }, daily: { currentStreak: 9 },
+    stats: { won: 3 }, saves: [{ id: 's1' }], savesGone: { s0: 1 },
+  };
+  const { account, game } = splitSnapshot(snap);
+  assert.deepEqual(account.wallet, { balance: 5 });
+  assert.deepEqual(account.daily, { currentStreak: 9 });
+  assert.equal(account.stats, undefined, 'Statistiken gehoeren dem SPIEL');
+  assert.deepEqual(game.stats, { won: 3 });
+  assert.deepEqual(game.savesGone, { s0: 1 }, 'Grabsteine gehoeren zu den Spielstaenden');
+  assert.equal(game.wallet, undefined, 'das Guthaben gilt kontoweit');
+  assert.equal(account.rev, 42); assert.equal(game.rev, 42);
+});
+
+test('splitSnapshot + joinSnapshot sind verlustfrei', () => {
+  const snap = {
+    ts: 7, v: 1, label: 'sync', rev: 42,
+    settings: { a: 1 }, wallet: { balance: 2 }, walletLog: [], daily: { d: 1 },
+    inventory: { x: 1 }, profile: { username: 'tom' },
+    activeGame: { gameId: 'g' }, activeGameCoop: null, activeGameEndless: null,
+    saves: [], savesGone: {}, stats: { w: 1 }, history: [], achievements: { a: 1 },
+    missions: {}, race: {}, playSamples: [], completedGames: ['g1'],
+  };
+  const back = joinSnapshot(...Object.values(splitSnapshot(snap)));
+  for (const k of [...ACCOUNT_FIELDS, ...GAME_FIELDS]) {
+    assert.deepEqual(back[k], snap[k], `Feld ${k} muss den Rundlauf ueberstehen`);
+  }
+  assert.equal(back.rev, 42, 'die Sync-Basislinie haengt an der SPIEL-Haelfte');
+});
+
+test('die zwei Feldlisten ueberschneiden sich nicht und decken den Snapshot ab', () => {
+  assert.deepEqual(ACCOUNT_FIELDS.filter((k) => GAME_FIELDS.includes(k)), []);
+  const kopf = new Set(['ts', 'v', 'label', 'rev']);
+  const alle = new Set([...ACCOUNT_FIELDS, ...GAME_FIELDS]);
+  for (const k of Object.keys(collectExportData('test'))) {
+    if (kopf.has(k)) continue;
+    assert.ok(alle.has(k), `Feld ${k} ist keiner Haelfte zugeordnet`);
+  }
 });
