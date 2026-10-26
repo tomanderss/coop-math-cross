@@ -1,8 +1,17 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.33';
-export const BUILD_HASH = 'c242c64';
+export const BUILD      = '1.34';
+export const BUILD_HASH = '2632654';
 
 export const CHANGELOG = [
+  {
+    "version": "1.34",
+    "date": "26.10.2026",
+    "changes": [
+      "Spielstände, Statistiken und Bestzeiten liegen in der Cloud jetzt getrennt je Spiel. Coop Math Cross und Coop Number Sums teilten sich bisher denselben Speicherplatz und haben sich dadurch gegenseitig Werte überschrieben und vermischt.",
+      "Dein Konto bleibt wie gehabt gemeinsam: ein Benutzername, ein Guthaben, ein Shop, eine Tagesserie — für alle Spiele.",
+      "Die Bestenlisten sind jetzt nach Spiel getrennt. Vorher konkurrierte eine Zeit aus dem einen Spiel mit den Zeiten aus dem anderen."
+    ]
+  },
   {
     "version": "1.33",
     "date": "14.10.2026",
