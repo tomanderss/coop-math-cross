@@ -1,8 +1,15 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.35';
-export const BUILD_HASH = 'c6fca2f';
+export const BUILD      = '1.36';
+export const BUILD_HASH = '7071799';
 
 export const CHANGELOG = [
+  {
+    "version": "1.36",
+    "date": "27.10.2026",
+    "changes": [
+      "Geloeschte Spielstaende werden nicht mehr zum Fortsetzen angeboten (auch auf dem Zweitgeraet)"
+    ]
+  },
   {
     "version": "1.35",
     "date": "27.10.2026",
