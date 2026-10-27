@@ -10,7 +10,8 @@
 //   altes INIT reaktivierte die Bereit-Lobby.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { computeJoinAnchor, sanitizeForFirebase, winsCell, safeKey, normalizeGrid } from '../../js/coop.js';
+import { computeJoinAnchor, sanitizeForFirebase, winsCell, safeKey, normalizeGrid, isFirebaseSentinel } from '../../js/coop.js';
+import { readFileSync } from 'node:fs';
 import { generatePuzzle } from '../../js/generator.js';
 import { genOptionsFor } from '../../js/config.js';
 
@@ -234,4 +235,37 @@ test('winsCell ist auf beiden Seiten dieselbe Entscheidung', () => {
   // Umgekehrt herum genau spiegelbildlich:
   assert.equal(winsCell(kB, kA), true);
   assert.equal(!winsCell(kA, kB), true);
+});
+
+
+// serverTimestamp() ist intern {".sv":"timestamp"} — der Punkt ist ABSICHT.
+// safeKey machte daraus {"_sv":…}, und publishAiProfile schickt
+// `updatedAt: fb.serverTimestamp()` genau durch diese Funktion: statt der
+// Serverzeit laege ein totes Objekt in der Datenbank. Bisher unbemerkt, weil
+// mc/aiProfiles in den Regeln ganz fehlte (jeder Write abgewiesen) — mit den
+// publizierten Regeln waere der Fehler scharf geworden.
+test('Firebase-Platzhalter (serverTimestamp/increment) bleiben unangetastet', () => {
+  const ts = { '.sv': 'timestamp' };
+  const inc = { '.sv': { increment: 1 } };
+  assert.ok(isFirebaseSentinel(ts) && isFirebaseSentinel(inc));
+  assert.equal(isFirebaseSentinel({ sv: 1 }), false);
+  assert.deepEqual(sanitizeForFirebase({ updatedAt: ts, n: inc, x: Infinity }),
+    { updatedAt: { '.sv': 'timestamp' }, n: { '.sv': { increment: 1 } }, x: null });
+  assert.deepEqual(sanitizeForFirebase([1, undefined, 3]), [1, null, 3]);
+});
+
+test('die Kopie in account.js ist textgleich mit der in coop.js', () => {
+  // Bewusst dupliziert (account.js soll coop.js nicht laden muessen) — dann aber
+  // ohne Auseinanderlaufen.
+  const body = (file, name) => {
+    const src = readFileSync(new URL(`../../js/${file}`, import.meta.url), 'utf8');
+    const i = src.indexOf(`function ${name}(`);
+    assert.ok(i >= 0, `${name} fehlt in ${file}`);
+    let depth = 0, j = src.indexOf('{', i);
+    for (; j < src.length; j++) { if (src[j] === '{') depth++; else if (src[j] === '}' && --depth === 0) break; }
+    return src.slice(i, j + 1);
+  };
+  for (const name of ['sanitizeForFirebase', 'safeKey', 'isFirebaseSentinel']) {
+    assert.equal(body('account.js', name), body('coop.js', name), `${name} ist in account.js anders als in coop.js`);
+  }
 });

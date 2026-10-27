@@ -423,13 +423,21 @@ export async function ensurePresence({ name, color, role }) {
 // bleibt unberührt, da nur `msg` bereinigt wird.
 export function sanitizeForFirebase(v) {
   if (typeof v === 'number') return Number.isFinite(v) ? v : null;
-  if (Array.isArray(v)) return v.map(sanitizeForFirebase);
+  // undefined in einem Array waere ebenso ein harter Fehler; null laesst die
+  // RTDB an dieser Stelle einfach aus.
+  if (Array.isArray(v)) return v.map((x) => (x === undefined ? null : sanitizeForFirebase(x)));
+  // Firebase-eigene Platzhalter — serverTimestamp() = {".sv":"timestamp"},
+  // increment(n) = {".sv":{increment:n}} — tragen ABSICHTLICH einen Punkt im
+  // Schluessel und muessen unveraendert durch. safeKey machte daraus sonst
+  // {"_sv":…}, und statt der Serverzeit laege ein totes Objekt in der Datenbank
+  // (publishAiProfile schickt updatedAt genau so durch diese Funktion).
+  if (isFirebaseSentinel(v)) return v;
   if (v && typeof v === 'object') {
     const out = {};
     for (const k in v) {
       const val = v[k];
-      // undefined ist fuer die RTDB ein harter Fehler (nicht etwa "weglassen") —
-      // genau wie ein nicht-endlicher Zahlenwert. Beides wird hier entschaerft.
+      // undefined ist fuer die RTDB ein harter Fehler (nicht etwa „weglassen") —
+      // ein einziges solches Feld liesse den GESAMTEN Schreibvorgang scheitern.
       if (val === undefined) continue;
       out[safeKey(k)] = sanitizeForFirebase(val);
     }
@@ -448,6 +456,9 @@ export function safeKey(k) {
   const s = String(k);
   // eslint-disable-next-line no-control-regex
   return /[.#$/[\]\u0000-\u001f\u007f]/.test(s) ? s.replace(/[.#$/[\]\u0000-\u001f\u007f]/g, '_') : s;
+}
+export function isFirebaseSentinel(v) {
+  return !!v && typeof v === 'object' && !Array.isArray(v) && Object.prototype.hasOwnProperty.call(v, '.sv');
 }
 // Firebase RTDB speichert KEINE null-Werte: ein null wird beim Schreiben einfach
 // weggelassen. Ein 2D-Raster, dessen Zellen ueberwiegend null sind — genau das ist
