@@ -1,8 +1,15 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.37';
-export const BUILD_HASH = '569eae4';
+export const BUILD      = '1.38';
+export const BUILD_HASH = 'ac86465';
 
 export const CHANGELOG = [
+  {
+    "version": "1.38",
+    "date": "27.10.2026",
+    "changes": [
+      "Hinweis auf dem Startbildschirm: Math Cross ist in die App „Coop Number Games“ umgezogen (Spielstände, Münzen und Artikel kommen automatisch mit)"
+    ]
+  },
   {
     "version": "1.37",
     "date": "27.10.2026",
