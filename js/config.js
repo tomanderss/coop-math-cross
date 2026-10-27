@@ -269,6 +269,13 @@ export const COOP_MAX_PLAYERS = 4;
 // Gegenleistung (kein Feature-Unlock o.ä.) — sonst rechtlich keine Schenkung
 // mehr, sondern steuerpflichtiges Entgelt.
 export const DONATE_URL = 'https://ko-fi.com/tomanders';
+// UMZUG: Math Cross steckt jetzt zusammen mit Number Sums in der App „Coop
+// Number Games" (Repo coop-number-sums). Der Hinweis auf dem Startbildschirm
+// verlinkt dorthin; ?game=mathcross öffnet die neue App direkt in Math Cross.
+// Absolut, damit es auch aus der nativen App heraus funktioniert. Beide Apps
+// teilen Herkunft und Firebase-Projekt — die neue App übernimmt die lokalen
+// Daten (cmc_*) und das Konto (mc/users/{uid}) beim ersten Start selbst.
+export const MOVED_URL = 'https://tomanderss.github.io/coop-number-sums/?game=mathcross';
 
 // ─── STANDARD-EINSTELLUNGEN ───────────────────────────────────────────────────
 // Anzeige des Geteilt-Zeichens. REIN KOSMETISCH — das Rätsel, seine Lösung und

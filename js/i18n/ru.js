@@ -768,4 +768,9 @@ export default {
   },
   error: {
   },
+  moved: {
+    title: 'Math Cross переехал!',
+    body: 'Math Cross теперь вместе с Number Sums в приложении «Coop Number Games». Сохранения, монеты и покупки перенесутся автоматически.',
+    cta: 'Открыть новое приложение',
+  },
 };
