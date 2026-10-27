@@ -5003,6 +5003,7 @@ function refreshResume() {
   // die Liste bleibt also von selbst sauber.
   state.saves = loadSaves();
   if (ge && !geValid) saveActiveGameEndless(null);
+  reconcileResumeWithLibrary();
   // RUECKFALL auf die Bibliothek. Der Aktivspiel-Slot haelt nur die zuletzt
   // gespielte Partie; loescht man ausgerechnet die (und das ist der naheliegendste
   // Fall, weil der Fortsetzen-Knopf genau sie anbietet), war der Knopf komplett
@@ -5015,19 +5016,6 @@ function refreshResume() {
   if (!state.resumeAvailableEndless) {
     const nextE = state.saves.find((x) => saveIsEndless(x) && (x.pending || (x.puzzle && x.placed)));
     if (nextE) { saveActiveGameEndless(nextE); state.resumeAvailableEndless = nextE; }
-  }
-  // GARANTIE: Was als „Fortsetzen" angeboten wird, MUSS auch in der Bibliothek
-  // stehen — sonst fehlt der Zugang „Spielstände verwalten" und der Stand lässt
-  // sich nicht löschen (gemeldet). Die beiden Quellen sind getrennt (Aktivspiel-
-  // Slot ⟷ Bibliothek); läuft eine davon leer, wird sie hier wieder aufgefüllt.
-  // Ein als ERLEDIGT vermerkter Stand (Grabstein) bleibt draußen — sonst käme ein
-  // gelöschtes Spiel über diesen Weg zurück.
-  const nachtragen = [[state.resumeAvailable, 'solo'], [state.resumeAvailableEndless, 'endless']];
-  for (const [g, kind] of nachtragen) {
-    const id = g && (kind === 'endless' ? ((g.endless && g.endless.runId) || g.gameId) : g.gameId);
-    if (!id || isSaveGone(id) || state.saves.some((x) => x.id === id)) continue;
-    state.saves = upsertSave({ ...g, id, kind, ts: g.ts || Date.now() });
-    log('storage', 'Fortsetzbarer Stand fehlte in der Bibliothek — nachgetragen', { kind });
   }
 }
 // Ein gespeicherter Stand ohne (vollständiges) markedBy bekäme beim Fortsetzen
@@ -5043,6 +5031,39 @@ function claimOwnTiles(g) {
       const v = g.placed[r][c];
       if (v != null && v !== '' && !g.markedBy[r][c]) g.markedBy[r][c] = LOCAL_PLAYER_ID;
     }
+  }
+}
+// Fortsetzen-Knopf und Spielstand-Liste aus EINER Wahrheit. Die beiden Quellen
+// sind getrennt (Aktivspiel-Slot ⟷ Bibliothek), und jede kann der anderen fehlen:
+//  - Ein Stand, den der Knopf anbietet, fehlt in der Liste — dann gibt es fuer
+//    GENAU diesen Stand keinen Weg zum Loeschen (gemeldet: „ich sehe die
+//    Spielstaende-Flaeche nicht"). → in die Liste nachtragen.
+//  - Der Stand wurde geloescht (Grabstein), der Aktivspiel-Slot haelt ihn aber
+//    noch — typisch auf dem ZWEITgeraet: geloescht wird auf A, der Slot auf B
+//    ueberlebt den Abgleich, weil pickActiveGame ein lokales laufendes Spiel
+//    bewusst vor einem leeren Import schuetzt. Bisher wurde so ein Stand nur
+//    nicht wieder in die Liste aufgenommen — der Knopf bot das geloeschte Spiel
+//    aber weiter an, und loeschen liess es sich erst recht nicht. → Slot raeumen.
+// Laeuft VOR dem Rueckfall auf die Bibliothek: ein hier geraeumter Slot bekommt
+// dort gleich den naechsten fortsetzbaren Stand.
+function reconcileResumeWithLibrary() {
+  const slots = [
+    [state.resumeAvailable, 'solo'],
+    [state.resumeAvailableEndless, 'endless'],
+  ];
+  for (const [g, kind] of slots) {
+    if (!g) continue;
+    const id = kind === 'endless' ? ((g.endless && g.endless.runId) || g.gameId) : g.gameId;
+    if (!id) continue;
+    if (isSaveGone(id)) {
+      log('storage', 'Fortsetzbarer Stand ist als geloescht vermerkt — Aktivspiel-Slot geraeumt', { kind });
+      if (kind === 'endless') { saveActiveGameEndless(null); state.resumeAvailableEndless = null; }
+      else { saveActiveGame(null); state.resumeAvailable = null; }
+      continue;
+    }
+    if (state.saves.some((x) => x.id === id)) continue;
+    state.saves = upsertSave({ ...g, id, kind, ts: g.ts || Date.now() });
+    log('storage', 'Fortsetzbarer Stand fehlte in der Bibliothek — nachgetragen', { kind });
   }
 }
 function resumeGame() {

@@ -172,3 +172,31 @@ test.describe('Spielstand-Bibliothek', () => {
     expect(await page.evaluate(() => window.__cns.state.resumeAvailable)).toBe(null);
   });
 });
+
+// Ein als geloescht vermerkter Stand (Grabstein) darf nicht weiter als
+// „Fortsetzen" angeboten werden. Typisch auf dem Zweitgeraet: geloescht wird auf
+// A, der Aktivspiel-Slot auf B ueberlebt den Abgleich (pickActiveGame schuetzt
+// ein lokales laufendes Spiel bewusst vor einem leeren Import). Vorher wurde der
+// Stand nur nicht wieder in die Liste aufgenommen — der Knopf bot ihn weiter an,
+// und loeschen liess er sich erst recht nicht.
+test.describe('Geloeschte Staende bleiben weg', () => {
+  test('ein als geloescht vermerkter Stand wird nicht mehr zum Fortsetzen angeboten', async ({ page }) => {
+    await gotoApp(page);
+    await startNewGame(page);
+    await playAFewCells(page);
+    const snap = await page.evaluate(() => JSON.parse(localStorage.getItem('cmc_active_game')));
+    await page.evaluate((g) => {
+      localStorage.setItem('cmc_active_game', JSON.stringify(g));
+      localStorage.setItem('cmc_saves', '[]');
+      localStorage.setItem('cmc_saves_gone', JSON.stringify({ [g.gameId]: Date.now() }));
+    }, snap);
+    await page.goto('/');
+    await page.waitForFunction(() => !!window.__cns);
+
+    expect(await page.evaluate(() => window.__cns.state.resumeAvailable), 'kein Fortsetzen fuer ein geloeschtes Spiel').toBeNull();
+    const slot = await page.evaluate(() => JSON.parse(localStorage.getItem('cmc_active_game') || 'null'));
+    expect(slot, 'der Slot ist geraeumt').toBeNull();
+    const ids = await page.evaluate(() => window.__cns.state.saves.map((g) => g.id));
+    expect(ids, 'und es kommt auch nicht ueber die Bibliothek zurueck').not.toContain(snap.gameId);
+  });
+});
