@@ -1,1 +1,0 @@
-Bestenliste repariert: neue Bestzeiten werden wieder eingetragen (nach dem Publizieren der Datenbank-Regeln)
