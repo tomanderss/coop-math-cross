@@ -769,6 +769,8 @@ export default {
   error: {
   },
   moved: {
+    noAccount: 'Hesabın yok mu? Burada bir tane oluştur — kayıtların ve jetonların yeni uygulamaya otomatik aktarılır (orada aynı hesapla giriş yap).',
+    signUp: 'Hesap oluştur',
     title: 'Math Cross taşındı!',
     body: 'Math Cross artık Number Sums ile birlikte “Coop Number Games” uygulamasında. Kayıtların, jetonların ve satın aldıkların otomatik olarak aktarılır.',
     cta: 'Yeni uygulamayı aç',

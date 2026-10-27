@@ -769,6 +769,8 @@ export default {
   error: {
   },
   moved: {
+    noAccount: 'アカウントがない場合はここで作成してください。セーブデータとコインが新しいアプリへ自動で引き継がれます（新しいアプリでも同じアカウントでログイン）。',
+    signUp: 'アカウントを作成',
     title: 'Math Cross は引っ越しました！',
     body: 'Math Cross は Number Sums と一緒にアプリ「Coop Number Games」に移りました。セーブデータ・コイン・購入アイテムは自動で引き継がれます。',
     cta: '新しいアプリを開く',

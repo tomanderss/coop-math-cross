@@ -5919,6 +5919,17 @@ async function restartForUpdate() {
 }
 // Umzugs-Hinweis: der Klick verlässt die App — fürs Diagnoseprotokoll festhalten.
 function noteMovedClick() { log('app', 'Umzugs-Hinweis: zur neuen App gewechselt'); }
+// Ohne Konto bleiben die Daten im (abgeschotteten) Speicher DIESER App — die
+// native App und eine iPhone-Homescreen-App teilen ihn nicht mit der neuen App.
+// Ein Konto lädt sie in die Cloud, von dort holt die neue App sie automatisch.
+function openMovedSignup() {
+  log('app', 'Umzugs-Hinweis: Konto anlegen geöffnet');
+  openSettings();
+  state.settingsTab = 'konto';
+  state.account.mode = 'up';
+  state.account.error = null;
+  state.account.notice = null;
+}
 function dismissUpdateDialog() { state.updateCheck = 'idle'; }
 
 // ─── Optionaler Account (E-Mail+Username+PW, Cloud-Sync) ──────────────────────
@@ -8000,7 +8011,7 @@ const App = {
       openFriends, closeFriends, setFriendsTab, selectLeaderboardDiff, addFriend, openAddFriend, closeAddFriend, acceptFriend, declineFriend, removeFriendAsk,
       friendsSorted, friendPresence, friendOnline, friendInGame, friendInRoom, anyFriendOnline, friendActivityText,
       skinUnlocked, skinPresetOwned, skinActive, skinVars, skinBoardClasses, skinPreviewVars, skinPreviewClasses, redeemSkinCode, dismissSkinUnlock, openSkinEditor, skinSpeedToDuration,
-      startCoopMatch, canStartCoopMatch, COOP_MAX_PLAYERS, DONATE_URL, MOVED_URL, noteMovedClick, BRAND_LOGO,
+      startCoopMatch, canStartCoopMatch, COOP_MAX_PLAYERS, DONATE_URL, MOVED_URL, noteMovedClick, openMovedSignup, BRAND_LOGO,
       assignTeam, randomizeTeams, canStartTeamMatch, startTeamMatch, goRace, canStartRaceMatch, startRaceMatch, rematchRace,
       chipTextColor, confirmCoopIdentity, coopChooseHost, coopChooseGuest, playerColor, goCoop,
       nonHostPlayers, readyCount, allGuestsReady, myReady, markReady, unmarkReady,
@@ -8061,6 +8072,10 @@ const App = {
           <span>{{ t('moved.body') }}</span>
         </div>
         <a class="btn btn-primary moved-btn" :href="MOVED_URL" @click="noteMovedClick">{{ t('moved.cta') }}</a>
+        <div v-if="state.account.status !== 'in'" class="moved-account">
+          <span>{{ t('moved.noAccount') }}</span>
+          <button class="btn btn-ghost moved-signup" @click="openMovedSignup">{{ t('moved.signUp') }}</button>
+        </div>
       </div>
 
       <div class="home-actions">
