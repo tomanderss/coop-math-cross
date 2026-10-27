@@ -13,7 +13,7 @@ import { todayDateStr } from './streak.js';
 import * as Coop from './coop.js';
 import { log, exportLogToFile } from './debuglog.js';
 import { ACHIEVEMENTS, evaluate as evaluateAchievements } from './achievements.js';
-import { nextTrainingStep } from './training.js';
+import { nextTrainingStep, isFullyTier1Solvable } from './training.js';
 import * as Music from './music.js';
 import {
   loadSettings, saveSettings, loadActiveGame, saveActiveGame, loadActiveGameCoop, saveActiveGameCoop, loadActiveGameEndless, saveActiveGameEndless, snapshotSolved,
@@ -1883,7 +1883,10 @@ function trainingNextStep() {
 function applyTrainingStep() {
   const step = state.trainingStep;
   if (!step) return;
-  setMark(step.r, step.c, step.action, false);
+  // Der Tutor legt den erklärten Stein selbst (wie ein Zug, aber ohne Fehler-
+  // Prüfung und ohne Versand — Training ist immer Solo). Vorher stand hier ein
+  // Aufruf aus Number Sums (setMark), den es in Math Cross nie gab.
+  placeAt(step.r, step.c, step.v, { user: false });
   state.trainingStep = null;
   if (state.status === 'playing') trainingNextStep();
 }
