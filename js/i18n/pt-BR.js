@@ -768,4 +768,9 @@ export default {
   },
   error: {
   },
+  moved: {
+    title: 'O Math Cross se mudou!',
+    body: 'O Math Cross agora está junto com o Number Sums no app “Coop Number Games”. Seus jogos salvos, moedas e compras vão junto automaticamente.',
+    cta: 'Abrir o novo app',
+  },
 };

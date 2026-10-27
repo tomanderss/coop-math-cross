@@ -879,4 +879,9 @@ export default {
   },
   error: {
   },
+  moved: {
+    title: 'Math Cross ist umgezogen!',
+    body: 'Math Cross steckt jetzt zusammen mit Number Sums in der App „Coop Number Games“. Spielstände, Münzen und gekaufte Artikel kommen automatisch mit.',
+    cta: 'Zur neuen App',
+  },
 };

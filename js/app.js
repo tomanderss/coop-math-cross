@@ -1,7 +1,7 @@
 // app.js — Coop Math Cross (Vue 3, esm-browser). Solo-Spiel; Coop folgt später.
 import { createApp, reactive, computed, watch, nextTick, onMounted, markRaw, ref } from './vue.esm-browser.prod.js';
 import { BUILD, CHANGELOG } from './buildinfo.js';
-import { DIFFICULTIES, DIFF_BY_ID, REGION_COLORS, COOP_COLORS, COOP_COLORS_CB, DEFAULT_GAME_OPTIONS, bigNumbersAllowed, genOptionsFor, LIVES, COOP_MAX_PLAYERS, DONATE_URL, coinReward, coinMultiplier, coinBaseForIndex, coinStreakBonus, COIN_STREAK_STEP, hexToRgb, DIV_STYLES, DIV_STYLE_DEFAULT, divSymbolFor } from './config.js';
+import { DIFFICULTIES, DIFF_BY_ID, REGION_COLORS, COOP_COLORS, COOP_COLORS_CB, DEFAULT_GAME_OPTIONS, bigNumbersAllowed, genOptionsFor, LIVES, COOP_MAX_PLAYERS, DONATE_URL, MOVED_URL, coinReward, coinMultiplier, coinBaseForIndex, coinStreakBonus, COIN_STREAK_STEP, hexToRgb, DIV_STYLES, DIV_STYLE_DEFAULT, divSymbolFor } from './config.js';
 import { generatePuzzle } from './generator.js';
 import { validPuzzleShape as puzzleShapeOk } from './model.js';
 import {
@@ -5917,6 +5917,8 @@ async function restartForUpdate() {
   w.postMessage({ type: 'SKIP_WAITING' });
   setTimeout(() => go('manual-update-timeout'), 2500);  // Fangnetz, falls kein statechange kommt
 }
+// Umzugs-Hinweis: der Klick verlässt die App — fürs Diagnoseprotokoll festhalten.
+function noteMovedClick() { log('app', 'Umzugs-Hinweis: zur neuen App gewechselt'); }
 function dismissUpdateDialog() { state.updateCheck = 'idle'; }
 
 // ─── Optionaler Account (E-Mail+Username+PW, Cloud-Sync) ──────────────────────
@@ -7998,7 +8000,7 @@ const App = {
       openFriends, closeFriends, setFriendsTab, selectLeaderboardDiff, addFriend, openAddFriend, closeAddFriend, acceptFriend, declineFriend, removeFriendAsk,
       friendsSorted, friendPresence, friendOnline, friendInGame, friendInRoom, anyFriendOnline, friendActivityText,
       skinUnlocked, skinPresetOwned, skinActive, skinVars, skinBoardClasses, skinPreviewVars, skinPreviewClasses, redeemSkinCode, dismissSkinUnlock, openSkinEditor, skinSpeedToDuration,
-      startCoopMatch, canStartCoopMatch, COOP_MAX_PLAYERS, DONATE_URL, BRAND_LOGO,
+      startCoopMatch, canStartCoopMatch, COOP_MAX_PLAYERS, DONATE_URL, MOVED_URL, noteMovedClick, BRAND_LOGO,
       assignTeam, randomizeTeams, canStartTeamMatch, startTeamMatch, goRace, canStartRaceMatch, startRaceMatch, rematchRace,
       chipTextColor, confirmCoopIdentity, coopChooseHost, coopChooseGuest, playerColor, goCoop,
       nonHostPlayers, readyCount, allGuestsReady, myReady, markReady, unmarkReady,
@@ -8046,6 +8048,19 @@ const App = {
           <span v-else class="ico-wrap hpc-add" :title="t('prestige.title')" v-html="ic('medal')"></span>
           <span class="hpc-name">{{ shopDemoBadgeName() }}</span>
         </button>
+      </div>
+
+      <!-- UMZUG: Math Cross steckt jetzt in „Coop Number Games" (Number Sums +
+           Math Cross in einer App, ein Konto). Die neue App übernimmt Spielstände,
+           Münzen und Artikel beim ersten Start selbst (gleiche Herkunft, gleiches
+           Firebase-Projekt) — dieser Hinweis führt nur dorthin. -->
+      <div class="moved-banner" role="note">
+        <span class="ico-wrap moved-ico" v-html="ic('rocket')"></span>
+        <div class="moved-text">
+          <b>{{ t('moved.title') }}</b>
+          <span>{{ t('moved.body') }}</span>
+        </div>
+        <a class="btn btn-primary moved-btn" :href="MOVED_URL" @click="noteMovedClick">{{ t('moved.cta') }}</a>
       </div>
 
       <div class="home-actions">
