@@ -1,8 +1,15 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.36';
-export const BUILD_HASH = '7071799';
+export const BUILD      = '1.37';
+export const BUILD_HASH = '569eae4';
 
 export const CHANGELOG = [
+  {
+    "version": "1.37",
+    "date": "27.10.2026",
+    "changes": [
+      "Training startet wieder (blieb vorher auf einem leeren Spielbildschirm haengen)"
+    ]
+  },
   {
     "version": "1.36",
     "date": "27.10.2026",

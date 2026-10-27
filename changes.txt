@@ -1,1 +1,0 @@
-Training startet wieder (blieb vorher auf einem leeren Spielbildschirm haengen)
