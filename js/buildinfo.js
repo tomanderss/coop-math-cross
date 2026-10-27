@@ -1,8 +1,15 @@
 // Auto-generiert von build.js — nicht manuell bearbeiten!
-export const BUILD      = '1.34';
-export const BUILD_HASH = '2632654';
+export const BUILD      = '1.35';
+export const BUILD_HASH = 'c6fca2f';
 
 export const CHANGELOG = [
+  {
+    "version": "1.35",
+    "date": "27.10.2026",
+    "changes": [
+      "Bestenliste repariert: neue Bestzeiten werden wieder eingetragen (nach dem Publizieren der Datenbank-Regeln)"
+    ]
+  },
   {
     "version": "1.34",
     "date": "26.10.2026",
