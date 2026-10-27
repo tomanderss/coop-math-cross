@@ -1,5 +1,12 @@
 # Coop Math Cross
 
+> **Archiviert.** Math Cross ist in die App **Coop Number Games** umgezogen
+> (Repo [`coop-number-sums`](https://github.com/tomanderss/coop-number-sums),
+> App: https://tomanderss.github.io/coop-number-sums/?game=mathcross).
+> Dieses Repo liefert nur noch die alte Adresse mit dem Umzugs-Hinweis aus und
+> bleibt deshalb bestehen — bitte nicht löschen. Spielstände, Münzen und das
+> Konto übernimmt die neue App beim ersten Start selbst.
+
 Ein Rechenkreuz-Logikrätsel als Progressive Web App (PWA) — offline spielbar, mit
 Dunkelmodus, neun Schwierigkeitsgraden und Mehrspieler-Modi. Vanilla JS + Vue 3
 via ESM, kein Build-Tooling.
