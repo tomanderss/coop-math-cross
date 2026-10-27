@@ -13,3 +13,13 @@ test('Startbildschirm zeigt den Umzugs-Hinweis mit Link zur neuen App', async ({
   const scroll = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
   expect(scroll).toBe(true);
 });
+
+// Ohne Konto bleiben die Daten im Speicher dieser App (native App / iPhone-
+// Homescreen-App teilen ihn nicht) — der Hinweis führt direkt zur Registrierung.
+test('ohne Konto führt der Hinweis zur Registrierung', async ({ page }) => {
+  await gotoApp(page);
+  const extra = page.locator('.moved-banner .moved-account');
+  await expect(extra).toBeVisible();
+  await extra.locator('.moved-signup').click();
+  await expect.poll(() => page.evaluate(() => [window.__cns.state.settingsTab, window.__cns.state.account.mode].join('/'))).toBe('konto/up');
+});

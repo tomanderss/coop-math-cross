@@ -769,6 +769,8 @@ export default {
   error: {
   },
   moved: {
+    noAccount: 'Nessun account? Creane uno qui: salvataggi e monete passeranno automaticamente alla nuova app (accedi lì con lo stesso account).',
+    signUp: 'Crea account',
     title: 'Math Cross si è trasferito!',
     body: 'Math Cross ora si trova insieme a Number Sums nell’app «Coop Number Games». Salvataggi, monete e acquisti vengono trasferiti automaticamente.',
     cta: 'Apri la nuova app',
