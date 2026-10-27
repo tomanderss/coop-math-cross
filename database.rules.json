@@ -189,6 +189,13 @@
           },
           "session": {
             ".validate": "newData.hasChildren(['gameId','rev','deviceId','status'])"
+          },
+          "games": {
+            "$game": {
+              "session": {
+                ".validate": "newData.hasChildren(['gameId','rev','deviceId','status'])"
+              }
+            }
           }
         }
       },
@@ -201,10 +208,21 @@
       },
       "leaderboard": {
         ".read": "auth != null",
-        "$diff": {
+        "$game": {
+          "$diff": {
+            "$uid": {
+              ".write": "auth != null && auth.uid === $uid",
+              ".validate": "newData.hasChildren(['timeMs','username']) && newData.child('timeMs').isNumber()"
+            }
+          }
+        }
+      },
+      "aiProfiles": {
+        ".read": "auth != null",
+        "$game": {
           "$uid": {
             ".write": "auth != null && auth.uid === $uid",
-            ".validate": "newData.hasChildren(['timeMs','username']) && newData.child('timeMs').isNumber()"
+            ".validate": "newData.hasChildren(['v','games','profile']) && newData.child('games').isNumber() && newData.child('v').isNumber()"
           }
         }
       },
